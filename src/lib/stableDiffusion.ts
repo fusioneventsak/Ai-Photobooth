@@ -69,12 +69,6 @@ async function generateWithFacePreservation(prompt: string, originalContent: str
     console.log('🔄 Falling back to image-to-image generation...');
     return await generateWithImageToImage(prompt, originalContent, 0.65, true);
   }
-} creation failed, trying fallback:', error);
-    
-    // If face detection fails, fall back to image-to-image
-    console.log('🔄 Falling back to high-quality image-to-image...');
-    return await generateWithImageToImage(prompt, originalContent, 0.65, true);
-  }
 }
 
 async function generateWithFaceReplacement(prompt: string, originalContent: string): Promise<string> {
