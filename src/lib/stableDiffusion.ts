@@ -1,12 +1,10 @@
 import axios from 'axios';
 import { generateWithReplicate } from './replicateService';
-import { generateFaceSwappedImage } from './faceSwapService';
 
 const STABILITY_API_KEY = import.meta.env.VITE_STABILITY_API_KEY;
 const REPLICATE_API_KEY = import.meta.env.VITE_REPLICATE_API_KEY;
 
 const API_ENDPOINTS = {
-  // Updated to use the newer v2 beta endpoint
   image: 'https://api.stability.ai/v2beta/stable-image/generate/core'
 };
 
@@ -16,14 +14,8 @@ interface StabilityConfig {
   steps: number;
 }
 
-interface GenerationOptions {
-  enableFaceSwap?: boolean;
-  faceSwapAccuracy?: number; // 0.1 to 1.0
-  useAdvancedFaceSwap?: boolean;
-}
-
 const DEFAULT_CONFIG: StabilityConfig = {
-  imageStrength: 0.35,
+  imageStrength: 0.25, // Lower strength to preserve more of the original face
   cfgScale: 7,
   steps: 30
 };
@@ -62,7 +54,8 @@ async function retryWithExponentialBackoff<T>(
 
 async function generateWithStabilityAI(
   prompt: string,
-  originalContent: string
+  originalContent: string,
+  preserveFace: boolean = true
 ): Promise<string> {
   if (!STABILITY_API_KEY || STABILITY_API_KEY.includes('undefined')) {
     throw new Error('Stability API key not found. Please check your environment variables.');
@@ -91,17 +84,27 @@ async function generateWithStabilityAI(
       throw new Error('Image size exceeds 10MB limit. Please try capturing a smaller photo.');
     }
 
+    // Enhanced prompt for face preservation
+    const facePreservationPrompt = preserveFace 
+      ? `${prompt}, preserve the exact facial features, maintain the person's face, keep original face structure, same person, identical facial characteristics`
+      : prompt;
+
+    const negativePrompt = preserveFace
+      ? 'blurry face, different person, changed face, distorted face, deformed face, wrong face, ugly face, bad anatomy, low quality'
+      : 'blurry, low quality, distorted, deformed, ugly, bad anatomy, watermark, text';
+
     // Prepare form data for v2beta API
     const formData = new FormData();
     formData.append('image', imageBlob, 'input.jpg');
-    formData.append('prompt', prompt);
-    formData.append('negative_prompt', 'blurry, low quality, distorted, deformed, ugly, bad anatomy, watermark, text');
-    formData.append('aspect_ratio', '1:1'); // Square aspect ratio
+    formData.append('prompt', facePreservationPrompt);
+    formData.append('negative_prompt', negativePrompt);
+    formData.append('strength', preserveFace ? '0.3' : '0.5'); // Lower strength preserves more original
+    formData.append('aspect_ratio', '1:1');
     formData.append('output_format', 'png');
 
     // Make API request with retry logic
     const response = await retryWithExponentialBackoff(async () => {
-      console.log('Attempting Stability AI generation...');
+      console.log('Attempting Stability AI generation with face preservation:', preserveFace);
       const result = await axios.post(
         API_ENDPOINTS.image,
         formData,
@@ -113,7 +116,7 @@ async function generateWithStabilityAI(
           responseType: 'arraybuffer',
           maxBodyLength: Infinity,
           maxContentLength: Infinity,
-          timeout: 60000 // Increased timeout for v2 API
+          timeout: 60000
         }
       );
 
@@ -174,14 +177,41 @@ async function generateWithStabilityAI(
   }
 }
 
+async function generateWithReplicateFacePreservation(
+  prompt: string,
+  originalContent: string,
+  preserveFace: boolean = true
+): Promise<string> {
+  if (!REPLICATE_API_KEY || REPLICATE_API_KEY.includes('undefined')) {
+    throw new Error('Replicate API key not found.');
+  }
+
+  // Enhanced prompt for better face preservation
+  const facePreservationPrompt = preserveFace 
+    ? `${prompt}, preserve the exact facial features and face of the person in the image, maintain original face, same person, keep facial identity`
+    : prompt;
+
+  try {
+    console.log('Using Replicate with face preservation:', preserveFace);
+    return await generateWithReplicate({
+      prompt: facePreservationPrompt,
+      inputData: originalContent,
+      type: 'image'
+    });
+  } catch (error) {
+    throw error;
+  }
+}
+
 export async function generateImage(
   prompt: string, 
   originalContent: string,
   modelType: 'image' | 'video' = 'image',
   videoDuration: number = 5,
-  options: GenerationOptions = {}
+  preserveFace: boolean = true // Default to preserving face
 ): Promise<string> {
   console.log(`Starting ${modelType} generation with prompt:`, prompt);
+  console.log('Face preservation enabled:', preserveFace);
 
   // Input validation
   if (!prompt.trim()) {
@@ -192,13 +222,6 @@ export async function generateImage(
     throw new Error('Invalid image format. Please provide a valid image.');
   }
 
-  // Default options
-  const {
-    enableFaceSwap = true, // Enable face swap by default for better results
-    faceSwapAccuracy = 0.8,
-    useAdvancedFaceSwap = false
-  } = options;
-
   // For video generation, use Replicate
   if (modelType === 'video') {
     if (!REPLICATE_API_KEY || REPLICATE_API_KEY.includes('undefined')) {
@@ -207,52 +230,26 @@ export async function generateImage(
 
     try {
       console.log('Using Replicate for video generation...');
-      const result = await generateWithReplicate({
+      return await generateWithReplicate({
         prompt,
         inputData: originalContent,
         type: 'video',
         duration: videoDuration
       });
-
-      // For video, we could add face swap here too, but it's more complex
-      // For now, return the regular video generation result
-      return result;
-
     } catch (error) {
       console.error('Video generation failed:', error);
       throw new Error(error instanceof Error ? error.message : 'Failed to generate video. Please try again.');
     }
   }
 
-  // For image generation with face swap capability
-  if (enableFaceSwap && REPLICATE_API_KEY && !REPLICATE_API_KEY.includes('undefined')) {
-    try {
-      console.log('🎭 Using advanced face swap generation...');
-      
-      // Use face swap for more realistic results
-      const faceSwappedResult = await generateFaceSwappedImage(
-        originalContent,
-        prompt,
-        faceSwapAccuracy
-      );
-
-      console.log('✅ Face swap generation completed successfully!');
-      return faceSwappedResult;
-
-    } catch (faceSwapError) {
-      console.log('Face swap failed, falling back to regular generation...', faceSwapError);
-      // Fall through to regular generation methods below
-    }
-  }
-
-  // Regular image generation fallback
+  // For image generation with face preservation
   let lastError: Error | null = null;
 
   // Try Stability AI first
   if (STABILITY_API_KEY && !STABILITY_API_KEY.includes('undefined')) {
     try {
-      console.log('Trying Stability AI...');
-      return await generateWithStabilityAI(prompt, originalContent);
+      console.log('Trying Stability AI with face preservation...');
+      return await generateWithStabilityAI(prompt, originalContent, preserveFace);
     } catch (error) {
       console.log('Stability AI failed, will try Replicate fallback...');
       lastError = error instanceof Error ? error : new Error('Stability AI failed');
@@ -270,12 +267,8 @@ export async function generateImage(
   // Fallback to Replicate for image generation
   if (REPLICATE_API_KEY && !REPLICATE_API_KEY.includes('undefined')) {
     try {
-      console.log('Using Replicate as fallback for image generation...');
-      return await generateWithReplicate({
-        prompt,
-        inputData: originalContent,
-        type: 'image'
-      });
+      console.log('Using Replicate as fallback with face preservation...');
+      return await generateWithReplicateFacePreservation(prompt, originalContent, preserveFace);
     } catch (error) {
       console.error('Replicate fallback also failed:', error);
       
@@ -292,31 +285,4 @@ export async function generateImage(
   const replicateMsg = !REPLICATE_API_KEY ? 'Replicate API key missing' : 'Replicate not attempted';
   
   throw new Error(`No AI services available. Stability AI: ${errorMsg}. Replicate: ${replicateMsg}`);
-}
-
-/**
- * Generate image with explicit face swap enabled
- */
-export async function generateImageWithFaceSwap(
-  prompt: string,
-  originalContent: string,
-  faceSwapAccuracy: number = 0.8
-): Promise<string> {
-  return generateImage(prompt, originalContent, 'image', 5, {
-    enableFaceSwap: true,
-    faceSwapAccuracy,
-    useAdvancedFaceSwap: true
-  });
-}
-
-/**
- * Generate image without face swap (original behavior)
- */
-export async function generateImageWithoutFaceSwap(
-  prompt: string,
-  originalContent: string
-): Promise<string> {
-  return generateImage(prompt, originalContent, 'image', 5, {
-    enableFaceSwap: false
-  });
 }
