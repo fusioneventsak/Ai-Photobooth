@@ -66,8 +66,30 @@ async function generateVideo(
       auth: REPLICATE_API_KEY,
     });
 
-    // Upload image to Replicate
-    const imageUrl = await uploadImageToReplicate(originalContent);
+    let imageUrl: string;
+    
+    try {
+      // Try to upload image to Replicate
+      imageUrl = await uploadImageToReplicate(originalContent);
+    } catch (uploadError) {
+      console.error('Upload failed:', uploadError);
+      
+      // If upload fails due to network/CORS issues, try alternative approach
+      if (uploadError instanceof Error && 
+          (uploadError.message.includes('Failed to fetch') || 
+           uploadError.message.includes('Network connection failed') ||
+           uploadError.message.includes('CORS'))) {
+        
+        console.log('🔄 Upload failed due to network issues. Trying alternative approach...');
+        
+        // For development environments, we might need to handle this differently
+        // This is a common issue in development with CORS restrictions
+        throw new Error('Video generation is temporarily unavailable due to network restrictions. This often happens in development environments. Please try:\n\n1. Check your internet connection\n2. Verify your Replicate API key is correct\n3. Try again in a few moments\n\nIf this persists, video generation may need to be tested in a production environment.');
+      }
+      
+      // Re-throw other upload errors
+      throw uploadError;
+    }
     
     // Enhanced prompt based on face preservation mode
     let enhancedPrompt = prompt;
@@ -184,53 +206,141 @@ async function generateVideo(
 }
 
 async function uploadImageToReplicate(base64Image: string): Promise<string> {
-  try {
-    // Convert base64 to blob
-    const imageBlob = base64ToBlob(base64Image);
-    const file = new File([imageBlob], 'input.png', { type: 'image/png' });
-    
-    // Get upload URL from Replicate
-    const uploadResponse = await fetch('https://api.replicate.com/v1/uploads', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Token ${REPLICATE_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ purpose: 'input' })
-    });
-    
-    if (!uploadResponse.ok) {
-      const errorText = await uploadResponse.text();
-      throw new Error(`Failed to get upload URL (${uploadResponse.status}): ${errorText}`);
+  let lastError: Error | null = null;
+  
+  // Try multiple upload attempts with different strategies
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      console.log(`🔄 Upload attempt ${attempt}/${MAX_RETRIES}...`);
+      
+      // Convert base64 to blob
+      const imageBlob = base64ToBlob(base64Image);
+      
+      // Validate blob
+      if (imageBlob.size === 0) {
+        throw new Error('Invalid image data - empty blob');
+      }
+      
+      if (imageBlob.size > 10 * 1024 * 1024) { // 10MB limit
+        throw new Error('Image too large - please use a smaller image');
+      }
+      
+      console.log(`📤 Requesting upload URL for ${Math.round(imageBlob.size / 1024)}KB image...`);
+      
+      // Get upload URL from Replicate with timeout and error handling
+      const uploadResponse = await fetch('https://api.replicate.com/v1/uploads', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Token ${REPLICATE_API_KEY}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({ purpose: 'input' }),
+        signal: AbortSignal.timeout(30000) // 30 second timeout
+      });
+      
+      if (!uploadResponse.ok) {
+        const errorText = await uploadResponse.text().catch(() => 'Unknown error');
+        
+        if (uploadResponse.status === 401) {
+          throw new Error('Invalid Replicate API key. Please check your VITE_REPLICATE_API_KEY.');
+        }
+        if (uploadResponse.status === 402) {
+          throw new Error('Insufficient Replicate credits. Please check your account.');
+        }
+        if (uploadResponse.status === 429) {
+          throw new Error('Rate limit exceeded. Please wait and try again.');
+        }
+        
+        throw new Error(`Failed to get upload URL (${uploadResponse.status}): ${errorText}`);
+      }
+      
+      const uploadData = await uploadResponse.json();
+      
+      if (!uploadData || !uploadData.upload_url || !uploadData.serving_url) {
+        throw new Error('Invalid response from Replicate upload API - missing URLs');
+      }
+      
+      console.log(`📤 Uploading to ${uploadData.upload_url.substring(0, 50)}...`);
+      
+      // Create file with proper MIME type
+      const file = new File([imageBlob], 'input.png', { 
+        type: 'image/png',
+        lastModified: Date.now()
+      });
+      
+      // Upload the file with timeout and proper headers
+      const uploadFileResponse = await fetch(uploadData.upload_url, {
+        method: 'PUT',
+        body: file,
+        signal: AbortSignal.timeout(60000), // 60 second timeout for upload
+        headers: {
+          'Content-Type': 'image/png',
+          'Content-Length': file.size.toString()
+        }
+      });
+      
+      if (!uploadFileResponse.ok) {
+        throw new Error(`Failed to upload image file (${uploadFileResponse.status}): ${uploadFileResponse.statusText}`);
+      }
+      
+      console.log('✅ Upload successful, waiting for processing...');
+      
+      // Wait for processing with verification
+      await sleep(2000);
+      
+      // Verify the file is accessible
+      try {
+        const verifyResponse = await fetch(uploadData.serving_url, { 
+          method: 'HEAD',
+          signal: AbortSignal.timeout(10000)
+        });
+        
+        if (!verifyResponse.ok) {
+          throw new Error('Upload verification failed - file not accessible');
+        }
+      } catch (verifyError) {
+        console.warn('Upload verification failed, but continuing anyway:', verifyError);
+        // Continue anyway as the file might still work
+      }
+      
+      console.log('✅ Image upload completed successfully');
+      return uploadData.serving_url;
+      
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error('Unknown upload error');
+      console.error(`Upload attempt ${attempt} failed:`, lastError.message);
+      
+      // Don't retry on certain errors
+      if (lastError.message.includes('Invalid Replicate API key') ||
+          lastError.message.includes('Insufficient Replicate credits') ||
+          lastError.message.includes('Image too large') ||
+          lastError.message.includes('Invalid image data')) {
+        throw lastError;
+      }
+      
+      // Wait before retrying (exponential backoff)
+      if (attempt < MAX_RETRIES) {
+        const waitTime = RETRY_DELAY * Math.pow(2, attempt - 1);
+        console.log(`⏳ Waiting ${waitTime}ms before retry...`);
+        await sleep(waitTime);
+      }
     }
-    
-    const uploadData = await uploadResponse.json();
-    if (!uploadData || !uploadData.upload_url || !uploadData.serving_url) {
-      throw new Error('Invalid response from Replicate upload API');
-    }
-    
-    // Upload the file
-    const uploadFileResponse = await fetch(uploadData.upload_url, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'image/png'
-      },
-      body: file
-    });
-    
-    if (!uploadFileResponse.ok) {
-      throw new Error(`Failed to upload image file (${uploadFileResponse.status}): ${uploadFileResponse.statusText}`);
-    }
-    
-    // Wait for processing
-    await sleep(1000);
-    
-    return uploadData.serving_url;
-    
-  } catch (error) {
-    console.error('Upload error details:', error);
-    throw new Error('Failed to upload image to Replicate: ' + (error instanceof Error ? error.message : 'Unknown error'));
   }
+  
+  // All attempts failed
+  const finalError = lastError || new Error('Upload failed after all attempts');
+  
+  // Provide helpful error messages based on common issues
+  if (finalError.message.includes('Failed to fetch') || finalError.message.includes('NetworkError')) {
+    throw new Error('Network connection failed. Please check your internet connection and try again. If you\'re in a development environment, this might be a CORS issue.');
+  }
+  
+  if (finalError.message.includes('timeout') || finalError.message.includes('AbortError')) {
+    throw new Error('Upload timed out. Please try again with a smaller image or check your connection speed.');
+  }
+  
+  throw new Error('Failed to upload image to Replicate: ' + finalError.message);
 }
 
 async function downloadAndCreateBlobUrl(url: string, type: 'image' | 'video'): Promise<string> {
