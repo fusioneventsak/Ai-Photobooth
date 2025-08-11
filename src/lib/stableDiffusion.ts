@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { generateWithReplicate } from './replicateService';
+import { generateFaceSwappedImage } from './faceSwapService';
 
 const STABILITY_API_KEY = import.meta.env.VITE_STABILITY_API_KEY;
 const REPLICATE_API_KEY = import.meta.env.VITE_REPLICATE_API_KEY;
@@ -13,6 +14,12 @@ interface StabilityConfig {
   imageStrength: number;
   cfgScale: number;
   steps: number;
+}
+
+interface GenerationOptions {
+  enableFaceSwap?: boolean;
+  faceSwapAccuracy?: number; // 0.1 to 1.0
+  useAdvancedFaceSwap?: boolean;
 }
 
 const DEFAULT_CONFIG: StabilityConfig = {
@@ -171,7 +178,8 @@ export async function generateImage(
   prompt: string, 
   originalContent: string,
   modelType: 'image' | 'video' = 'image',
-  videoDuration: number = 5
+  videoDuration: number = 5,
+  options: GenerationOptions = {}
 ): Promise<string> {
   console.log(`Starting ${modelType} generation with prompt:`, prompt);
 
@@ -184,6 +192,13 @@ export async function generateImage(
     throw new Error('Invalid image format. Please provide a valid image.');
   }
 
+  // Default options
+  const {
+    enableFaceSwap = true, // Enable face swap by default for better results
+    faceSwapAccuracy = 0.8,
+    useAdvancedFaceSwap = false
+  } = options;
+
   // For video generation, use Replicate
   if (modelType === 'video') {
     if (!REPLICATE_API_KEY || REPLICATE_API_KEY.includes('undefined')) {
@@ -192,25 +207,51 @@ export async function generateImage(
 
     try {
       console.log('Using Replicate for video generation...');
-      return await generateWithReplicate({
+      const result = await generateWithReplicate({
         prompt,
         inputData: originalContent,
         type: 'video',
         duration: videoDuration
       });
+
+      // For video, we could add face swap here too, but it's more complex
+      // For now, return the regular video generation result
+      return result;
+
     } catch (error) {
       console.error('Video generation failed:', error);
       throw new Error(error instanceof Error ? error.message : 'Failed to generate video. Please try again.');
     }
   }
 
-  // For image generation, try Stability AI first, then Replicate as fallback
+  // For image generation with face swap capability
+  if (enableFaceSwap && REPLICATE_API_KEY && !REPLICATE_API_KEY.includes('undefined')) {
+    try {
+      console.log('🎭 Using advanced face swap generation...');
+      
+      // Use face swap for more realistic results
+      const faceSwappedResult = await generateFaceSwappedImage(
+        originalContent,
+        prompt,
+        faceSwapAccuracy
+      );
+
+      console.log('✅ Face swap generation completed successfully!');
+      return faceSwappedResult;
+
+    } catch (faceSwapError) {
+      console.log('Face swap failed, falling back to regular generation...', faceSwapError);
+      // Fall through to regular generation methods below
+    }
+  }
+
+  // Regular image generation fallback
   let lastError: Error | null = null;
 
   // Try Stability AI first
   if (STABILITY_API_KEY && !STABILITY_API_KEY.includes('undefined')) {
     try {
-      console.log('Trying Stability AI first...');
+      console.log('Trying Stability AI...');
       return await generateWithStabilityAI(prompt, originalContent);
     } catch (error) {
       console.log('Stability AI failed, will try Replicate fallback...');
@@ -251,4 +292,31 @@ export async function generateImage(
   const replicateMsg = !REPLICATE_API_KEY ? 'Replicate API key missing' : 'Replicate not attempted';
   
   throw new Error(`No AI services available. Stability AI: ${errorMsg}. Replicate: ${replicateMsg}`);
+}
+
+/**
+ * Generate image with explicit face swap enabled
+ */
+export async function generateImageWithFaceSwap(
+  prompt: string,
+  originalContent: string,
+  faceSwapAccuracy: number = 0.8
+): Promise<string> {
+  return generateImage(prompt, originalContent, 'image', 5, {
+    enableFaceSwap: true,
+    faceSwapAccuracy,
+    useAdvancedFaceSwap: true
+  });
+}
+
+/**
+ * Generate image without face swap (original behavior)
+ */
+export async function generateImageWithoutFaceSwap(
+  prompt: string,
+  originalContent: string
+): Promise<string> {
+  return generateImage(prompt, originalContent, 'image', 5, {
+    enableFaceSwap: false
+  });
 }
