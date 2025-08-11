@@ -237,21 +237,22 @@ async function createInvertedFaceMask(originalContent: string): Promise<string> 
         ctx.fillStyle = 'white';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        // Create a precise black area for just the face
+        // Create a larger, more natural face area for transplantation
         ctx.fillStyle = 'black';
         ctx.save();
         
-        // Precise face area - just the core facial features
-        const faceWidth = canvas.width * 0.28; // Slightly larger for better preservation
-        const faceHeight = canvas.height * 0.35;
+        // Larger face area that includes head/neck for better integration
+        const faceWidth = canvas.width * 0.45; // Increased from 0.28
+        const faceHeight = canvas.height * 0.55; // Increased from 0.35
         const centerX = canvas.width / 2;
-        const centerY = canvas.height * 0.35; // Face position
+        const centerY = canvas.height * 0.38; // Face + upper torso
 
-        // Create a soft-edged face mask with feathered edges
-        const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, faceWidth / 1.8);
+        // Create a very soft gradient for seamless blending
+        const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, faceWidth / 1.5);
         gradient.addColorStop(0, 'black');     // Core face - preserve
-        gradient.addColorStop(0.6, 'black');   // Still preserve
-        gradient.addColorStop(0.85, 'gray');   // Transition zone
+        gradient.addColorStop(0.3, 'black');   // Still preserve 
+        gradient.addColorStop(0.6, '#808080'); // Gray transition
+        gradient.addColorStop(0.8, '#C0C0C0'); // Light gray transition
         gradient.addColorStop(1, 'white');     // Modify everything else
 
         ctx.fillStyle = gradient;
