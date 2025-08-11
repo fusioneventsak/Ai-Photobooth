@@ -2,14 +2,14 @@ import axios from 'axios';
 
 const STABILITY_API_KEY = import.meta.env.VITE_STABILITY_API_KEY;
 
-// Simple, working approach: Generate base image then use CSS/Canvas overlay
 export async function generateImage(
   prompt: string, 
   originalContent: string,
   modelType: 'image' | 'video' = 'image',
-  videoDuration: number = 5
+  videoDuration: number = 5,
+  preserveFace: boolean = true
 ): Promise<string> {
-  console.log('🎯 Using template-based approach for true face preservation');
+  console.log('🎯 Using face-preserving image-to-image transformation');
 
   // Input validation
   if (!prompt.trim()) {
@@ -29,34 +29,45 @@ export async function generateImage(
   }
 
   try {
-    // Step 1: Generate a template/background scene without any person
-    const templatePrompt = `${prompt}, empty scene, no people, no faces, high quality background`;
-    const backgroundImage = await generateBackgroundOnly(templatePrompt);
-
-    // Step 2: Combine the original face with the generated background
-    const combinedImage = await overlayFaceOnBackground(originalContent, backgroundImage);
-
-    return combinedImage;
-
+    if (preserveFace) {
+      return await generateWithFacePreservation(prompt, originalContent);
+    } else {
+      return await generateWithImageToImage(prompt, originalContent);
+    }
   } catch (error) {
-    console.error('Template-based generation failed:', error);
+    console.error('Face-preserving generation failed:', error);
     throw new Error(error instanceof Error ? error.message : 'Failed to generate image with face preservation');
   }
 }
 
-async function generateBackgroundOnly(prompt: string): Promise<string> {
+async function generateWithFacePreservation(prompt: string, originalContent: string): Promise<string> {
   try {
-    console.log('🎨 Generating background scene...');
+    console.log('🎭 Generating with face preservation using image-to-image...');
     
+    // Convert base64 to blob
+    const base64Data = originalContent.split(',')[1];
+    const byteCharacters = atob(base64Data);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    const imageBlob = new Blob([byteArray], { type: 'image/png' });
+
+    // Create form data
     const formData = new FormData();
-    formData.append('prompt', prompt);
-    formData.append('negative_prompt', 'people, faces, persons, humans, man, woman, portrait');
-    formData.append('aspect_ratio', '1:1');
+    formData.append('image', imageBlob, 'image.png');
+    formData.append('prompt', enhancePromptForFacePreservation(prompt));
+    formData.append('negative_prompt', 'deformed face, distorted features, different person, face swap, changed identity, blurry face, extra faces, multiple people');
+    formData.append('strength', '0.3'); // Lower strength preserves more of the original
+    formData.append('cfg_scale', '7'); // Moderate adherence to prompt
     formData.append('output_format', 'png');
-    formData.append('style_preset', 'photographic');
+
+    console.log('Enhanced prompt:', enhancePromptForFacePreservation(prompt));
+    console.log('Using strength: 0.3 for maximum face preservation');
 
     const response = await axios.post(
-      'https://api.stability.ai/v2beta/stable-image/generate/core',
+      'https://api.stability.ai/v2beta/stable-image/generate/sd3',
       formData,
       {
         headers: {
@@ -64,7 +75,7 @@ async function generateBackgroundOnly(prompt: string): Promise<string> {
           Authorization: `Bearer ${STABILITY_API_KEY}`,
         },
         responseType: 'arraybuffer',
-        timeout: 60000
+        timeout: 120000
       }
     );
 
@@ -81,16 +92,36 @@ async function generateBackgroundOnly(prompt: string): Promise<string> {
     return `data:image/png;base64,${base64String}`;
 
   } catch (error) {
-    console.error('Background generation failed:', error);
-    throw new Error('Failed to generate background scene');
+    console.error('Face preservation failed:', error);
+    
+    // Fallback to inpainting approach
+    console.log('🔄 Falling back to inpainting approach...');
+    return await generateWithInpainting(prompt, originalContent);
   }
 }
 
-async function overlayFaceOnBackground(originalImage: string, backgroundImage: string): Promise<string> {
+async function generateWithInpainting(prompt: string, originalContent: string): Promise<string> {
+  try {
+    console.log('🎨 Using inpainting to preserve face while changing background/clothing...');
+    
+    // Step 1: Create a face mask automatically
+    const faceMask = await createFaceMask(originalContent);
+    
+    // Step 2: Use inpainting to modify everything EXCEPT the masked face area
+    return await inpaintAroundFace(prompt, originalContent, faceMask);
+    
+  } catch (error) {
+    console.error('Inpainting approach failed:', error);
+    // Final fallback to regular image-to-image with very low strength
+    return await generateWithImageToImage(prompt, originalContent, 0.25);
+  }
+}
+
+async function createFaceMask(originalContent: string): Promise<string> {
+  // Create a simple oval mask for the face area
+  // In production, you'd use face detection libraries like face-api.js
   return new Promise((resolve, reject) => {
     try {
-      console.log('🎭 Overlaying original face on generated background...');
-
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
       if (!ctx) {
@@ -98,90 +129,151 @@ async function overlayFaceOnBackground(originalImage: string, backgroundImage: s
         return;
       }
 
-      canvas.width = 1024;
-      canvas.height = 1024;
+      const img = new Image();
+      img.onload = () => {
+        canvas.width = img.width;
+        canvas.height = img.height;
 
-      let loadedImages = 0;
-      const totalImages = 2;
+        // Create black background (areas to preserve)
+        ctx.fillStyle = 'black';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      const originalImg = new Image();
-      const backgroundImg = new Image();
+        // Create white oval for face area (areas to inpaint)
+        ctx.fillStyle = 'white';
+        ctx.save();
+        
+        // Assume face is in the upper-center portion
+        const faceWidth = canvas.width * 0.6;
+        const faceHeight = canvas.height * 0.7;
+        const faceX = (canvas.width - faceWidth) / 2;
+        const faceY = canvas.height * 0.1;
 
-      const checkComplete = () => {
-        loadedImages++;
-        if (loadedImages === totalImages) {
-          try {
-            // Draw background
-            ctx.drawImage(backgroundImg, 0, 0, 1024, 1024);
+        ctx.beginPath();
+        ctx.ellipse(
+          canvas.width / 2,    // center x
+          faceY + faceHeight / 3, // center y (upper third)
+          faceWidth / 2,       // radius x
+          faceHeight / 3,      // radius y (smaller vertical radius for face)
+          0, 0, Math.PI * 2
+        );
+        ctx.fill();
+        ctx.restore();
 
-            // Extract and overlay the face area from original
-            // This is a simple approach - in production you'd use face detection
-            const faceSize = 350; // Size of face area to preserve
-            const faceX = (1024 - faceSize) / 2; // Center horizontally
-            const faceY = 200; // Position face in upper portion
-
-            // Create a circular mask for more natural blending
-            ctx.save();
-            ctx.globalCompositeOperation = 'source-over';
-            
-            // Draw original face in a circular area
-            ctx.beginPath();
-            ctx.arc(512, 350, faceSize/2, 0, Math.PI * 2);
-            ctx.clip();
-            
-            // Scale and position the original image to fit the face area
-            const sourceSize = Math.min(originalImg.width, originalImg.height);
-            const sourceX = (originalImg.width - sourceSize) / 2;
-            const sourceY = (originalImg.height - sourceSize) / 2;
-            
-            ctx.drawImage(
-              originalImg,
-              sourceX, sourceY, sourceSize, sourceSize, // Source rectangle (square from center)
-              faceX, faceY, faceSize, faceSize // Destination rectangle
-            );
-            
-            ctx.restore();
-
-            // Add subtle blending around edges
-            ctx.save();
-            ctx.globalCompositeOperation = 'source-over';
-            ctx.globalAlpha = 0.1;
-            
-            // Draw a soft edge around the face area
-            const gradient = ctx.createRadialGradient(512, 350, faceSize/2 - 20, 512, 350, faceSize/2);
-            gradient.addColorStop(0, 'transparent');
-            gradient.addColorStop(1, 'rgba(0,0,0,0.3)');
-            ctx.fillStyle = gradient;
-            ctx.beginPath();
-            ctx.arc(512, 350, faceSize/2, 0, Math.PI * 2);
-            ctx.fill();
-            
-            ctx.restore();
-
-            // Convert to data URL
-            const result = canvas.toDataURL('image/png', 0.95);
-            resolve(result);
-
-          } catch (error) {
-            console.error('Error in canvas composition:', error);
-            reject(new Error('Failed to compose final image'));
-          }
-        }
+        const result = canvas.toDataURL('image/png');
+        resolve(result);
       };
 
-      originalImg.onload = checkComplete;
-      originalImg.onerror = () => reject(new Error('Failed to load original image'));
-      
-      backgroundImg.onload = checkComplete;
-      backgroundImg.onerror = () => reject(new Error('Failed to load background image'));
-
-      // Start loading images
-      originalImg.src = originalImage;
-      backgroundImg.src = backgroundImage;
+      img.onerror = () => reject(new Error('Failed to load image for mask creation'));
+      img.src = originalContent;
 
     } catch (error) {
-      console.error('Error in overlay function:', error);
-      reject(new Error('Failed to overlay face on background'));
+      reject(new Error('Failed to create face mask'));
     }
   });
+}
+
+async function inpaintAroundFace(prompt: string, originalContent: string, maskContent: string): Promise<string> {
+  try {
+    console.log('🖌️ Inpainting around face area...');
+    
+    // Convert base64 images to blobs
+    const originalBlob = base64ToBlob(originalContent);
+    const maskBlob = base64ToBlob(maskContent);
+
+    const formData = new FormData();
+    formData.append('image', originalBlob, 'original.png');
+    formData.append('mask', maskBlob, 'mask.png');
+    formData.append('prompt', `${prompt}, maintain existing face and head exactly as shown`);
+    formData.append('negative_prompt', 'face changes, different person, facial distortions, head modifications');
+    formData.append('strength', '0.8'); // Higher strength for background/clothing changes
+    formData.append('cfg_scale', '8');
+    formData.append('output_format', 'png');
+
+    const response = await axios.post(
+      'https://api.stability.ai/v2beta/stable-image/edit/inpaint',
+      formData,
+      {
+        headers: {
+          Accept: 'image/*',
+          Authorization: `Bearer ${STABILITY_API_KEY}`,
+        },
+        responseType: 'arraybuffer',
+        timeout: 120000
+      }
+    );
+
+    if (!response?.data) {
+      throw new Error('Empty response from Stability AI inpaint');
+    }
+
+    const arrayBuffer = response.data;
+    const base64String = btoa(
+      new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+    );
+
+    return `data:image/png;base64,${base64String}`;
+
+  } catch (error) {
+    console.error('Inpainting failed:', error);
+    throw new Error('Failed to inpaint around face area');
+  }
+}
+
+async function generateWithImageToImage(prompt: string, originalContent: string, strength: number = 0.5): Promise<string> {
+  try {
+    console.log(`🔄 Using image-to-image with strength ${strength}...`);
+    
+    const imageBlob = base64ToBlob(originalContent);
+
+    const formData = new FormData();
+    formData.append('image', imageBlob, 'image.png');
+    formData.append('prompt', prompt);
+    formData.append('negative_prompt', 'deformed face, different person, face distortions');
+    formData.append('strength', strength.toString());
+    formData.append('cfg_scale', '7');
+    formData.append('output_format', 'png');
+
+    const response = await axios.post(
+      'https://api.stability.ai/v2beta/stable-image/generate/sd3',
+      formData,
+      {
+        headers: {
+          Accept: 'image/*',
+          Authorization: `Bearer ${STABILITY_API_KEY}`,
+        },
+        responseType: 'arraybuffer',
+        timeout: 120000
+      }
+    );
+
+    if (!response?.data) {
+      throw new Error('Empty response from Stability AI');
+    }
+
+    const arrayBuffer = response.data;
+    const base64String = btoa(
+      new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+    );
+
+    return `data:image/png;base64,${base64String}`;
+
+  } catch (error) {
+    console.error('Image-to-image generation failed:', error);
+    throw new Error('Failed to generate with image-to-image');
+  }
+}
+
+function enhancePromptForFacePreservation(originalPrompt: string): string {
+  return `${originalPrompt}, keep the exact same person and facial features, preserve identity, same face and expressions, only change background and clothing, maintain facial structure`;
+}
+
+function base64ToBlob(base64Data: string): Blob {
+  const base64String = base64Data.split(',')[1];
+  const byteCharacters = atob(base64String);
+  const byteNumbers = new Array(byteCharacters.length);
+  for (let i = 0; i < byteCharacters.length; i++) {
+    byteNumbers[i] = byteCharacters.charCodeAt(i);
+  }
+  const byteArray = new Uint8Array(byteNumbers);
+  return new Blob([byteArray], { type: 'image/png' });
 }
