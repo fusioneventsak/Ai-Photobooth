@@ -7,9 +7,10 @@ export async function generateImage(
   originalContent: string,
   modelType: 'image' | 'video' = 'image',
   videoDuration: number = 5,
-  preserveFace: boolean = true
+  preserveFace: boolean = true,
+  facePreservationMode: 'preserve_face' | 'replace_face' = 'preserve_face'
 ): Promise<string> {
-  console.log('🎯 Using face-preserving image-to-image transformation');
+  console.log(`🎯 Using ${facePreservationMode} mode for image transformation`);
 
   // Input validation
   if (!prompt.trim()) {
@@ -29,97 +30,111 @@ export async function generateImage(
   }
 
   try {
-    if (preserveFace) {
+    if (facePreservationMode === 'preserve_face') {
       return await generateWithFacePreservation(prompt, originalContent);
     } else {
-      return await generateWithImageToImage(prompt, originalContent);
+      return await generateWithFaceReplacement(prompt, originalContent);
     }
   } catch (error) {
-    console.error('Face-preserving generation failed:', error);
-    throw new Error(error instanceof Error ? error.message : 'Failed to generate image with face preservation');
+    console.error(`${facePreservationMode} generation failed:`, error);
+    throw new Error(error instanceof Error ? error.message : `Failed to generate image with ${facePreservationMode}`);
   }
 }
 
 async function generateWithFacePreservation(prompt: string, originalContent: string): Promise<string> {
   try {
-    console.log('🎭 Generating with face preservation using image-to-image...');
+    console.log('🎭 Preserving face, transforming background/clothing...');
     
-    // Convert base64 to blob
-    const base64Data = originalContent.split(',')[1];
-    const byteCharacters = atob(base64Data);
-    const byteNumbers = new Array(byteCharacters.length);
-    for (let i = 0; i < byteCharacters.length; i++) {
-      byteNumbers[i] = byteCharacters.charCodeAt(i);
-    }
-    const byteArray = new Uint8Array(byteNumbers);
-    const imageBlob = new Blob([byteArray], { type: 'image/png' });
-
-    // Create form data
-    const formData = new FormData();
-    formData.append('image', imageBlob, 'image.png');
-    formData.append('prompt', enhancePromptForFacePreservation(prompt));
-    formData.append('negative_prompt', 'deformed face, distorted features, different person, face swap, changed identity, blurry face, extra faces, multiple people');
-    formData.append('strength', '0.3'); // Lower strength preserves more of the original
-    formData.append('cfg_scale', '7'); // Moderate adherence to prompt
-    formData.append('output_format', 'png');
-
-    console.log('Enhanced prompt:', enhancePromptForFacePreservation(prompt));
-    console.log('Using strength: 0.3 for maximum face preservation');
-
-    const response = await axios.post(
-      'https://api.stability.ai/v2beta/stable-image/generate/sd3',
-      formData,
-      {
-        headers: {
-          Accept: 'image/*',
-          Authorization: `Bearer ${STABILITY_API_KEY}`,
-        },
-        responseType: 'arraybuffer',
-        timeout: 120000
-      }
-    );
-
-    if (!response?.data) {
-      throw new Error('Empty response from Stability AI');
-    }
-
-    // Convert arraybuffer to base64
-    const arrayBuffer = response.data;
-    const base64String = btoa(
-      new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
-    );
-
-    return `data:image/png;base64,${base64String}`;
-
-  } catch (error) {
-    console.error('Face preservation failed:', error);
+    // Step 1: Create an inverted face mask (protect face, modify everything else)
+    const faceMask = await createInvertedFaceMask(originalContent);
     
-    // Fallback to inpainting approach
-    console.log('🔄 Falling back to inpainting approach...');
-    return await generateWithInpainting(prompt, originalContent);
-  }
-}
-
-async function generateWithInpainting(prompt: string, originalContent: string): Promise<string> {
-  try {
-    console.log('🎨 Using inpainting to preserve face while changing background/clothing...');
-    
-    // Step 1: Create a face mask automatically
-    const faceMask = await createFaceMask(originalContent);
-    
-    // Step 2: Use inpainting to modify everything EXCEPT the masked face area
+    // Step 2: Use inpainting to modify everything EXCEPT the face
     return await inpaintAroundFace(prompt, originalContent, faceMask);
     
   } catch (error) {
-    console.error('Inpainting approach failed:', error);
-    // Final fallback to regular image-to-image with very low strength
-    return await generateWithImageToImage(prompt, originalContent, 0.25);
+    console.error('Face preservation failed:', error);
+    
+    // Fallback to low-strength image-to-image
+    console.log('🔄 Falling back to low-strength image-to-image...');
+    return await generateWithImageToImage(prompt, originalContent, 0.25, true);
   }
 }
 
+async function generateWithFaceReplacement(prompt: string, originalContent: string): Promise<string> {
+  try {
+    console.log('🔄 Replacing face, preserving background/clothing...');
+    
+    // Step 1: Create a face mask (modify face, protect everything else)
+    const faceMask = await createFaceMask(originalContent);
+    
+    // Step 2: Use inpainting to modify ONLY the face area
+    return await inpaintFaceArea(prompt, originalContent, faceMask);
+    
+  } catch (error) {
+    console.error('Face replacement failed:', error);
+    
+    // Fallback to high-strength image-to-image with face-focused prompts
+    console.log('🔄 Falling back to face-focused image-to-image...');
+    return await generateWithImageToImage(prompt, originalContent, 0.7, false);
+  }
+}
+
+async function createInvertedFaceMask(originalContent: string): Promise<string> {
+  // Creates a mask where face area is BLACK (preserved) and everything else is WHITE (modified)
+  return new Promise((resolve, reject) => {
+    try {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        reject(new Error('Failed to get canvas context'));
+        return;
+      }
+
+      const img = new Image();
+      img.onload = () => {
+        canvas.width = img.width;
+        canvas.height = img.height;
+
+        // Create white background (areas to modify)
+        ctx.fillStyle = 'white';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Create black oval for face area (areas to preserve)
+        ctx.fillStyle = 'black';
+        ctx.save();
+        
+        // Face detection area - upper center portion
+        const faceWidth = canvas.width * 0.4;
+        const faceHeight = canvas.height * 0.45;
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height * 0.35; // Upper third for face
+
+        ctx.beginPath();
+        ctx.ellipse(
+          centerX,
+          centerY,
+          faceWidth / 2,
+          faceHeight / 2,
+          0, 0, Math.PI * 2
+        );
+        ctx.fill();
+        ctx.restore();
+
+        const result = canvas.toDataURL('image/png');
+        resolve(result);
+      };
+
+      img.onerror = () => reject(new Error('Failed to load image for inverted mask creation'));
+      img.src = originalContent;
+
+    } catch (error) {
+      reject(new Error('Failed to create inverted face mask'));
+    }
+  });
+}
+
 async function createFaceMask(originalContent: string): Promise<string> {
-  // Create a simple oval mask for the face area
-  // In production, you'd use face detection libraries like face-api.js
+  // Creates a mask where face area is WHITE (modified) and everything else is BLACK (preserved)
   return new Promise((resolve, reject) => {
     try {
       const canvas = document.createElement('canvas');
@@ -138,22 +153,22 @@ async function createFaceMask(originalContent: string): Promise<string> {
         ctx.fillStyle = 'black';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        // Create white oval for face area (areas to inpaint)
+        // Create white oval for face area (areas to modify)
         ctx.fillStyle = 'white';
         ctx.save();
         
-        // Assume face is in the upper-center portion
-        const faceWidth = canvas.width * 0.6;
-        const faceHeight = canvas.height * 0.7;
-        const faceX = (canvas.width - faceWidth) / 2;
-        const faceY = canvas.height * 0.1;
+        // Face detection area - upper center portion
+        const faceWidth = canvas.width * 0.4;
+        const faceHeight = canvas.height * 0.45;
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height * 0.35; // Upper third for face
 
         ctx.beginPath();
         ctx.ellipse(
-          canvas.width / 2,    // center x
-          faceY + faceHeight / 3, // center y (upper third)
-          faceWidth / 2,       // radius x
-          faceHeight / 3,      // radius y (smaller vertical radius for face)
+          centerX,
+          centerY,
+          faceWidth / 2,
+          faceHeight / 2,
           0, 0, Math.PI * 2
         );
         ctx.fill();
@@ -163,7 +178,7 @@ async function createFaceMask(originalContent: string): Promise<string> {
         resolve(result);
       };
 
-      img.onerror = () => reject(new Error('Failed to load image for mask creation'));
+      img.onerror = () => reject(new Error('Failed to load image for face mask creation'));
       img.src = originalContent;
 
     } catch (error) {
@@ -174,18 +189,17 @@ async function createFaceMask(originalContent: string): Promise<string> {
 
 async function inpaintAroundFace(prompt: string, originalContent: string, maskContent: string): Promise<string> {
   try {
-    console.log('🖌️ Inpainting around face area...');
+    console.log('🖌️ Inpainting around face area (preserving face)...');
     
-    // Convert base64 images to blobs
     const originalBlob = base64ToBlob(originalContent);
     const maskBlob = base64ToBlob(maskContent);
 
     const formData = new FormData();
     formData.append('image', originalBlob, 'original.png');
     formData.append('mask', maskBlob, 'mask.png');
-    formData.append('prompt', `${prompt}, maintain existing face and head exactly as shown`);
-    formData.append('negative_prompt', 'face changes, different person, facial distortions, head modifications');
-    formData.append('strength', '0.8'); // Higher strength for background/clothing changes
+    formData.append('prompt', `${prompt}, maintain the exact same face and person, only change background and clothing`);
+    formData.append('negative_prompt', 'face changes, different person, facial distortions, head modifications, face swap');
+    formData.append('strength', '0.85'); // Higher strength for background/clothing changes
     formData.append('cfg_scale', '8');
     formData.append('output_format', 'png');
 
@@ -214,21 +228,83 @@ async function inpaintAroundFace(prompt: string, originalContent: string, maskCo
     return `data:image/png;base64,${base64String}`;
 
   } catch (error) {
-    console.error('Inpainting failed:', error);
+    console.error('Inpainting around face failed:', error);
     throw new Error('Failed to inpaint around face area');
   }
 }
 
-async function generateWithImageToImage(prompt: string, originalContent: string, strength: number = 0.5): Promise<string> {
+async function inpaintFaceArea(prompt: string, originalContent: string, maskContent: string): Promise<string> {
   try {
-    console.log(`🔄 Using image-to-image with strength ${strength}...`);
+    console.log('🎭 Inpainting face area (replacing face)...');
+    
+    const originalBlob = base64ToBlob(originalContent);
+    const maskBlob = base64ToBlob(maskContent);
+
+    const formData = new FormData();
+    formData.append('image', originalBlob, 'original.png');
+    formData.append('mask', maskBlob, 'mask.png');
+    formData.append('prompt', `${prompt}, generate new face and head that fits the scene, maintain body and background`);
+    formData.append('negative_prompt', 'original face, same person, preserve identity, deformed body');
+    formData.append('strength', '0.9'); // Higher strength for face replacement
+    formData.append('cfg_scale', '9');
+    formData.append('output_format', 'png');
+
+    const response = await axios.post(
+      'https://api.stability.ai/v2beta/stable-image/edit/inpaint',
+      formData,
+      {
+        headers: {
+          Accept: 'image/*',
+          Authorization: `Bearer ${STABILITY_API_KEY}`,
+        },
+        responseType: 'arraybuffer',
+        timeout: 120000
+      }
+    );
+
+    if (!response?.data) {
+      throw new Error('Empty response from Stability AI inpaint');
+    }
+
+    const arrayBuffer = response.data;
+    const base64String = btoa(
+      new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+    );
+
+    return `data:image/png;base64,${base64String}`;
+
+  } catch (error) {
+    console.error('Inpainting face area failed:', error);
+    throw new Error('Failed to inpaint face area');
+  }
+}
+
+async function generateWithImageToImage(
+  prompt: string, 
+  originalContent: string, 
+  strength: number = 0.5, 
+  preserveFace: boolean = true
+): Promise<string> {
+  try {
+    console.log(`🔄 Using image-to-image with strength ${strength} (preserve face: ${preserveFace})...`);
     
     const imageBlob = base64ToBlob(originalContent);
+    
+    let enhancedPrompt = prompt;
+    let negativePrompt = 'blurry, low quality, distorted';
+    
+    if (preserveFace) {
+      enhancedPrompt = `${prompt}, keep the exact same person and facial features, preserve identity, same face and expressions, only change background and clothing`;
+      negativePrompt = 'face changes, different person, facial distortions, face swap, changed identity';
+    } else {
+      enhancedPrompt = `${prompt}, generate new face that fits the scene, transform the person`;
+      negativePrompt = 'preserve original face, same identity, blurry, low quality';
+    }
 
     const formData = new FormData();
     formData.append('image', imageBlob, 'image.png');
-    formData.append('prompt', prompt);
-    formData.append('negative_prompt', 'deformed face, different person, face distortions');
+    formData.append('prompt', enhancedPrompt);
+    formData.append('negative_prompt', negativePrompt);
     formData.append('strength', strength.toString());
     formData.append('cfg_scale', '7');
     formData.append('output_format', 'png');
@@ -261,10 +337,6 @@ async function generateWithImageToImage(prompt: string, originalContent: string,
     console.error('Image-to-image generation failed:', error);
     throw new Error('Failed to generate with image-to-image');
   }
-}
-
-function enhancePromptForFacePreservation(originalPrompt: string): string {
-  return `${originalPrompt}, keep the exact same person and facial features, preserve identity, same face and expressions, only change background and clothing, maintain facial structure`;
 }
 
 function base64ToBlob(base64Data: string): Blob {
