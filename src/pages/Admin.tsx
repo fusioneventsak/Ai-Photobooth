@@ -1,5 +1,5 @@
 import React from 'react';
-import { Settings, Image as ImageIcon, Layout, Clock, Video, Wand2 } from 'lucide-react';
+import { Settings, Image as ImageIcon, Layout, Clock, Video, Wand2, Users, Eye } from 'lucide-react';
 import { useConfigStore } from '../store/configStore';
 import type { Config } from '../types/supabase';
 
@@ -12,6 +12,8 @@ export default function Admin() {
   const [imageProvider, setImageProvider] = React.useState<'stability' | 'replicate'>('stability');
   const [videoProvider, setVideoProvider] = React.useState<'stability' | 'replicate'>('stability');
   const [enableFallback, setEnableFallback] = React.useState(false);
+  const [enableFacePreservation, setEnableFacePreservation] = React.useState(true);
+  const [facePreservationStrength, setFacePreservationStrength] = React.useState(0.3);
 
   React.useEffect(() => {
     if (config) {
@@ -28,12 +30,16 @@ export default function Admin() {
         video_duration: config.video_duration,
         image_provider: config.image_provider || 'stability',
         video_provider: config.video_provider || 'stability',
-        use_provider_fallback: config.use_provider_fallback || false
+        use_provider_fallback: config.use_provider_fallback || false,
+        enable_face_preservation: config.enable_face_preservation ?? true,
+        face_preservation_strength: config.face_preservation_strength || 0.3
       });
       
       setImageProvider(config.image_provider || 'stability');
       setVideoProvider(config.video_provider || 'stability');
       setEnableFallback(config.use_provider_fallback || false);
+      setEnableFacePreservation(config.enable_face_preservation ?? true);
+      setFacePreservationStrength(config.face_preservation_strength || 0.3);
     }
   }, [config]);
 
@@ -60,6 +66,22 @@ export default function Admin() {
     const checked = e.target.checked;
     setEnableFallback(checked);
     setFormData(prev => ({ ...prev, use_provider_fallback: checked }));
+    setError(null);
+    setSuccess(false);
+  };
+
+  const handleFacePreservationToggle = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const checked = e.target.checked;
+    setEnableFacePreservation(checked);
+    setFormData(prev => ({ ...prev, enable_face_preservation: checked }));
+    setError(null);
+    setSuccess(false);
+  };
+
+  const handleFaceStrengthChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = parseFloat(e.target.value);
+    setFacePreservationStrength(value);
+    setFormData(prev => ({ ...prev, face_preservation_strength: value }));
     setError(null);
     setSuccess(false);
   };
@@ -100,6 +122,14 @@ export default function Admin() {
         const duration = Number(formData.video_duration);
         if (isNaN(duration) || duration < 1 || duration > 5) {
           throw new Error('Video duration must be between 1 and 5 seconds');
+        }
+      }
+
+      // Validate face preservation strength
+      if (formData.enable_face_preservation) {
+        const strength = Number(formData.face_preservation_strength);
+        if (isNaN(strength) || strength < 0.1 || strength > 1.0) {
+          throw new Error('Face preservation strength must be between 0.1 and 1.0');
         }
       }
 
@@ -158,12 +188,13 @@ export default function Admin() {
             Settings saved successfully!
           </div>
         )}
-        
-        <form onSubmit={handleSubmit} className="space-y-6">
+
+        <form onSubmit={handleSubmit} className="space-y-8">
+          {/* Branding Settings */}
           <div className="bg-gray-800 p-6 rounded-lg space-y-4">
             <h2 className="text-xl font-semibold flex items-center gap-2">
               <Settings className="w-5 h-5" />
-              Branding
+              Branding Settings
             </h2>
             
             <div>
@@ -177,20 +208,22 @@ export default function Admin() {
                 onChange={handleChange}
                 required
                 className="w-full bg-gray-700 rounded-lg px-4 py-2 text-white"
+                placeholder="Your brand name"
               />
             </div>
-            
+
             <div>
-              <label className="block text-sm font-medium mb-1">Logo URL</label>
+              <label className="block text-sm font-medium mb-1">Brand Logo URL</label>
               <input
                 type="url"
                 name="brand_logo_url"
                 value={formData.brand_logo_url || ''}
                 onChange={handleChange}
                 className="w-full bg-gray-700 rounded-lg px-4 py-2 text-white"
+                placeholder="https://example.com/logo.png"
               />
             </div>
-            
+
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium mb-1">
@@ -222,6 +255,7 @@ export default function Admin() {
             </div>
           </div>
 
+          {/* AI Generation Settings */}
           <div className="bg-gray-800 p-6 rounded-lg space-y-4">
             <h2 className="text-xl font-semibold flex items-center gap-2">
               <Wand2 className="w-5 h-5" />
@@ -239,10 +273,10 @@ export default function Admin() {
                 required
                 rows={3}
                 className="w-full bg-gray-700 rounded-lg px-4 py-2 text-white"
-                placeholder="Enter a prompt that will be applied to all photos..."
+                placeholder="Create a stunning astronaut portrait in space..."
               />
               <p className="mt-1 text-xs text-gray-400">
-                This prompt will be used to generate AI content for all uploads
+                This prompt will be used to generate AI content for all uploads. Face preservation will be automatically added.
               </p>
             </div>
 
@@ -260,7 +294,6 @@ export default function Admin() {
                 </select>
               </div>
               
-              {/* Image Provider Selection - Always visible */}
               <div>
                 <label className="block text-sm font-medium mb-1">Image Provider</label>
                 <select
@@ -274,40 +307,36 @@ export default function Admin() {
                 </select>
               </div>
 
-              {/* Video Provider Selection - Only visible when model type is video */}
               {formData.model_type === 'video' && (
-                <div>
-                  <label className="block text-sm font-medium mb-1">Video Provider</label>
-                  <select
-                    name="video_provider"
-                    value={videoProvider}
-                    onChange={(e) => handleProviderChange('video', e.target.value as 'stability' | 'replicate')}
-                    className="w-full bg-gray-700 rounded-lg px-4 py-2 text-white"
-                  >
-                    <option value="stability">Stability AI</option>
-                    <option value="replicate">Replicate</option>
-                  </select>
-                </div>
-              )}
+                <>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Video Provider</label>
+                    <select
+                      name="video_provider"
+                      value={videoProvider}
+                      onChange={(e) => handleProviderChange('video', e.target.value as 'stability' | 'replicate')}
+                      className="w-full bg-gray-700 rounded-lg px-4 py-2 text-white"
+                    >
+                      <option value="stability">Stability AI</option>
+                      <option value="replicate">Replicate</option>
+                    </select>
+                  </div>
 
-              {formData.model_type === 'video' && (
-                <div>
-                  <label className="block text-sm font-medium mb-1">
-                    Video Duration (seconds)
-                  </label>
-                  <input
-                    type="number"
-                    name="video_duration"
-                    value={formData.video_duration || 5}
-                    onChange={handleChange}
-                    min={1}
-                    max={5}
-                    className="w-full bg-gray-700 rounded-lg px-4 py-2 text-white"
-                  />
-                  <p className="mt-1 text-xs text-gray-400">
-                    Duration must be between 1 and 5 seconds
-                  </p>
-                </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">
+                      Video Duration (seconds)
+                    </label>
+                    <input
+                      type="number"
+                      name="video_duration"
+                      value={formData.video_duration || 5}
+                      onChange={handleChange}
+                      min={1}
+                      max={5}
+                      className="w-full bg-gray-700 rounded-lg px-4 py-2 text-white"
+                    />
+                  </div>
+                </>
               )}
             </div>
 
@@ -325,74 +354,148 @@ export default function Admin() {
               </label>
             </div>
             <p className="text-xs text-gray-400 -mt-2">
-              When enabled, if your primary AI provider fails, the system will try your secondary provider.
-              When disabled, only the selected provider will be used.
+              If your primary provider fails, automatically try the secondary provider.
             </p>
           </div>
 
+          {/* Face Preservation Settings */}
+          <div className="bg-gray-800 p-6 rounded-lg space-y-4">
+            <h2 className="text-xl font-semibold flex items-center gap-2">
+              <Users className="w-5 h-5" />
+              Face Preservation Settings
+            </h2>
+            
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                id="enable_face_preservation"
+                name="enable_face_preservation"
+                checked={enableFacePreservation}
+                onChange={handleFacePreservationToggle}
+                className="w-4 h-4 rounded"
+              />
+              <label htmlFor="enable_face_preservation" className="text-sm font-medium">
+                Enable smart face preservation
+              </label>
+            </div>
+            <p className="text-xs text-gray-400 -mt-2">
+              When enabled, the AI will preserve the subject's facial features in generated images.
+            </p>
+
+            {enableFacePreservation && (
+              <div className="bg-gray-700 p-4 rounded-lg">
+                <label className="block text-sm font-medium mb-2">
+                  Preservation Strength: {Math.round(facePreservationStrength * 100)}%
+                </label>
+                <input
+                  type="range"
+                  min="0.1"
+                  max="0.8"
+                  step="0.05"
+                  value={facePreservationStrength}
+                  onChange={handleFaceStrengthChange}
+                  className="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
+                />
+                <div className="flex justify-between text-xs text-gray-400 mt-1">
+                  <span>More Creative (10%)</span>
+                  <span>Balanced (40%)</span>
+                  <span>More Accurate (80%)</span>
+                </div>
+                <div className="mt-2 text-xs text-gray-300">
+                  <strong>Current Setting:</strong>{' '}
+                  {facePreservationStrength <= 0.2 ? 'Very Creative - Face features may change significantly' :
+                   facePreservationStrength <= 0.4 ? 'Balanced - Good mix of creativity and face preservation' :
+                   facePreservationStrength <= 0.6 ? 'Face-Focused - Strong preservation of facial features' :
+                   'Maximum Preservation - Minimal changes to face'}
+                </div>
+              </div>
+            )}
+
+            <div className="bg-blue-900/30 border border-blue-500/50 rounded-lg p-4">
+              <h4 className="text-sm font-medium text-blue-300 mb-2 flex items-center gap-2">
+                <Eye className="w-4 h-4" />
+                How Face Preservation Works
+              </h4>
+              <ul className="text-xs text-blue-200 space-y-1">
+                <li>• AI analyzes the subject's facial features</li>
+                <li>• Generates content while preserving key facial characteristics</li>
+                <li>• Lower strength = more creative liberty with face changes</li>
+                <li>• Higher strength = stronger preservation of original features</li>
+                <li>• Works best with clear, well-lit face photos</li>
+              </ul>
+            </div>
+          </div>
+
+          {/* Gallery Settings */}
           <div className="bg-gray-800 p-6 rounded-lg space-y-4">
             <h2 className="text-xl font-semibold flex items-center gap-2">
               <Layout className="w-5 h-5" />
               Gallery Settings
             </h2>
-            
-            <div>
-              <label className="block text-sm font-medium mb-1">Layout</label>
-              <select
-                name="gallery_layout"
-                value={formData.gallery_layout || 'grid'}
-                onChange={handleChange}
-                className="w-full bg-gray-700 rounded-lg px-4 py-2 text-white"
-              >
-                <option value="grid">Grid</option>
-                <option value="masonry">Masonry</option>
-                <option value="carousel">Carousel</option>
-              </select>
-            </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-1">Animation</label>
-              <select
-                name="gallery_animation"
-                value={formData.gallery_animation || 'fade'}
-                onChange={handleChange}
-                className="w-full bg-gray-700 rounded-lg px-4 py-2 text-white"
-              >
-                <option value="fade">Fade</option>
-                <option value="slide">Slide</option>
-                <option value="zoom">Zoom</option>
-              </select>
-            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Animation Style</label>
+                <select
+                  name="gallery_animation"
+                  value={formData.gallery_animation || 'fade'}
+                  onChange={handleChange}
+                  className="w-full bg-gray-700 rounded-lg px-4 py-2 text-white"
+                >
+                  <option value="fade">Fade</option>
+                  <option value="slide">Slide</option>
+                  <option value="zoom">Zoom</option>
+                  <option value="none">No Animation</option>
+                </select>
+              </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-1">
-                <span className="flex items-center gap-2">
-                  <Clock className="w-4 h-4" />
+              <div>
+                <label className="block text-sm font-medium mb-1">
                   Animation Speed (ms)
-                </span>
-              </label>
-              <input
-                type="number"
-                name="gallery_speed"
-                value={formData.gallery_speed || 3000}
-                onChange={handleChange}
-                min={500}
-                max={10000}
-                step={100}
-                className="w-full bg-gray-700 rounded-lg px-4 py-2 text-white"
-              />
-              <p className="mt-1 text-xs text-gray-400">
-                Speed must be between 500ms and 10000ms
-              </p>
+                </label>
+                <input
+                  type="number"
+                  name="gallery_speed"
+                  value={formData.gallery_speed || 3000}
+                  onChange={handleChange}
+                  min={500}
+                  max={10000}
+                  className="w-full bg-gray-700 rounded-lg px-4 py-2 text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">Layout Style</label>
+                <select
+                  name="gallery_layout"
+                  value={formData.gallery_layout || 'grid'}
+                  onChange={handleChange}
+                  className="w-full bg-gray-700 rounded-lg px-4 py-2 text-white"
+                >
+                  <option value="grid">Grid</option>
+                  <option value="masonry">Masonry</option>
+                  <option value="carousel">Carousel</option>
+                </select>
+              </div>
             </div>
           </div>
 
           <button
             type="submit"
             disabled={saving}
-            className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg px-4 py-2 text-white font-medium transition"
+            className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium py-3 px-4 rounded-lg transition flex items-center justify-center gap-2"
           >
-            {saving ? 'Saving...' : 'Save Changes'}
+            {saving ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                Saving...
+              </>
+            ) : (
+              <>
+                <Settings className="w-4 h-4" />
+                Save Settings
+              </>
+            )}
           </button>
         </form>
       </div>
