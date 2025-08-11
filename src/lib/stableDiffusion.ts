@@ -49,18 +49,21 @@ export async function generateImage(
 
 async function generateWithFacePreservation(prompt: string, originalContent: string): Promise<string> {
   try {
-    console.log('🎭 Preserving face identity with minimal transformation...');
+    console.log('🎭 Creating entirely new scene with user\'s face preserved...');
     
-    // Use lower strength to maintain your actual face
-    const result = await generateWithImageToImage(prompt, originalContent, 0.5, true);
+    // Create an inverted face mask (preserve only face, regenerate everything else)
+    const invertedMask = await createInvertedFaceMask(originalContent);
+    
+    // Use inpainting to create completely new scene while keeping the face
+    const result = await inpaintAroundFace(prompt, originalContent, invertedMask);
     return result;
     
   } catch (error) {
-    console.error('Face preservation failed:', error);
+    console.error('Face preservation inpainting failed:', error);
     
-    // Fallback to even more conservative
-    console.log('🔄 Falling back to safer transformation...');
-    return await generateWithImageToImage(prompt, originalContent, 0.4, true);
+    // Fallback to high-strength image-to-image for full scene transformation
+    console.log('🔄 Falling back to high-strength transformation...');
+    return await generateWithImageToImage(prompt, originalContent, 0.85, true);
   }
 }
 
@@ -97,8 +100,8 @@ async function generateWithImageToImage(
       let negativePrompt = 'blurry, low quality, distorted, deformed, ugly, bad anatomy, extra limbs';
       
       if (preserveFace) {
-        enhancedPrompt = `${prompt}, keep exact same person's face, exact same facial features, same eyes, same nose, same mouth, same skin tone, add costume and accessories only, transform background and clothing, maintain facial identity completely`;
-        negativePrompt = 'different person, different face, changed facial features, face swap, altered identity, different skin tone, different eyes, different nose, mask artifacts, blurry, low quality';
+        enhancedPrompt = `${prompt}, generate completely new scene and environment, brand new background, entirely new clothing and setting, new location, dramatic transformation, photorealistic, high quality, detailed`;
+        negativePrompt = 'preserve original background, keep original clothes, same environment, original setting, same pose, same lighting, face changes, different person, mask artifacts, blurry, low quality';
       } else {
         enhancedPrompt = `${prompt}, generate new face that fits the scene, transform the person`;
         negativePrompt = 'preserve original face, same identity, blurry, low quality, distorted';
@@ -108,7 +111,7 @@ async function generateWithImageToImage(
       formData.append('image', imageBlob, 'image.png');
       formData.append('prompt', enhancedPrompt);
       formData.append('negative_prompt', negativePrompt);
-      formData.append('strength', preserveFace ? '0.5' : strength.toString());
+      formData.append('strength', preserveFace ? '0.9' : strength.toString());
       formData.append('cfg_scale', preserveFace ? '10' : '7');
       formData.append('output_format', 'png');
       formData.append('mode', 'image-to-image');
