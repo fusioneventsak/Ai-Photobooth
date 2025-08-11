@@ -2,6 +2,8 @@ import axios, { AxiosError } from 'axios';
 import { detectFaces, createFaceMask, loadFaceApiModels } from './faceDetection';
 
 const STABILITY_API_KEY = import.meta.env.VITE_STABILITY_API_KEY;
+const REPLICATE_API_KEY = import.meta.env.VITE_REPLICATE_API_KEY;
+
 // Enhanced error handling and retry logic
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 2000; // 2 seconds
@@ -15,31 +17,300 @@ export async function generateImage(
   preserveFace: boolean = true,
   facePreservationMode: 'preserve_face' | 'replace_face' = 'preserve_face'
 ): Promise<string> {
-  console.log(`🎯 Using ${facePreservationMode} mode for image transformation`);
+  console.log(`🎯 Using ${facePreservationMode} mode for ${modelType} transformation`);
+  
   // Input validation
   if (!prompt.trim()) {
     throw new Error('Prompt cannot be empty for generation');
   }
-  if (!originalContent?.startsWith('data:image/')) {
+  
+  if (modelType === 'image' && !originalContent?.startsWith('data:image/')) {
     throw new Error('Invalid image format. Please provide a valid image.');
   }
-  if (modelType === 'video') {
-    throw new Error('Video generation temporarily disabled. Please use image generation.');
+  
+  if (modelType === 'video' && !originalContent?.startsWith('data:image/')) {
+    throw new Error('Invalid image format for video generation. Please provide a valid image.');
   }
-  if (!STABILITY_API_KEY || STABILITY_API_KEY.includes('undefined')) {
-    throw new Error('Stability AI API key not found. Please check your .env file and make sure VITE_STABILITY_API_KEY is set.');
+
+  // Check API keys based on generation type
+  if (modelType === 'image') {
+    if (!STABILITY_API_KEY || STABILITY_API_KEY.includes('undefined')) {
+      throw new Error('Stability AI API key not found. Please check your .env file and make sure VITE_STABILITY_API_KEY is set.');
+    }
+  } else if (modelType === 'video') {
+    // For video, we'll try Stability AI first, then fallback to Replicate
+    if (!STABILITY_API_KEY || STABILITY_API_KEY.includes('undefined')) {
+      if (!REPLICATE_API_KEY || REPLICATE_API_KEY.includes('undefined')) {
+        throw new Error('Neither Stability AI nor Replicate API key found. Please check your .env file.');
+      }
+      console.log('⚠️ Stability AI key not found, will use Replicate for video generation');
+    }
   }
+
   try {
-    if (facePreservationMode === 'preserve_face') {
-      return await generateWithFacePreservation(prompt, originalContent);
+    if (modelType === 'video') {
+      return await generateVideo(prompt, originalContent, videoDuration, preserveFace, facePreservationMode);
     } else {
-      return await generateWithFaceReplacement(prompt, originalContent);
+      if (facePreservationMode === 'preserve_face') {
+        return await generateWithFacePreservation(prompt, originalContent);
+      } else {
+        return await generateWithFaceReplacement(prompt, originalContent);
+      }
     }
   } catch (error) {
-    console.error(`${facePreservationMode} generation failed:`, error);
-    throw new Error(error instanceof Error ? error.message : `Failed to generate image with ${facePreservationMode}`);
+    console.error(`${modelType} generation with ${facePreservationMode} failed:`, error);
+    throw new Error(error instanceof Error ? error.message : `Failed to generate ${modelType} with ${facePreservationMode}`);
   }
 }
+
+async function generateVideo(
+  prompt: string,
+  originalContent: string,
+  videoDuration: number,
+  preserveFace: boolean,
+  facePreservationMode: 'preserve_face' | 'replace_face'
+): Promise<string> {
+  // Try Stability AI first if key is available
+  if (STABILITY_API_KEY && !STABILITY_API_KEY.includes('undefined')) {
+    try {
+      console.log('🎬 Attempting video generation with Stability AI...');
+      return await generateVideoWithStabilityAI(prompt, originalContent, videoDuration, preserveFace);
+    } catch (error) {
+      console.error('Stability AI video generation failed:', error);
+      
+      // Fallback to Replicate if available
+      if (REPLICATE_API_KEY && !REPLICATE_API_KEY.includes('undefined')) {
+        console.log('🔄 Falling back to Replicate for video generation...');
+        return await generateVideoWithReplicate(prompt, originalContent, videoDuration);
+      } else {
+        throw new Error('Video generation failed and no fallback service available. Please check your API keys.');
+      }
+    }
+  } else {
+    // Use Replicate as primary if Stability AI not available
+    if (REPLICATE_API_KEY && !REPLICATE_API_KEY.includes('undefined')) {
+      console.log('🎬 Using Replicate for video generation...');
+      return await generateVideoWithReplicate(prompt, originalContent, videoDuration);
+    } else {
+      throw new Error('No video generation service available. Please configure either Stability AI or Replicate API keys.');
+    }
+  }
+}
+
+async function generateVideoWithStabilityAI(
+  prompt: string,
+  originalContent: string,
+  videoDuration: number,
+  preserveFace: boolean
+): Promise<string> {
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      console.log(`🎬 Generating video with Stability AI (attempt ${attempt}/${MAX_RETRIES})...`);
+      
+      const imageBlob = base64ToBlob(originalContent);
+      
+      // Enhanced prompt for video generation
+      let enhancedPrompt = prompt;
+      let negativePrompt = 'static image, no movement, blurry, low quality, distorted, deformed, ugly, bad anatomy, extra limbs';
+      
+      if (preserveFace) {
+        enhancedPrompt = `${prompt}, preserve person's exact face and identity, keep same facial features, smooth natural movement, cinematic motion, high quality video, photorealistic animation`;
+        negativePrompt = 'different person, changed face, face swap, different identity, jerky movement, unnatural motion, static, frozen, blurry, low quality';
+      } else {
+        enhancedPrompt = `${prompt}, smooth natural movement, cinematic motion, high quality video, photorealistic animation`;
+        negativePrompt = 'jerky movement, unnatural motion, static, frozen, blurry, low quality';
+      }
+
+      const formData = new FormData();
+      formData.append('image', imageBlob, 'image.png');
+      formData.append('prompt', enhancedPrompt);
+      formData.append('negative_prompt', negativePrompt);
+      formData.append('cfg_scale', '7.5');
+      formData.append('motion_bucket_id', '127'); // Controls motion intensity
+      formData.append('seed', Math.floor(Math.random() * 2147483647).toString());
+      formData.append('fps', '24');
+      formData.append('video_length', Math.min(videoDuration, 4).toString()); // Cap at 4 seconds for Stability AI
+      
+      console.log('📡 Making video request to Stability AI...');
+      
+      const response = await axios.post(
+        'https://api.stability.ai/v2beta/image-to-video',
+        formData,
+        {
+          headers: {
+            Accept: 'video/*',
+            Authorization: `Bearer ${STABILITY_API_KEY}`,
+            'Content-Type': 'multipart/form-data',
+          },
+          responseType: 'arraybuffer',
+          timeout: 180000, // 3 minutes for video generation
+          validateStatus: (status) => status < 500,
+        }
+      );
+
+      if (response.status === 401) {
+        throw new Error('Invalid Stability AI API key. Please check your configuration.');
+      }
+      
+      if (response.status === 402) {
+        throw new Error('Insufficient Stability AI credits. Please check your account.');
+      }
+      
+      if (response.status === 429) {
+        throw new Error('Rate limit exceeded. Please wait and try again.');
+      }
+      
+      if (response.status >= 400) {
+        const errorText = new TextDecoder().decode(response.data);
+        console.error('Stability AI Video API Error Response:', errorText);
+        throw new Error(`Stability AI Video API Error (${response.status}): ${errorText || 'Unknown error'}`);
+      }
+
+      if (!response?.data || response.data.byteLength === 0) {
+        throw new Error('Empty response from Stability AI video generation');
+      }
+
+      // Convert video data to blob URL for playback
+      const videoBlob = new Blob([response.data], { type: 'video/mp4' });
+      const videoUrl = URL.createObjectURL(videoBlob);
+      
+      console.log('✅ Video generation with Stability AI successful');
+      return videoUrl;
+      
+    } catch (error) {
+      console.error(`Stability AI video generation failed (attempt ${attempt}):`, error);
+      
+      if (attempt === MAX_RETRIES) {
+        throw error;
+      }
+      
+      // Wait before retrying
+      console.log(`⏳ Waiting ${RETRY_DELAY}ms before retry...`);
+      await sleep(RETRY_DELAY * attempt);
+    }
+  }
+  
+  throw new Error('Failed to generate video with Stability AI after all retry attempts');
+}
+
+async function generateVideoWithReplicate(
+  prompt: string,
+  originalContent: string,
+  videoDuration: number
+): Promise<string> {
+  try {
+    console.log('🎬 Generating video with Replicate...');
+    
+    // Import Replicate dynamically to avoid build issues if not installed
+    const { default: Replicate } = await import('replicate');
+    
+    const replicate = new Replicate({
+      auth: REPLICATE_API_KEY,
+    });
+
+    // Upload image to Replicate
+    const imageUrl = await uploadImageToReplicate(originalContent);
+    
+    console.log('🔄 Running Replicate video model...');
+    
+    // Use Stable Video Diffusion model
+    const output = await replicate.run(
+      "stability-ai/stable-video-diffusion:3f0457e4619daac51203dedb1a4c069b4bb91bc25be5667a0b525e63c21e2257",
+      {
+        input: {
+          cond_aug: 0.02,
+          decoding_t: 14,
+          video_length: "14_frames_with_svd",
+          sizing_strategy: "maintain_aspect_ratio",
+          motion_bucket_id: 127,
+          frames_per_second: 6,
+          image: imageUrl
+        }
+      }
+    );
+
+    if (!output || typeof output !== 'string' || !output.startsWith('http')) {
+      console.error('Unexpected video output from Replicate:', output);
+      throw new Error('Invalid video response from Replicate API');
+    }
+
+    // Download the video and create blob URL
+    console.log('⬇️ Downloading generated video...');
+    const response = await fetch(output);
+    
+    if (!response.ok) {
+      throw new Error(`Failed to download video: ${response.statusText}`);
+    }
+    
+    const videoBlob = await response.blob();
+    if (videoBlob.size === 0) {
+      throw new Error('Received empty video file');
+    }
+    
+    const videoUrl = URL.createObjectURL(videoBlob);
+    console.log('✅ Video generation with Replicate successful');
+    return videoUrl;
+    
+  } catch (error) {
+    console.error('Replicate video generation error:', error);
+    
+    if (error instanceof Error) {
+      if (error.message.includes('rate limit')) {
+        throw new Error('Rate limit exceeded. Please wait a moment and try again.');
+      } else if (error.message.includes('insufficient credits')) {
+        throw new Error('Insufficient Replicate credits. Please check your account.');
+      } else if (error.message.includes('Invalid API key')) {
+        throw new Error('Invalid Replicate API key. Please check your configuration.');
+      }
+    }
+    
+    throw new Error('Failed to generate video with Replicate: ' + (error instanceof Error ? error.message : 'Unknown error'));
+  }
+}
+
+async function uploadImageToReplicate(base64Image: string): Promise<string> {
+  try {
+    // Convert base64 to blob
+    const imageBlob = base64ToBlob(base64Image);
+    
+    // Get upload URL from Replicate
+    const uploadResponse = await fetch('https://api.replicate.com/v1/uploads', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Token ${REPLICATE_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ purpose: 'input' })
+    });
+    
+    if (!uploadResponse.ok) {
+      const errorText = await uploadResponse.text();
+      throw new Error(`Failed to get upload URL (${uploadResponse.status}): ${errorText}`);
+    }
+    
+    const uploadData = await uploadResponse.json();
+    if (!uploadData || !uploadData.upload_url || !uploadData.serving_url) {
+      throw new Error('Invalid response from Replicate upload API');
+    }
+    
+    // Upload the file
+    const uploadFileResponse = await fetch(uploadData.upload_url, {
+      method: 'PUT',
+      body: imageBlob
+    });
+    
+    if (!uploadFileResponse.ok) {
+      throw new Error(`Failed to upload image file (${uploadFileResponse.status}): ${uploadFileResponse.statusText}`);
+    }
+    
+    return uploadData.serving_url;
+    
+  } catch (error) {
+    throw new Error('Failed to upload image to Replicate: ' + (error instanceof Error ? error.message : 'Unknown error'));
+  }
+}
+
+// Existing image generation functions remain the same...
 
 async function generateWithFacePreservation(prompt: string, originalContent: string): Promise<string> {
   try {
