@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useConfigStore } from '../store/configStore';
-import { Config } from '../types/config';
+import type { Config } from '../types/config';
 import { 
   Settings, 
   Users, 

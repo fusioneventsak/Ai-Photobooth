@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Config } from '../types/supabase';
+import type { Config } from '../types/config';
 import { getConfig, updateConfig } from '../lib/supabase';
 
 interface ConfigState {
