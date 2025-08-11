@@ -212,23 +212,23 @@ async function generateImage(
     }
 
     // Handle different output formats
-    let imageUrl: string;
+    let generatedImageUrl: string;
     if (Array.isArray(output) && output.length > 0) {
-      imageUrl = output[0];
+      generatedImageUrl = output[0];
     } else if (typeof output === 'string') {
-      imageUrl = output;
+      generatedImageUrl = output;
     } else {
       console.error('Unexpected image output format:', typeof output, output);
       throw new Error('Invalid image response format from Replicate API');
     }
 
-    if (!imageUrl.startsWith('http')) {
+    if (!generatedImageUrl.startsWith('http')) {
       throw new Error('Invalid image URL from Replicate API');
     }
 
     // Download the generated image
     console.log('Downloading generated image...');
-    const response = await retryFetch(imageUrl, {});
+    const response = await retryFetch(generatedImageUrl, {});
     
     if (!response.ok) {
       throw new Error(`Failed to download image: ${response.statusText}`);
