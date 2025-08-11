@@ -237,26 +237,32 @@ async function createInvertedFaceMask(originalContent: string): Promise<string> 
         ctx.fillStyle = 'white';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        // Create a larger, more natural face area for transplantation
-        ctx.fillStyle = 'black';
+        // Create a more precise face-only area to avoid holes
         ctx.save();
         
-        // Larger face area that includes head/neck for better integration
-        const faceWidth = canvas.width * 0.45; // Increased from 0.28
-        const faceHeight = canvas.height * 0.55; // Increased from 0.35
+        // Smaller, more precise face area - just head/face
+        const faceWidth = canvas.width * 0.35; // Reduced from 0.45
+        const faceHeight = canvas.height * 0.42; // Reduced from 0.55
         const centerX = canvas.width / 2;
-        const centerY = canvas.height * 0.38; // Face + upper torso
+        const centerY = canvas.height * 0.36; // Face position only
 
-        // Create a very soft, extended gradient for completely invisible blending
-        const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, faceWidth / 1.2);
-        gradient.addColorStop(0, 'black');     // Core face - preserve
-        gradient.addColorStop(0.2, 'black');   // Inner face - preserve
-        gradient.addColorStop(0.4, '#404040'); // Dark gray transition
-        gradient.addColorStop(0.6, '#808080'); // Medium gray transition  
-        gradient.addColorStop(0.75, '#A0A0A0'); // Light gray transition
-        gradient.addColorStop(0.85, '#C0C0C0'); // Very light gray
-        gradient.addColorStop(0.95, '#E0E0E0'); // Nearly white
-        gradient.addColorStop(1, 'white');     // Modify everything else
+        // Create an extremely soft gradient with many transition zones
+        const outerRadius = faceWidth / 1.1; // Very close to face edge
+        const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, outerRadius);
+        
+        // Much more gradual transition to eliminate visible edges
+        gradient.addColorStop(0, 'black');      // Core face - preserve completely
+        gradient.addColorStop(0.15, 'black');   // Inner face - preserve
+        gradient.addColorStop(0.25, '#202020'); // Very dark gray
+        gradient.addColorStop(0.35, '#404040'); // Dark gray
+        gradient.addColorStop(0.45, '#606060'); // Medium-dark gray
+        gradient.addColorStop(0.55, '#808080'); // Medium gray  
+        gradient.addColorStop(0.65, '#A0A0A0'); // Medium-light gray
+        gradient.addColorStop(0.75, '#C0C0C0'); // Light gray
+        gradient.addColorStop(0.85, '#D0D0D0'); // Very light gray
+        gradient.addColorStop(0.92, '#E8E8E8'); // Nearly white
+        gradient.addColorStop(0.97, '#F0F0F0'); // Almost white
+        gradient.addColorStop(1, 'white');      // Transform completely
 
         ctx.fillStyle = gradient;
         ctx.beginPath();
