@@ -13,7 +13,7 @@ export async function generateImage(
   modelType: 'image' | 'video' = 'image',
   videoDuration: number = 5,
   preserveFace: boolean = true,
-  facePreservationMode: 'preserve_face' | 'replace_face' = 'preserve_face'
+  facePreservationMode: 'preserve_face' | 'replace_face' | 'transform_face' = 'preserve_face'
 ): Promise<string> {
   console.log(`🎯 Using ${facePreservationMode} mode for image transformation`);
   // Input validation
@@ -32,8 +32,12 @@ export async function generateImage(
   try {
     if (facePreservationMode === 'preserve_face') {
       return await generateWithFacePreservation(prompt, originalContent);
-    } else {
+    } else if (facePreservationMode === 'replace_face') {
       return await generateWithFaceReplacement(prompt, originalContent);
+    } else if (facePreservationMode === 'transform_face') {
+      return await generateWithFaceTransformation(prompt, originalContent);
+    } else {
+      throw new Error('Invalid face preservation mode');
     }
   } catch (error) {
     console.error(`${facePreservationMode} generation failed:`, error);
@@ -60,7 +64,7 @@ async function generateWithFacePreservation(prompt: string, originalContent: str
    
     // If face detection fails completely, fall back to image-to-image
     console.log('🔄 Falling back to image-to-image generation...');
-    return await generateWithImageToImage(prompt, originalContent, 0.65, true);
+    return await generateWithImageToImage(prompt, originalContent, 0.65, 'preserve');
   }
 }
 
@@ -69,14 +73,30 @@ async function generateWithFaceReplacement(prompt: string, originalContent: stri
     console.log('🔄 Replacing face, preserving background/clothing...');
    
     // Use high-strength image-to-image with face-focused prompts
-    return await generateWithImageToImage(prompt, originalContent, 0.7, false);
+    return await generateWithImageToImage(prompt, originalContent, 0.7, 'replace');
    
   } catch (error) {
     console.error('Face replacement failed:', error);
    
     // Fallback to moderate strength
     console.log('🔄 Falling back to moderate transformation...');
-    return await generateWithImageToImage(prompt, originalContent, 0.5, false);
+    return await generateWithImageToImage(prompt, originalContent, 0.5, 'replace');
+  }
+}
+
+async function generateWithFaceTransformation(prompt: string, originalContent: string): Promise<string> {
+  try {
+    console.log('🌀 Transforming face while preserving likeness...');
+   
+    // Use medium-strength image-to-image with transformation-focused prompts
+    return await generateWithImageToImage(prompt, originalContent, 0.6, 'transform');
+   
+  } catch (error) {
+    console.error('Face transformation failed:', error);
+   
+    // Fallback to lower strength for better preservation
+    console.log('🔄 Falling back to lower strength transformation...');
+    return await generateWithImageToImage(prompt, originalContent, 0.45, 'transform');
   }
 }
 
@@ -84,31 +104,38 @@ async function generateWithImageToImage(
   prompt: string,
   originalContent: string,
   strength: number = 0.5,
-  preserveFace: boolean = true
+  mode: 'preserve' | 'replace' | 'transform' = 'preserve'
 ): Promise<string> {
  
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      console.log(`🔄 Using image-to-image with strength ${strength} (preserve face: ${preserveFace})... Attempt ${attempt}/${MAX_RETRIES}`);
+      console.log(`🔄 Using image-to-image with strength ${strength} (mode: ${mode})... Attempt ${attempt}/${MAX_RETRIES}`);
      
       const imageBlob = base64ToBlob(originalContent);
      
       let enhancedPrompt = prompt;
       let negativePrompt = 'blurry, low quality, distorted, deformed, ugly, bad anatomy, extra limbs';
+      let cfgScale = 7;
      
-      if (preserveFace) {
+      if (mode === 'preserve') {
         enhancedPrompt = `${prompt}, preserve person's exact face and identity, keep same facial features, transform everything else completely, new outfit new background new setting, natural face integration, high quality, photorealistic`;
-        negativePrompt = 'different person, changed face, face swap, different identity, circular mask artifacts, dark rings, halo effects, mask boundaries, original clothes, original background, blurry, low quality';
-      } else {
+        negativePrompt += ', different person, changed face, face swap, different identity, circular mask artifacts, dark rings, halo effects, mask boundaries, original clothes, original background';
+        cfgScale = 10;
+      } else if (mode === 'replace') {
         enhancedPrompt = `${prompt}, generate new face that fits the scene, transform the person`;
-        negativePrompt = 'preserve original face, same identity, blurry, low quality, distorted';
+        negativePrompt += ', preserve original face, same identity';
+        cfgScale = 7;
+      } else if (mode === 'transform') {
+        enhancedPrompt = `${prompt}, transform the person's entire appearance including face to match the description, but maintain the same facial identity, likeness, features, structure, and proportions of the original person, same person in different style color or form, natural integration, high quality, photorealistic`;
+        negativePrompt += ', completely different person, new identity, face replacement, loss of likeness, deformed face, changed facial structure, blurry face';
+        cfgScale = 9;
       }
       const formData = new FormData();
       formData.append('image', imageBlob, 'image.png');
       formData.append('prompt', enhancedPrompt);
       formData.append('negative_prompt', negativePrompt);
-      formData.append('strength', preserveFace ? '0.8' : strength.toString());
-      formData.append('cfg_scale', preserveFace ? '10' : '7');
+      formData.append('strength', strength.toString());
+      formData.append('cfg_scale', cfgScale.toString());
       formData.append('output_format', 'png');
       formData.append('mode', 'image-to-image');
       console.log('📡 Making request to Stability AI...');
@@ -264,7 +291,7 @@ async function createPreciseFaceMask(originalContent: string): Promise<string> {
               const centerX = detection.detection.box.x + detection.detection.box.width / 2;
               const centerY = detection.detection.box.y + detection.detection.box.height / 2;
              
-              // Expand each point outward from center by 15% (increased from 10%)
+              // Expand each point outward from center by 15%
               const expandedPoints = allPoints.map(point => {
                 const deltaX = point.x - centerX;
                 const deltaY = point.y - centerY;
@@ -291,10 +318,10 @@ async function createPreciseFaceMask(originalContent: string): Promise<string> {
             });
            
             // Apply Gaussian blur for soft edges to improve blending
-            const blurRadius = Math.round(maskCanvas.width * 0.02); // Scale blur based on image width (2%)
+            const blurRadius = Math.round(maskCanvas.width * 0.02); // 2% of width
             console.log(`Applying Gaussian blur with radius ${blurRadius}px for soft mask edges`);
            
-            // Create temp canvas to hold sharp mask
+            // Create temp canvas for blur
             const tempCanvas = document.createElement('canvas');
             tempCanvas.width = maskCanvas.width;
             tempCanvas.height = maskCanvas.height;
@@ -305,7 +332,7 @@ async function createPreciseFaceMask(originalContent: string): Promise<string> {
             }
             tempCtx.drawImage(maskCanvas, 0, 0);
            
-            // Clear mask canvas and draw blurred version
+            // Apply blur on mask canvas
             maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
             maskCtx.filter = `blur(${blurRadius}px)`;
             maskCtx.drawImage(tempCanvas, 0, 0);
@@ -315,14 +342,12 @@ async function createPreciseFaceMask(originalContent: string): Promise<string> {
            
           } else {
             console.log('⚠️ No faces detected, using fallback geometric mask');
-            // Fallback to geometric mask
             const fallbackMask = await createFallbackMask(originalContent);
             resolve(fallbackMask);
           }
          
         } catch (faceError) {
           console.log('⚠️ Face detection failed, using fallback mask:', faceError);
-          // Fallback to geometric mask
           const fallbackMask = await createFallbackMask(originalContent);
           resolve(fallbackMask);
         }
@@ -337,7 +362,6 @@ async function createPreciseFaceMask(originalContent: string): Promise<string> {
   });
 }
 
-// Fallback geometric mask when face detection fails
 async function createFallbackMask(originalContent: string): Promise<string> {
   return new Promise((resolve, reject) => {
     try {
@@ -354,7 +378,7 @@ async function createFallbackMask(originalContent: string): Promise<string> {
         // Create white background (areas to modify)
         ctx.fillStyle = 'white';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
-        // Create optimized face area with softer gradient for better blending
+        // Create optimized face area with softer gradient
         const centerX = canvas.width / 2;
         const centerY = canvas.height * 0.37;
         const faceWidth = canvas.width * 0.32;
@@ -364,7 +388,7 @@ async function createFallbackMask(originalContent: string): Promise<string> {
           centerX, centerY, faceWidth * 0.8
         );
         gradient.addColorStop(0, 'black');
-        gradient.addColorStop(0.3, 'black'); // Softer transition
+        gradient.addColorStop(0.3, 'black');
         gradient.addColorStop(0.6, '#404040');
         gradient.addColorStop(0.8, '#A0A0A0');
         gradient.addColorStop(1, 'white');
@@ -395,8 +419,8 @@ async function inpaintAroundFace(prompt: string, originalContent: string, maskCo
       formData.append('mask', maskBlob, 'mask.png');
       formData.append('prompt', `${prompt}, completely transform the background and environment, change all clothing and accessories, new setting, new location, dramatic scene change, keep the person's face exactly the same, seamlessly blended face, natural integration, no visible boundaries`);
       formData.append('negative_prompt', 'preserve original background, keep original clothing, maintain original setting, same environment, face changes, different person, facial modifications, visible mask edges, blending artifacts, halo effects, dark rings, unnatural transitions, blurry, low quality');
-      formData.append('strength', '0.85'); // Slightly reduced strength for better blending and fewer artifacts
-      formData.append('cfg_scale', '10'); // Higher for better prompt adherence
+      formData.append('strength', '0.85');
+      formData.append('cfg_scale', '10');
       formData.append('output_format', 'png');
       const response = await axios.post(
         'https://api.stability.ai/v2beta/stable-image/edit/inpaint',
