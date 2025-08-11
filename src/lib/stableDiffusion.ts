@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axiosInstance from './axiosConfig';
 
 const STABILITY_API_KEY = import.meta.env.VITE_STABILITY_API_KEY;
 
@@ -237,7 +237,7 @@ async function inpaintAroundFace(prompt: string, originalContent: string, maskCo
 
   } catch (error) {
     console.error('Inpainting around face failed:', error);
-    throw new Error('Failed to inpaint around face area');
+    throw error;
   }
 }
 
@@ -257,7 +257,7 @@ async function inpaintFaceArea(prompt: string, originalContent: string, maskCont
     formData.append('cfg_scale', '9');
     formData.append('output_format', 'png');
 
-    const response = await axios.post(
+    const response = await axiosInstance.post(
       'https://api.stability.ai/v2beta/stable-image/edit/inpaint',
       formData,
       {
@@ -283,7 +283,7 @@ async function inpaintFaceArea(prompt: string, originalContent: string, maskCont
 
   } catch (error) {
     console.error('Inpainting face area failed:', error);
-    throw new Error('Failed to inpaint face area');
+    throw error;
   }
 }
 
@@ -317,7 +317,7 @@ async function generateWithImageToImage(
     formData.append('cfg_scale', preserveFace ? '12' : '7'); // Much higher CFG for face preservation
     formData.append('output_format', 'png');
 
-    const response = await axios.post(
+    const response = await axiosInstance.post(
       'https://api.stability.ai/v2beta/stable-image/generate/sd3',
       formData,
       {
@@ -343,7 +343,7 @@ async function generateWithImageToImage(
 
   } catch (error) {
     console.error('Image-to-image generation failed:', error);
-    throw new Error('Failed to generate with image-to-image');
+    throw error;
   }
 }
 
