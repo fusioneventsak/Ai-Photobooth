@@ -247,12 +247,15 @@ async function createInvertedFaceMask(originalContent: string): Promise<string> 
         const centerX = canvas.width / 2;
         const centerY = canvas.height * 0.38; // Face + upper torso
 
-        // Create a very soft gradient for seamless blending
-        const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, faceWidth / 1.5);
+        // Create a very soft, extended gradient for completely invisible blending
+        const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, faceWidth / 1.2);
         gradient.addColorStop(0, 'black');     // Core face - preserve
-        gradient.addColorStop(0.3, 'black');   // Still preserve 
-        gradient.addColorStop(0.6, '#808080'); // Gray transition
-        gradient.addColorStop(0.8, '#C0C0C0'); // Light gray transition
+        gradient.addColorStop(0.2, 'black');   // Inner face - preserve
+        gradient.addColorStop(0.4, '#404040'); // Dark gray transition
+        gradient.addColorStop(0.6, '#808080'); // Medium gray transition  
+        gradient.addColorStop(0.75, '#A0A0A0'); // Light gray transition
+        gradient.addColorStop(0.85, '#C0C0C0'); // Very light gray
+        gradient.addColorStop(0.95, '#E0E0E0'); // Nearly white
         gradient.addColorStop(1, 'white');     // Modify everything else
 
         ctx.fillStyle = gradient;
