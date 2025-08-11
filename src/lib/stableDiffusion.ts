@@ -1,5 +1,5 @@
 import axios, { AxiosError } from 'axios';
-import { createPreciseFaceMask } from './faceDetection';
+import { detectFaces, createFaceMask, loadFaceApiModels } from './faceDetection';
 
 const STABILITY_API_KEY = import.meta.env.VITE_STABILITY_API_KEY;
 
@@ -50,9 +50,12 @@ export async function generateImage(
 
 async function generateWithFacePreservation(prompt: string, originalContent: string): Promise<string> {
   try {
-    console.log('🎭 Using face-api.js for precise face mask creation...');
+    console.log('🎭 Using face-api.js for precise face detection and masking...');
     
-    // Use your existing face detection implementation
+    // Ensure face detection models are loaded
+    await loadFaceApiModels();
+    
+    // Create precise face mask using face-api.js
     const preciseMask = await createPreciseFaceMask(originalContent);
     
     // Use inpainting with the precise face mask
@@ -60,7 +63,13 @@ async function generateWithFacePreservation(prompt: string, originalContent: str
     return result;
     
   } catch (error) {
-    console.error('Face-api.js mask creation failed, trying fallback:', error);
+    console.error('Face-api.js processing failed, using fallback:', error);
+    
+    // If face detection fails completely, fall back to image-to-image
+    console.log('🔄 Falling back to image-to-image generation...');
+    return await generateWithImageToImage(prompt, originalContent, 0.65, true);
+  }
+} creation failed, trying fallback:', error);
     
     // If face detection fails, fall back to image-to-image
     console.log('🔄 Falling back to high-quality image-to-image...');
@@ -218,8 +227,114 @@ function base64ToBlob(base64Data: string): Blob {
   }
 }
 
-// Remove the old face mask creation functions since you have face-api.js implementation
-// The createInvertedFaceMask function is replaced by your createPreciseFaceMask from faceDetection.ts
+async function createPreciseFaceMask(originalContent: string): Promise<string> {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const img = new Image();
+      img.onload = async () => {
+        try {
+          // Create canvas for processing
+          const canvas = document.createElement('canvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            reject(new Error('Failed to get canvas context'));
+            return;
+          }
+          
+          // Draw image to canvas for face detection
+          ctx.drawImage(img, 0, 0);
+          
+          // Try to detect faces using face-api.js
+          console.log('🔍 Detecting faces with face-api.js...');
+          const detections = await detectFaces(canvas);
+          
+          if (detections && detections.length > 0) {
+            console.log(`✅ Found ${detections.length} face(s), creating precise mask`);
+            
+            // Create precise mask using detected faces
+            const maskDataUrl = createFaceMask(canvas, detections);
+            resolve(maskDataUrl);
+            
+          } else {
+            console.log('⚠️ No faces detected, using fallback geometric mask');
+            // Fallback to geometric mask
+            const fallbackMask = await createFallbackMask(originalContent);
+            resolve(fallbackMask);
+          }
+          
+        } catch (faceError) {
+          console.log('⚠️ Face detection failed, using fallback mask:', faceError);
+          // Fallback to geometric mask
+          const fallbackMask = await createFallbackMask(originalContent);
+          resolve(fallbackMask);
+        }
+      };
+      
+      img.onerror = () => reject(new Error('Failed to load image for face detection'));
+      img.src = originalContent;
+      
+    } catch (error) {
+      reject(new Error('Failed to create precise face mask: ' + error.message));
+    }
+  });
+}
+
+// Fallback geometric mask when face detection fails
+async function createFallbackMask(originalContent: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    try {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        reject(new Error('Failed to get canvas context'));
+        return;
+      }
+
+      const img = new Image();
+      img.onload = () => {
+        canvas.width = img.width;
+        canvas.height = img.height;
+
+        // Create white background (areas to modify)
+        ctx.fillStyle = 'white';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Create optimized face area
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height * 0.37;
+        const faceWidth = canvas.width * 0.32;
+        const faceHeight = canvas.height * 0.42;
+
+        const gradient = ctx.createRadialGradient(
+          centerX, centerY, 0,
+          centerX, centerY, faceWidth * 0.8
+        );
+        gradient.addColorStop(0, 'black');
+        gradient.addColorStop(0.4, 'black');
+        gradient.addColorStop(0.7, '#808080');
+        gradient.addColorStop(0.9, '#C0C0C0');
+        gradient.addColorStop(1, 'white');
+
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.ellipse(centerX, centerY, faceWidth/2, faceHeight/2, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        const result = canvas.toDataURL('image/png');
+        resolve(result);
+      };
+
+      img.onerror = () => reject(new Error('Failed to load image for fallback mask'));
+      img.src = originalContent;
+
+    } catch (error) {
+      reject(new Error('Failed to create fallback mask'));
+    }
+  });
+}
 
 async function inpaintAroundFace(prompt: string, originalContent: string, maskContent: string): Promise<string> {
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
