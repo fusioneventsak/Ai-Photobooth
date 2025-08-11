@@ -49,18 +49,21 @@ export async function generateImage(
 
 async function generateWithFacePreservation(prompt: string, originalContent: string): Promise<string> {
   try {
-    console.log('🎭 Using advanced image-to-image with face preservation...');
+    console.log('🎭 Using refined inpainting with optimized face mask...');
     
-    // Skip inpainting entirely - use high-strength image-to-image with smart prompts
-    const result = await generateWithImageToImage(prompt, originalContent, 0.8, true);
+    // Create an optimized inverted face mask 
+    const invertedMask = await createInvertedFaceMask(originalContent);
+    
+    // Use inpainting to create completely new scene while keeping the face
+    const result = await inpaintAroundFace(prompt, originalContent, invertedMask);
     return result;
     
   } catch (error) {
-    console.error('Face preservation failed:', error);
+    console.error('Face preservation inpainting failed:', error);
     
-    // Fallback to slightly different strength
-    console.log('🔄 Falling back to alternative strength...');
-    return await generateWithImageToImage(prompt, originalContent, 0.75, true);
+    // Fallback to image-to-image only if inpainting completely fails
+    console.log('🔄 Falling back to image-to-image...');
+    return await generateWithImageToImage(prompt, originalContent, 0.65, true);
   }
 }
 
@@ -234,31 +237,25 @@ async function createInvertedFaceMask(originalContent: string): Promise<string> 
         ctx.fillStyle = 'white';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        // Create a more precise face-only area to avoid holes
+        // Create optimized face area - not too big, not too small
         ctx.save();
         
-        // Smaller, more precise face area - just head/face
-        const faceWidth = canvas.width * 0.35; // Reduced from 0.45
-        const faceHeight = canvas.height * 0.42; // Reduced from 0.55
+        // Balanced face area 
+        const faceWidth = canvas.width * 0.38; 
+        const faceHeight = canvas.height * 0.48; 
         const centerX = canvas.width / 2;
-        const centerY = canvas.height * 0.36; // Face position only
+        const centerY = canvas.height * 0.37; // Face position
 
-        // Create an extremely soft gradient with many transition zones
-        const outerRadius = faceWidth / 1.1; // Very close to face edge
+        // Create a balanced gradient - soft but not too extreme
+        const outerRadius = faceWidth / 1.3; 
         const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, outerRadius);
         
-        // Much more gradual transition to eliminate visible edges
-        gradient.addColorStop(0, 'black');      // Core face - preserve completely
-        gradient.addColorStop(0.15, 'black');   // Inner face - preserve
-        gradient.addColorStop(0.25, '#202020'); // Very dark gray
-        gradient.addColorStop(0.35, '#404040'); // Dark gray
-        gradient.addColorStop(0.45, '#606060'); // Medium-dark gray
-        gradient.addColorStop(0.55, '#808080'); // Medium gray  
-        gradient.addColorStop(0.65, '#A0A0A0'); // Medium-light gray
-        gradient.addColorStop(0.75, '#C0C0C0'); // Light gray
+        // Simplified gradient with fewer steps for cleaner blending
+        gradient.addColorStop(0, 'black');      // Core face - preserve
+        gradient.addColorStop(0.3, 'black');    // Inner face - preserve
+        gradient.addColorStop(0.5, '#606060');  // Medium gray transition
+        gradient.addColorStop(0.7, '#A0A0A0');  // Light gray transition
         gradient.addColorStop(0.85, '#D0D0D0'); // Very light gray
-        gradient.addColorStop(0.92, '#E8E8E8'); // Nearly white
-        gradient.addColorStop(0.97, '#F0F0F0'); // Almost white
         gradient.addColorStop(1, 'white');      // Transform completely
 
         ctx.fillStyle = gradient;
