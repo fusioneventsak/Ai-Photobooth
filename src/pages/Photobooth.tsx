@@ -4,6 +4,7 @@ import { Camera, Image as ImageIcon, Wand2, AlertCircle, Video, RefreshCw, Users
 import { useConfigStore } from '../store/configStore';
 import { uploadPhoto } from '../lib/supabase';
 import { generateImage } from '../lib/stableDiffusion';
+import { loadFaceApiModels } from '../lib/faceDetection';
 
 export default function Photobooth() {
   const { config } = useConfigStore();
@@ -39,6 +40,12 @@ export default function Photobooth() {
     };
     
     checkEnv();
+    
+    // Load face detection models
+    loadFaceApiModels().catch(error => {
+      console.warn('Failed to load face detection models:', error);
+      // Don't set error state as this is not critical for basic functionality
+    });
   }, []);
 
   // Update current model type when config changes
