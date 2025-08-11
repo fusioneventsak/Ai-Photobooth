@@ -246,10 +246,109 @@ async function createPreciseFaceMask(originalContent: string): Promise<string> {
           const detections = await detectFaces(canvas);
           
           if (detections && detections.length > 0) {
-            console.log(`✅ Found ${detections.length} face(s), creating precise mask`);
+            console.log(`✅ Found ${detections.length} face(s), creating precise landmark-based mask`);
             
-            // Create precise mask using detected faces
-            const maskDataUrl = createFaceMask(canvas, detections);
+            // Create a new canvas for the mask
+            const maskCanvas = document.createElement('canvas');
+            maskCanvas.width = img.width;
+            maskCanvas.height = img.height;
+            const maskCtx = maskCanvas.getContext('2d');
+            if (!maskCtx) {
+              reject(new Error('Failed to get mask canvas context'));
+              return;
+            }
+            
+            // Start with white background (areas to modify)
+            maskCtx.fillStyle = 'white';
+            maskCtx.fillRect(0, 0, maskCanvas.width, maskCanvas.height);
+            
+            // Create precise face masks using landmarks
+            detections.forEach(detection => {
+              const landmarks = detection.landmarks;
+              
+              // Get facial landmark points
+              const jawLine = landmarks.getJawOutline();
+              const leftEyebrow = landmarks.getLeftEyeBrow();
+              const rightEyebrow = landmarks.getRightEyeBrow();
+              const noseBridge = landmarks.getNose();
+              const leftEye = landmarks.getLeftEye();
+              const rightEye = landmarks.getRightEye();
+              const mouth = landmarks.getMouth();
+              
+              // Create a precise face outline path
+              maskCtx.beginPath();
+              
+              // Start from bottom of jaw (chin)
+              const chinPoint = jawLine[Math.floor(jawLine.length / 2)];
+              maskCtx.moveTo(chinPoint.x, chinPoint.y);
+              
+              // Follow jaw line to left ear
+              jawLine.slice(0, Math.floor(jawLine.length / 2)).forEach(point => {
+                maskCtx.lineTo(point.x, point.y);
+              });
+              
+              // Connect to forehead area above left eyebrow
+              const leftBrowTop = leftEyebrow[0];
+              const foreheadLeft = {
+                x: leftBrowTop.x,
+                y: leftBrowTop.y - (leftBrowTop.y - chinPoint.y) * 0.15
+              };
+              maskCtx.lineTo(foreheadLeft.x, foreheadLeft.y);
+              
+              // Arc across forehead
+              const centerX = detection.detection.box.x + detection.detection.box.width / 2;
+              const foreheadCenter = {
+                x: centerX,
+                y: leftBrowTop.y - (leftBrowTop.y - chinPoint.y) * 0.2
+              };
+              maskCtx.lineTo(foreheadCenter.x, foreheadCenter.y);
+              
+              // Connect to right forehead
+              const rightBrowTop = rightEyebrow[rightEyebrow.length - 1];
+              const foreheadRight = {
+                x: rightBrowTop.x,
+                y: rightBrowTop.y - (rightBrowTop.y - chinPoint.y) * 0.15
+              };
+              maskCtx.lineTo(foreheadRight.x, foreheadRight.y);
+              
+              // Follow jaw line from right ear to chin
+              jawLine.slice(Math.floor(jawLine.length / 2)).forEach(point => {
+                maskCtx.lineTo(point.x, point.y);
+              });
+              
+              maskCtx.closePath();
+              
+              // Fill the face area with black (preserve)
+              maskCtx.fillStyle = 'black';
+              maskCtx.fill();
+              
+              // Add minimal feathering only at the edges
+              const faceCenter = {
+                x: detection.detection.box.x + detection.detection.box.width / 2,
+                y: detection.detection.box.y + detection.detection.box.height / 2
+              };
+              const faceRadius = Math.max(detection.detection.box.width, detection.detection.box.height) * 0.55;
+              
+              // Very subtle gradient only at the outer edge
+              const featherGradient = maskCtx.createRadialGradient(
+                faceCenter.x, faceCenter.y, faceRadius * 0.95,
+                faceCenter.x, faceCenter.y, faceRadius * 1.05
+              );
+              featherGradient.addColorStop(0, 'black');
+              featherGradient.addColorStop(0.8, '#404040');
+              featherGradient.addColorStop(1, 'white');
+              
+              maskCtx.globalCompositeOperation = 'source-atop';
+              maskCtx.fillStyle = featherGradient;
+              maskCtx.beginPath();
+              maskCtx.arc(faceCenter.x, faceCenter.y, faceRadius * 1.05, 0, Math.PI * 2);
+              maskCtx.fill();
+              
+              // Reset composite operation
+              maskCtx.globalCompositeOperation = 'source-over';
+            });
+            
+            const maskDataUrl = maskCanvas.toDataURL('image/png');
             resolve(maskDataUrl);
             
           } else {
