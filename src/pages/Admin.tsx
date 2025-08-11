@@ -1,5 +1,5 @@
 import React from 'react';
-import { Settings, Image as ImageIcon, Layout, Clock, Video, Wand2, Users, Eye } from 'lucide-react';
+import { Settings, Image as ImageIcon, Layout, Clock, Video, Wand2, Users, Eye, AlertTriangle } from 'lucide-react';
 import { useConfigStore } from '../store/configStore';
 import type { Config } from '../types/supabase';
 
@@ -9,11 +9,6 @@ export default function Admin() {
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState(false);
   const [formData, setFormData] = React.useState<Partial<Config>>({});
-  const [imageProvider, setImageProvider] = React.useState<'stability' | 'replicate'>('stability');
-  const [videoProvider, setVideoProvider] = React.useState<'stability' | 'replicate'>('stability');
-  const [enableFallback, setEnableFallback] = React.useState(false);
-  const [enableFacePreservation, setEnableFacePreservation] = React.useState(true);
-  const [facePreservationStrength, setFacePreservationStrength] = React.useState(0.3);
 
   React.useEffect(() => {
     if (config) {
@@ -27,61 +22,14 @@ export default function Admin() {
         gallery_speed: config.gallery_speed,
         gallery_layout: config.gallery_layout,
         model_type: config.model_type,
-        video_duration: config.video_duration,
-        image_provider: config.image_provider || 'stability',
-        video_provider: config.video_provider || 'stability',
-        use_provider_fallback: config.use_provider_fallback || false,
-        enable_face_preservation: config.enable_face_preservation ?? true,
-        face_preservation_strength: config.face_preservation_strength || 0.3
+        video_duration: config.video_duration
       });
-      
-      setImageProvider(config.image_provider || 'stability');
-      setVideoProvider(config.video_provider || 'stability');
-      setEnableFallback(config.use_provider_fallback || false);
-      setEnableFacePreservation(config.enable_face_preservation ?? true);
-      setFacePreservationStrength(config.face_preservation_strength || 0.3);
     }
   }, [config]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
-    setError(null);
-    setSuccess(false);
-  };
-
-  const handleProviderChange = (type: 'image' | 'video', value: 'stability' | 'replicate') => {
-    if (type === 'image') {
-      setImageProvider(value);
-      setFormData(prev => ({ ...prev, image_provider: value }));
-    } else {
-      setVideoProvider(value);
-      setFormData(prev => ({ ...prev, video_provider: value }));
-    }
-    setError(null);
-    setSuccess(false);
-  };
-
-  const handleFallbackChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const checked = e.target.checked;
-    setEnableFallback(checked);
-    setFormData(prev => ({ ...prev, use_provider_fallback: checked }));
-    setError(null);
-    setSuccess(false);
-  };
-
-  const handleFacePreservationToggle = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const checked = e.target.checked;
-    setEnableFacePreservation(checked);
-    setFormData(prev => ({ ...prev, enable_face_preservation: checked }));
-    setError(null);
-    setSuccess(false);
-  };
-
-  const handleFaceStrengthChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = parseFloat(e.target.value);
-    setFacePreservationStrength(value);
-    setFormData(prev => ({ ...prev, face_preservation_strength: value }));
     setError(null);
     setSuccess(false);
   };
@@ -125,14 +73,6 @@ export default function Admin() {
         }
       }
 
-      // Validate face preservation strength
-      if (formData.enable_face_preservation) {
-        const strength = Number(formData.face_preservation_strength);
-        if (isNaN(strength) || strength < 0.1 || strength > 1.0) {
-          throw new Error('Face preservation strength must be between 0.1 and 1.0');
-        }
-      }
-
       // Create updates object with only changed fields
       const updates: Partial<Config> = {};
       Object.entries(formData).forEach(([key, value]) => {
@@ -159,6 +99,11 @@ export default function Admin() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const getOptimalPromptForFacePreservation = () => {
+    const basePrompt = formData.global_prompt || '';
+    return `${basePrompt}, preserve the exact facial features and expressions of the person, maintain original face structure, same person identity, keep all facial characteristics`;
   };
 
   if (!config) {
@@ -188,6 +133,35 @@ export default function Admin() {
             Settings saved successfully!
           </div>
         )}
+
+        {/* Face Preservation Info Box */}
+        <div className="mb-8 bg-blue-900/30 border border-blue-500/50 rounded-lg p-6">
+          <h3 className="text-lg font-semibold text-blue-300 mb-3 flex items-center gap-2">
+            <Users className="w-5 h-5" />
+            Smart Face Preservation System
+          </h3>
+          <div className="space-y-3 text-sm text-blue-200">
+            <p>
+              <strong>✨ Automatic Face Preservation is now enabled!</strong> Your photobooth automatically preserves subjects' faces using advanced AI prompting.
+            </p>
+            <div className="bg-blue-800/30 rounded p-3">
+              <p className="font-medium mb-2">How it works:</p>
+              <ul className="space-y-1 text-xs">
+                <li>• AI analyzes facial features in the original photo</li>
+                <li>• Enhanced prompts preserve key facial characteristics</li>
+                <li>• Lower transformation strength maintains face structure</li>
+                <li>• Smart negative prompts prevent unwanted face changes</li>
+              </ul>
+            </div>
+            <div className="flex items-start gap-2 mt-3">
+              <Eye className="w-4 h-4 mt-0.5 flex-shrink-0" />
+              <p className="text-xs">
+                <strong>Current prompt will be enhanced with:</strong><br/>
+                "preserve the exact facial features and expressions of the person, maintain original face structure, same person identity"
+              </p>
+            </div>
+          </div>
+        </div>
 
         <form onSubmit={handleSubmit} className="space-y-8">
           {/* Branding Settings */}
@@ -275,153 +249,65 @@ export default function Admin() {
                 className="w-full bg-gray-700 rounded-lg px-4 py-2 text-white"
                 placeholder="Create a stunning astronaut portrait in space..."
               />
-              <p className="mt-1 text-xs text-gray-400">
-                This prompt will be used to generate AI content for all uploads. Face preservation will be automatically added.
-              </p>
+              <div className="mt-2 p-3 bg-green-900/30 border border-green-500/50 rounded">
+                <p className="text-xs text-green-300 font-medium mb-1">✨ Auto-Enhanced Prompt Preview:</p>
+                <p className="text-xs text-green-200 break-words">
+                  {getOptimalPromptForFacePreservation()}
+                </p>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium mb-1">Model Type</label>
+                <label className="block text-sm font-medium mb-1">Generation Type</label>
                 <select
                   name="model_type"
                   value={formData.model_type || 'image'}
                   onChange={handleChange}
                   className="w-full bg-gray-700 rounded-lg px-4 py-2 text-white"
                 >
-                  <option value="image">Image</option>
-                  <option value="video">Video</option>
+                  <option value="image">Image Generation</option>
+                  <option value="video">Video Generation</option>
                 </select>
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium mb-1">Image Provider</label>
-                <select
-                  name="image_provider"
-                  value={imageProvider}
-                  onChange={(e) => handleProviderChange('image', e.target.value as 'stability' | 'replicate')}
-                  className="w-full bg-gray-700 rounded-lg px-4 py-2 text-white"
-                >
-                  <option value="stability">Stability AI</option>
-                  <option value="replicate">Replicate</option>
-                </select>
+                <p className="text-xs text-gray-400 mt-1">
+                  Face preservation works best with image generation
+                </p>
               </div>
 
               {formData.model_type === 'video' && (
-                <>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Video Provider</label>
-                    <select
-                      name="video_provider"
-                      value={videoProvider}
-                      onChange={(e) => handleProviderChange('video', e.target.value as 'stability' | 'replicate')}
-                      className="w-full bg-gray-700 rounded-lg px-4 py-2 text-white"
-                    >
-                      <option value="stability">Stability AI</option>
-                      <option value="replicate">Replicate</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium mb-1">
-                      Video Duration (seconds)
-                    </label>
-                    <input
-                      type="number"
-                      name="video_duration"
-                      value={formData.video_duration || 5}
-                      onChange={handleChange}
-                      min={1}
-                      max={5}
-                      className="w-full bg-gray-700 rounded-lg px-4 py-2 text-white"
-                    />
-                  </div>
-                </>
+                <div>
+                  <label className="block text-sm font-medium mb-1">
+                    Video Duration (seconds)
+                  </label>
+                  <input
+                    type="number"
+                    name="video_duration"
+                    value={formData.video_duration || 5}
+                    onChange={handleChange}
+                    min={1}
+                    max={5}
+                    className="w-full bg-gray-700 rounded-lg px-4 py-2 text-white"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">
+                    1-5 seconds (Note: Face preservation is limited in videos)
+                  </p>
+                </div>
               )}
             </div>
 
-            <div className="flex items-center space-x-2 pt-2">
-              <input
-                type="checkbox"
-                id="use_provider_fallback"
-                name="use_provider_fallback"
-                checked={enableFallback}
-                onChange={handleFallbackChange}
-                className="w-4 h-4 rounded"
-              />
-              <label htmlFor="use_provider_fallback" className="text-sm font-medium">
-                Enable provider fallback
-              </label>
-            </div>
-            <p className="text-xs text-gray-400 -mt-2">
-              If your primary provider fails, automatically try the secondary provider.
-            </p>
-          </div>
-
-          {/* Face Preservation Settings */}
-          <div className="bg-gray-800 p-6 rounded-lg space-y-4">
-            <h2 className="text-xl font-semibold flex items-center gap-2">
-              <Users className="w-5 h-5" />
-              Face Preservation Settings
-            </h2>
-            
-            <div className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                id="enable_face_preservation"
-                name="enable_face_preservation"
-                checked={enableFacePreservation}
-                onChange={handleFacePreservationToggle}
-                className="w-4 h-4 rounded"
-              />
-              <label htmlFor="enable_face_preservation" className="text-sm font-medium">
-                Enable smart face preservation
-              </label>
-            </div>
-            <p className="text-xs text-gray-400 -mt-2">
-              When enabled, the AI will preserve the subject's facial features in generated images.
-            </p>
-
-            {enableFacePreservation && (
-              <div className="bg-gray-700 p-4 rounded-lg">
-                <label className="block text-sm font-medium mb-2">
-                  Preservation Strength: {Math.round(facePreservationStrength * 100)}%
-                </label>
-                <input
-                  type="range"
-                  min="0.1"
-                  max="0.8"
-                  step="0.05"
-                  value={facePreservationStrength}
-                  onChange={handleFaceStrengthChange}
-                  className="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
-                />
-                <div className="flex justify-between text-xs text-gray-400 mt-1">
-                  <span>More Creative (10%)</span>
-                  <span>Balanced (40%)</span>
-                  <span>More Accurate (80%)</span>
-                </div>
-                <div className="mt-2 text-xs text-gray-300">
-                  <strong>Current Setting:</strong>{' '}
-                  {facePreservationStrength <= 0.2 ? 'Very Creative - Face features may change significantly' :
-                   facePreservationStrength <= 0.4 ? 'Balanced - Good mix of creativity and face preservation' :
-                   facePreservationStrength <= 0.6 ? 'Face-Focused - Strong preservation of facial features' :
-                   'Maximum Preservation - Minimal changes to face'}
-                </div>
-              </div>
-            )}
-
-            <div className="bg-blue-900/30 border border-blue-500/50 rounded-lg p-4">
-              <h4 className="text-sm font-medium text-blue-300 mb-2 flex items-center gap-2">
-                <Eye className="w-4 h-4" />
-                How Face Preservation Works
+            {/* AI Provider Info */}
+            <div className="bg-gray-700 p-4 rounded-lg">
+              <h4 className="text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4" />
+                AI Provider Configuration
               </h4>
-              <ul className="text-xs text-blue-200 space-y-1">
-                <li>• AI analyzes the subject's facial features</li>
-                <li>• Generates content while preserving key facial characteristics</li>
-                <li>• Lower strength = more creative liberty with face changes</li>
-                <li>• Higher strength = stronger preservation of original features</li>
-                <li>• Works best with clear, well-lit face photos</li>
+              <p className="text-xs text-gray-400 mb-2">
+                Your photobooth automatically uses the best available AI service:
+              </p>
+              <ul className="text-xs text-gray-400 space-y-1">
+                <li>• <strong>Primary:</strong> Stability AI (better face preservation)</li>
+                <li>• <strong>Fallback:</strong> Replicate (if Stability AI fails)</li>
+                <li>• <strong>Face preservation:</strong> Enhanced prompts + lower transformation strength</li>
               </ul>
             </div>
           </div>
@@ -488,7 +374,7 @@ export default function Admin() {
             {saving ? (
               <>
                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                Saving...
+                Saving Settings...
               </>
             ) : (
               <>
