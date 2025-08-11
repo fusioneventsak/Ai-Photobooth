@@ -1,5 +1,5 @@
 import axios, { AxiosError } from 'axios';
-import { loadFaceApiModels, detectFaces, createFaceMask } from './faceDetection';
+import { createPreciseFaceMask } from './faceDetection';
 
 const STABILITY_API_KEY = import.meta.env.VITE_STABILITY_API_KEY;
 
@@ -50,17 +50,19 @@ export async function generateImage(
 
 async function generateWithFacePreservation(prompt: string, originalContent: string): Promise<string> {
   try {
-    console.log('🎭 Trying organic mask inpainting first...');
+    console.log('🎭 Using face-api.js for precise face mask creation...');
     
-    // Try inpainting with improved organic mask
-    const invertedMask = await createInvertedFaceMask(originalContent);
-    const result = await inpaintAroundFace(prompt, originalContent, invertedMask);
+    // Use your existing face detection implementation
+    const preciseMask = await createPreciseFaceMask(originalContent);
+    
+    // Use inpainting with the precise face mask
+    const result = await inpaintAroundFace(prompt, originalContent, preciseMask);
     return result;
     
   } catch (error) {
-    console.error('Organic mask inpainting failed, trying image-to-image:', error);
+    console.error('Face-api.js mask creation failed, trying fallback:', error);
     
-    // If inpainting fails or has artifacts, fall back to smart image-to-image
+    // If face detection fails, fall back to image-to-image
     console.log('🔄 Falling back to high-quality image-to-image...');
     return await generateWithImageToImage(prompt, originalContent, 0.65, true);
   }
@@ -216,112 +218,8 @@ function base64ToBlob(base64Data: string): Blob {
   }
 }
 
-async function createInvertedFaceMask(originalContent: string): Promise<string> {
-  // Try to use face-api.js for precise face detection, fallback to geometric mask
-  return new Promise((resolve, reject) => {
-    try {
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        reject(new Error('Failed to get canvas context'));
-        return;
-      }
-
-      const img = new Image();
-      img.onload = () => {
-        canvas.width = img.width;
-        canvas.height = img.height;
-
-        // Try face detection first
-        detectFaces(img)
-          .then(detections => {
-            if (detections.length > 0) {
-              console.log(`🎯 Detected ${detections.length} face(s), creating precise mask`);
-              const result = createFaceMask(canvas, detections);
-              resolve(result);
-            } else {
-              console.log('⚠️ No faces detected, using geometric fallback');
-              createGeometricMask(canvas, ctx);
-              const result = canvas.toDataURL('image/png');
-              resolve(result);
-            }
-          })
-          .catch(error => {
-            console.warn('Face detection failed, using geometric fallback:', error);
-            createGeometricMask(canvas, ctx);
-            const result = canvas.toDataURL('image/png');
-            resolve(result);
-          });
-      };
-
-      img.onerror = () => reject(new Error('Failed to load image for mask creation'));
-      img.src = originalContent;
-
-    } catch (error) {
-      reject(new Error('Failed to create face mask'));
-    }
-  });
-}
-
-function createGeometricMask(canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D) {
-  // Create white background (areas to modify)
-  ctx.fillStyle = 'white';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  ctx.save();
-  
-  // Face parameters
-  const centerX = canvas.width / 2;
-  const centerY = canvas.height * 0.37;
-  const faceWidth = canvas.width * 0.32;
-  const faceHeight = canvas.height * 0.42;
-
-  // Create a more natural face shape using multiple overlapping gradients
-  // This mimics a more organic face boundary
-  
-  // Main face oval
-  const mainGradient = ctx.createRadialGradient(
-    centerX, centerY, 0, 
-    centerX, centerY, faceWidth * 0.8
-  );
-  mainGradient.addColorStop(0, 'black');
-  mainGradient.addColorStop(0.4, 'black');
-  mainGradient.addColorStop(0.7, '#808080');
-  mainGradient.addColorStop(1, 'white');
-
-  // Draw main face area
-  ctx.fillStyle = mainGradient;
-  ctx.beginPath();
-  ctx.ellipse(centerX, centerY, faceWidth/2, faceHeight/2, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Add softer outer blending with multiple small gradients to break up the circle
-  for (let i = 0; i < 8; i++) {
-    const angle = (i * Math.PI * 2) / 8;
-    const offsetX = Math.cos(angle) * faceWidth * 0.3;
-    const offsetY = Math.sin(angle) * faceHeight * 0.3;
-    
-    const blendGradient = ctx.createRadialGradient(
-      centerX + offsetX, centerY + offsetY, 0,
-      centerX + offsetX, centerY + offsetY, faceWidth * 0.4
-    );
-    blendGradient.addColorStop(0, '#606060');
-    blendGradient.addColorStop(0.5, '#A0A0A0');
-    blendGradient.addColorStop(1, 'white');
-
-    ctx.globalCompositeOperation = 'multiply';
-    ctx.fillStyle = blendGradient;
-    ctx.beginPath();
-    ctx.ellipse(
-      centerX + offsetX, centerY + offsetY, 
-      faceWidth * 0.25, faceHeight * 0.25, 
-      0, 0, Math.PI * 2
-    );
-    ctx.fill();
-  }
-
-  ctx.restore();
-}
+// Remove the old face mask creation functions since you have face-api.js implementation
+// The createInvertedFaceMask function is replaced by your createPreciseFaceMask from faceDetection.ts
 
 async function inpaintAroundFace(prompt: string, originalContent: string, maskContent: string): Promise<string> {
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
@@ -336,8 +234,8 @@ async function inpaintAroundFace(prompt: string, originalContent: string, maskCo
       formData.append('mask', maskBlob, 'mask.png');
       formData.append('prompt', `${prompt}, completely transform the background and environment, change all clothing and accessories, new setting, new location, dramatic scene change, keep the person's face exactly the same`);
       formData.append('negative_prompt', 'preserve original background, keep original clothing, maintain original setting, same environment, face changes, different person, facial modifications');
-      formData.append('strength', '0.85'); // High strength for background transformation
-      formData.append('cfg_scale', '8'); // Moderate for better stability
+      formData.append('strength', '0.95'); // Very high strength for maximum background transformation
+      formData.append('cfg_scale', '10'); // Higher for better prompt adherence
       formData.append('output_format', 'png');
 
       const response = await axios.post(
