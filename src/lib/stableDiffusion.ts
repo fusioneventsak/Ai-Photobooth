@@ -8,18 +8,6 @@ const API_ENDPOINTS = {
   image: 'https://api.stability.ai/v2beta/stable-image/generate/core'
 };
 
-interface StabilityConfig {
-  imageStrength: number;
-  cfgScale: number;
-  steps: number;
-}
-
-const DEFAULT_CONFIG: StabilityConfig = {
-  imageStrength: 0.25, // Lower strength to preserve more of the original face
-  cfgScale: 7,
-  steps: 30
-};
-
 // Maximum number of retries
 const MAX_RETRIES = 2;
 const INITIAL_RETRY_DELAY = 2000;
@@ -34,35 +22,27 @@ async function retryWithExponentialBackoff<T>(
   } catch (error) {
     if (retries === 0) throw error;
 
-    // Only retry on specific error conditions
     if (axios.isAxiosError(error)) {
       const status = error.response?.status;
-      
-      // Don't retry on these status codes
       if (status && ![404, 500, 502, 503, 504, 429].includes(status)) {
         throw error;
       }
     }
 
-    // Wait before retrying
     await new Promise(resolve => setTimeout(resolve, delay));
-
-    // Retry with exponential backoff
     return retryWithExponentialBackoff(operation, retries - 1, delay * 2);
   }
 }
 
 async function generateWithStabilityAI(
   prompt: string,
-  originalContent: string,
-  preserveFace: boolean = true
+  originalContent: string
 ): Promise<string> {
   if (!STABILITY_API_KEY || STABILITY_API_KEY.includes('undefined')) {
     throw new Error('Stability API key not found. Please check your environment variables.');
   }
 
   try {
-    // Process base64 image
     const base64Data = originalContent.split(',')[1];
     if (!base64Data) {
       throw new Error('Invalid image data. Please try capturing the photo again.');
@@ -84,27 +64,23 @@ async function generateWithStabilityAI(
       throw new Error('Image size exceeds 10MB limit. Please try capturing a smaller photo.');
     }
 
-    // Enhanced prompt for face preservation
-    const facePreservationPrompt = preserveFace 
-      ? `${prompt}, preserve the exact facial features, maintain the person's face, keep original face structure, same person, identical facial characteristics`
-      : prompt;
+    // MUCH stronger face preservation prompt
+    const strongFacePreservationPrompt = `Transform this person into: ${prompt}. CRITICAL: Keep the EXACT same face, identical facial features, same skin tone, same eye color, same nose shape, same mouth, same jawline, same cheekbones, same eyebrows, same hair color if visible. This must be the SAME PERSON just in a different setting/outfit. Preserve all facial characteristics completely.`;
 
-    const negativePrompt = preserveFace
-      ? 'blurry face, different person, changed face, distorted face, deformed face, wrong face, ugly face, bad anatomy, low quality'
-      : 'blurry, low quality, distorted, deformed, ugly, bad anatomy, watermark, text';
+    const strongNegativePrompt = 'different person, changed face, different skin color, different ethnicity, different race, wrong face, face swap, different facial features, different nose, different eyes, different mouth, altered appearance, different person entirely, face change';
 
-    // Prepare form data for v2beta API
+    // Use very low strength to preserve maximum face details
     const formData = new FormData();
     formData.append('image', imageBlob, 'input.jpg');
-    formData.append('prompt', facePreservationPrompt);
-    formData.append('negative_prompt', negativePrompt);
-    formData.append('strength', preserveFace ? '0.3' : '0.5'); // Lower strength preserves more original
+    formData.append('prompt', strongFacePreservationPrompt);
+    formData.append('negative_prompt', strongNegativePrompt);
+    formData.append('strength', '0.15'); // VERY low strength - preserve 85% of original
     formData.append('aspect_ratio', '1:1');
     formData.append('output_format', 'png');
 
-    // Make API request with retry logic
     const response = await retryWithExponentialBackoff(async () => {
-      console.log('Attempting Stability AI generation with face preservation:', preserveFace);
+      console.log('🎭 Attempting Stability AI with STRONG face preservation...');
+      console.log('Strength: 0.15 (preserving 85% of original)');
       const result = await axios.post(
         API_ENDPOINTS.image,
         formData,
@@ -127,7 +103,6 @@ async function generateWithStabilityAI(
       return result;
     });
 
-    // Convert arraybuffer to base64
     const arrayBuffer = response.data;
     const base64String = btoa(
       new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
@@ -138,7 +113,6 @@ async function generateWithStabilityAI(
   } catch (error) {
     console.error('Stability AI error:', error);
     
-    // Handle Axios errors
     if (axios.isAxiosError(error)) {
       const status = error.response?.status;
       const message = error.response?.data?.message || 
@@ -177,24 +151,21 @@ async function generateWithStabilityAI(
   }
 }
 
-async function generateWithReplicateFacePreservation(
+async function generateWithReplicateStrong(
   prompt: string,
-  originalContent: string,
-  preserveFace: boolean = true
+  originalContent: string
 ): Promise<string> {
   if (!REPLICATE_API_KEY || REPLICATE_API_KEY.includes('undefined')) {
     throw new Error('Replicate API key not found.');
   }
 
-  // Enhanced prompt for better face preservation
-  const facePreservationPrompt = preserveFace 
-    ? `${prompt}, preserve the exact facial features and face of the person in the image, maintain original face, same person, keep facial identity`
-    : prompt;
+  // Use an even stronger prompt for Replicate
+  const ultraStrongPrompt = `Transform this person into: ${prompt}. ABSOLUTELY CRITICAL: This must be the EXACT SAME PERSON with identical facial features, same face structure, same skin tone, same ethnicity, same eye color, same nose, same mouth, same facial bone structure. DO NOT change the person's race, ethnicity, or facial features AT ALL. Keep their face 100% identical, only change the setting, clothing, or background.`;
 
   try {
-    console.log('Using Replicate with face preservation:', preserveFace);
+    console.log('🎭 Using Replicate with ULTRA-STRONG face preservation...');
     return await generateWithReplicate({
-      prompt: facePreservationPrompt,
+      prompt: ultraStrongPrompt,
       inputData: originalContent,
       type: 'image'
     });
@@ -208,10 +179,10 @@ export async function generateImage(
   originalContent: string,
   modelType: 'image' | 'video' = 'image',
   videoDuration: number = 5,
-  preserveFace: boolean = true // Default to preserving face
+  preserveFace: boolean = true
 ): Promise<string> {
-  console.log(`Starting ${modelType} generation with prompt:`, prompt);
-  console.log('Face preservation enabled:', preserveFace);
+  console.log(`🚀 Starting ${modelType} generation with MAXIMUM face preservation`);
+  console.log('Original prompt:', prompt);
 
   // Input validation
   if (!prompt.trim()) {
@@ -222,7 +193,7 @@ export async function generateImage(
     throw new Error('Invalid image format. Please provide a valid image.');
   }
 
-  // For video generation, use Replicate
+  // For video generation
   if (modelType === 'video') {
     if (!REPLICATE_API_KEY || REPLICATE_API_KEY.includes('undefined')) {
       throw new Error('Replicate API key not found. Please check your environment variables.');
@@ -242,41 +213,39 @@ export async function generateImage(
     }
   }
 
-  // For image generation with face preservation
+  // For image generation with MAXIMUM face preservation
   let lastError: Error | null = null;
 
-  // Try Stability AI first
+  // Try Stability AI first with very strong face preservation
   if (STABILITY_API_KEY && !STABILITY_API_KEY.includes('undefined')) {
     try {
-      console.log('Trying Stability AI with face preservation...');
-      return await generateWithStabilityAI(prompt, originalContent, preserveFace);
+      console.log('🎯 Trying Stability AI with MAXIMUM face preservation (strength: 0.15)...');
+      return await generateWithStabilityAI(prompt, originalContent);
     } catch (error) {
-      console.log('Stability AI failed, will try Replicate fallback...');
+      console.log('❌ Stability AI failed, trying Replicate with ultra-strong face preservation...');
       lastError = error instanceof Error ? error : new Error('Stability AI failed');
       
-      // Don't fallback on authentication errors
       if (lastError.message.includes('Invalid API key') || 
           lastError.message.includes('Account credits depleted')) {
         throw lastError;
       }
     }
   } else {
-    console.log('No Stability AI key found, using Replicate...');
+    console.log('No Stability AI key found, using Replicate with ultra-strong face preservation...');
   }
 
-  // Fallback to Replicate for image generation
+  // Fallback to Replicate with ultra-strong face preservation
   if (REPLICATE_API_KEY && !REPLICATE_API_KEY.includes('undefined')) {
     try {
-      console.log('Using Replicate as fallback with face preservation...');
-      return await generateWithReplicateFacePreservation(prompt, originalContent, preserveFace);
+      console.log('🔄 Using Replicate with ULTRA-STRONG face preservation...');
+      return await generateWithReplicateStrong(prompt, originalContent);
     } catch (error) {
-      console.error('Replicate fallback also failed:', error);
+      console.error('❌ Replicate also failed:', error);
       
-      // If both services failed, throw a combined error
       const replicateError = error instanceof Error ? error.message : 'Replicate service failed';
       const stabilityError = lastError ? lastError.message : 'Stability AI not configured';
       
-      throw new Error(`Both AI services failed. Stability AI: ${stabilityError}. Replicate: ${replicateError}`);
+      throw new Error(`Both AI services failed to preserve your face. Stability AI: ${stabilityError}. Replicate: ${replicateError}`);
     }
   }
 
