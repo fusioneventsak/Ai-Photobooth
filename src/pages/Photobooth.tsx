@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import Webcam from 'react-webcam';
-import { Camera, Image as ImageIcon, Wand2, AlertCircle, Video, RefreshCw } from 'lucide-react';
+import { Camera, Image as ImageIcon, Wand2, AlertCircle, Video, RefreshCw, Users, Sliders } from 'lucide-react';
 import { useConfigStore } from '../store/configStore';
 import { uploadPhoto } from '../lib/supabase';
-import { generateImage } from '../lib/stableDiffusion';
+import { generateImage, generateImageWithFaceSwap, generateImageWithoutFaceSwap } from '../lib/stableDiffusion';
 
 export default function Photobooth() {
   const { config } = useConfigStore();
@@ -13,6 +13,11 @@ export default function Photobooth() {
   const [error, setError] = useState<string | null>(null);
   const [currentModelType, setCurrentModelType] = useState<'image' | 'video'>('image');
   const [generationAttempts, setGenerationAttempts] = useState(0);
+  
+  // Face swap controls
+  const [enableFaceSwap, setEnableFaceSwap] = useState(true);
+  const [faceSwapAccuracy, setFaceSwapAccuracy] = useState(0.8);
+  const [showAdvancedControls, setShowAdvancedControls] = useState(false);
   
   const webcamRef = React.useRef<Webcam>(null);
 
@@ -81,7 +86,7 @@ export default function Photobooth() {
             return;
           }
 
-          // Use 1024x1024 for Stability AI compatibility
+          // Use 1024x1024 for optimal AI processing
           const targetWidth = 1024;
           const targetHeight = 1024;
 
@@ -175,22 +180,51 @@ export default function Photobooth() {
       console.log('Resizing captured image...');
       const processedContent = await resizeImage(mediaData);
 
-      console.log(`Generating AI ${currentModelType} with prompt:`, config.global_prompt);
+      console.log(`Generating AI ${currentModelType} with face swap: ${enableFaceSwap ? 'enabled' : 'disabled'}`);
+      console.log('Prompt:', config.global_prompt);
+      console.log('Face swap accuracy:', faceSwapAccuracy);
       
-      // Add timeout wrapper for the generation
-      const generationPromise = generateImage(
-        config.global_prompt,
-        processedContent,
-        currentModelType,
-        config.video_duration
-      );
+      let aiContent: string;
 
-      // Set a timeout for the entire generation process (3 minutes)
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('Generation timed out. Please try again.')), 180000);
-      });
+      if (currentModelType === 'video') {
+        // Video generation (no face swap for now)
+        const generationPromise = generateImage(
+          config.global_prompt,
+          processedContent,
+          'video',
+          config.video_duration
+        );
 
-      const aiContent = await Promise.race([generationPromise, timeoutPromise]);
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error('Video generation timed out. Please try again.')), 300000); // 5 minutes
+        });
+
+        aiContent = await Promise.race([generationPromise, timeoutPromise]);
+      } else {
+        // Image generation with face swap options
+        let generationPromise: Promise<string>;
+
+        if (enableFaceSwap) {
+          console.log('🎭 Using face swap generation...');
+          generationPromise = generateImageWithFaceSwap(
+            config.global_prompt,
+            processedContent,
+            faceSwapAccuracy
+          );
+        } else {
+          console.log('🖼️ Using standard generation (no face swap)...');
+          generationPromise = generateImageWithoutFaceSwap(
+            config.global_prompt,
+            processedContent
+          );
+        }
+
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error('Generation timed out. Please try again.')), 180000); // 3 minutes
+        });
+
+        aiContent = await Promise.race([generationPromise, timeoutPromise]);
+      }
       
       if (!aiContent) {
         throw new Error('Generated content is empty. Please try again.');
@@ -284,6 +318,8 @@ export default function Photobooth() {
           errorMessage = 'AI service is temporarily unavailable. Please try again in a few minutes.';
         } else if (message.includes('empty') || message.includes('invalid')) {
           errorMessage = 'Invalid response from AI service. Please try capturing a new photo.';
+        } else if (message.includes('face swap') && message.includes('failed')) {
+          errorMessage = 'Face swap failed. Try adjusting the accuracy setting or disable face swap.';
         } else if (message.includes('both ai services failed')) {
           errorMessage = 'All AI services are currently unavailable. Please try again later.';
         } else {
@@ -342,9 +378,9 @@ export default function Photobooth() {
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <div className="max-w-4xl mx-auto">
-        {/* Model type indicator */}
-        <div className="mb-6 text-center">
+      <div className="max-w-6xl mx-auto">
+        {/* Model type and face swap controls */}
+        <div className="mb-6 flex flex-col items-center gap-4">
           <div className="inline-flex items-center gap-2 px-4 py-2 bg-gray-800 rounded-full">
             {currentModelType === 'video' ? (
               <>
@@ -358,6 +394,65 @@ export default function Photobooth() {
               </>
             )}
           </div>
+
+          {/* Face Swap Controls - Only show for image mode */}
+          {currentModelType === 'image' && (
+            <div className="bg-gray-800 rounded-lg p-4 w-full max-w-md">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Users className="w-5 h-5 text-blue-400" />
+                  <span className="text-white font-medium">Face Swap</span>
+                </div>
+                <button
+                  onClick={() => setShowAdvancedControls(!showAdvancedControls)}
+                  className="text-gray-400 hover:text-white p-1"
+                >
+                  <Sliders className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="flex items-center gap-3 mb-3">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={enableFaceSwap}
+                    onChange={(e) => setEnableFaceSwap(e.target.checked)}
+                    className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                  />
+                  <span className="text-white text-sm">
+                    {enableFaceSwap ? 'Enabled' : 'Disabled'}
+                  </span>
+                </label>
+                
+                <span className="text-gray-400 text-xs">
+                  {enableFaceSwap ? 'Your face will be preserved' : 'Standard generation only'}
+                </span>
+              </div>
+
+              {showAdvancedControls && enableFaceSwap && (
+                <div className="space-y-3 border-t border-gray-700 pt-3">
+                  <div>
+                    <label className="block text-white text-sm font-medium mb-2">
+                      Face Accuracy: {Math.round(faceSwapAccuracy * 100)}%
+                    </label>
+                    <input
+                      type="range"
+                      min="0.3"
+                      max="1.0"
+                      step="0.1"
+                      value={faceSwapAccuracy}
+                      onChange={(e) => setFaceSwapAccuracy(parseFloat(e.target.value))}
+                      className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                    />
+                    <div className="flex justify-between text-xs text-gray-400 mt-1">
+                      <span>More Creative</span>
+                      <span>More Accurate</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Main content grid */}
@@ -420,7 +515,12 @@ export default function Photobooth() {
                     <div className="text-center p-4">
                       <RefreshCw className="w-12 h-12 mx-auto mb-3 animate-spin text-blue-500" />
                       <p className="text-white">Processing your {currentModelType}...</p>
-                      <p className="text-gray-400 text-sm mt-2">This may take 1-2 minutes</p>
+                      <p className="text-gray-400 text-sm mt-2">
+                        {enableFaceSwap && currentModelType === 'image' ? 
+                          'Face swap enabled - preserving your features...' : 
+                          'This may take 1-2 minutes'
+                        }
+                      </p>
                     </div>
                   ) : error ? (
                     <div className="text-center p-4">
@@ -438,10 +538,19 @@ export default function Photobooth() {
                         {currentModelType === 'video' ? (
                           <Video className="w-8 h-8" />
                         ) : (
-                          <ImageIcon className="w-8 h-8" />
+                          enableFaceSwap ? (
+                            <Users className="w-8 h-8 text-blue-400" />
+                          ) : (
+                            <ImageIcon className="w-8 h-8" />
+                          )
                         )}
                       </div>
-                      <p>AI generated {currentModelType} will appear here</p>
+                      <p>
+                        AI generated {currentModelType} will appear here
+                        {enableFaceSwap && currentModelType === 'image' && 
+                          <span className="block text-blue-400 text-sm mt-1">with your face preserved</span>
+                        }
+                      </p>
                     </div>
                   )}
                 </div>
@@ -478,7 +587,9 @@ export default function Photobooth() {
                 style={{ backgroundColor: config?.primary_color || '#3B82F6' }}
               >
                 <Wand2 className="w-5 h-5" />
-                {processing ? 'Processing...' : `Generate AI ${currentModelType}`}
+                {processing ? 'Processing...' : 
+                  `Generate ${enableFaceSwap && currentModelType === 'image' ? 'Face Swap' : 'AI'} ${currentModelType}`
+                }
               </button>
             </>
           )}
@@ -487,8 +598,16 @@ export default function Photobooth() {
         {/* Current prompt display */}
         {config?.global_prompt && (
           <div className="mt-8 bg-gray-800 rounded-lg p-4">
-            <h3 className="text-white font-medium mb-2">Current Generation Prompt:</h3>
+            <h3 className="text-white font-medium mb-2 flex items-center gap-2">
+              <Wand2 className="w-4 h-4" />
+              Current Generation Prompt:
+            </h3>
             <p className="text-gray-300 text-sm">{config.global_prompt}</p>
+            {enableFaceSwap && currentModelType === 'image' && (
+              <p className="text-blue-400 text-xs mt-2">
+                🎭 Face swap enabled - your facial features will be preserved in the generated scene
+              </p>
+            )}
           </div>
         )}
       </div>
