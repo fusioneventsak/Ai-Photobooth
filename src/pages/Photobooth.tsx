@@ -145,6 +145,43 @@ export default function Photobooth() {
     }
   }, [webcamRef]);
 
+  // Helper function for better error icons
+  const getErrorIcon = (error: string) => {
+    if (error.includes('API') || error.includes('key')) return '🔑';
+    if (error.includes('credits') || error.includes('balance')) return '💳';
+    if (error.includes('network') || error.includes('connection')) return '🌐';
+    if (error.includes('timeout')) return '⏱️';
+    if (error.includes('rate limit')) return '🚦';
+    return '❌';
+  };
+
+  // Enhanced error display component
+  const ErrorDisplay = ({ error, attempts }: { error: string; attempts: number }) => (
+    <div className="text-center p-4">
+      <div className="text-4xl mb-2">{getErrorIcon(error)}</div>
+      <AlertCircle className="w-12 h-12 mx-auto mb-2 text-red-500" />
+      <p className="text-red-500 max-w-md mx-auto">{error}</p>
+      {attempts > 0 && attempts < 3 && (
+        <div className="mt-3">
+          <p className="text-gray-400 text-sm">
+            You can try again ({3 - attempts} attempts remaining)
+          </p>
+          <div className="w-full bg-gray-700 rounded-full h-2 mt-2">
+            <div 
+              className="bg-red-500 h-2 rounded-full transition-all duration-300" 
+              style={{ width: `${(attempts / 3) * 100}%` }}
+            />
+          </div>
+        </div>
+      )}
+      {attempts >= 3 && (
+        <p className="text-yellow-500 text-sm mt-2">
+          Maximum attempts reached. Please capture a new photo.
+        </p>
+      )}
+    </div>
+  );
+
   const processMedia = async () => {
     if (!mediaData) {
       setError('No photo captured');
@@ -165,6 +202,9 @@ export default function Photobooth() {
     setError(null);
 
     try {
+      // Increment attempt counter
+      setGenerationAttempts(prev => prev + 1);
+
       // Resize the captured photo
       console.log('Resizing captured image...');
       const processedContent = await resizeImage(mediaData);
@@ -215,28 +255,28 @@ export default function Photobooth() {
 
       console.log('✅ AI generation completed successfully');
       setProcessedMedia(aiContent);
+      setError(null);
 
       // Upload to gallery if successful
       try {
-        const uploadResult = await uploadPhoto(
-          aiContent, 
-          config.global_prompt,
-          currentModelType
-        );
-        
-        if (uploadResult) {
-          console.log('✅ Photo uploaded to gallery successfully');
+        if (config.enable_uploads && aiContent) {
+          console.log('Uploading to Supabase...');
+          const uploadResult = await uploadPhoto(
+            aiContent, 
+            config.global_prompt,
+            currentModelType
+          );
+          
+          if (uploadResult) {
+            console.log('✅ Photo uploaded to gallery successfully');
+          }
         }
       } catch (uploadError) {
-        console.warn('Failed to upload to gallery:', uploadError);
-        // Don't show error to user as the main generation succeeded
+        console.warn('Upload failed (non-critical):', uploadError);
+        // Don't show upload errors to user as the generation was successful
       }
 
-      // Increment attempts for successful generation too (to track usage)
-      setGenerationAttempts(prev => prev + 1);
-
     } catch (error) {
-      setGenerationAttempts(prev => prev + 1);
       console.error('❌ Processing failed:', error);
 
       let errorMessage = 'Failed to generate AI content. Please try again.';
@@ -244,22 +284,30 @@ export default function Photobooth() {
       if (error instanceof Error) {
         const message = error.message.toLowerCase();
         
-        if (message.includes('api key') || message.includes('unauthorized') || message.includes('invalid key')) {
-          errorMessage = 'Invalid API key configuration. Please check your API keys in the admin panel.';
-        } else if (message.includes('credits') || message.includes('billing')) {
-          errorMessage = 'Account credits depleted. Please check your API account balance.';
-        } else if (message.includes('rate limit') || message.includes('too many requests')) {
-          errorMessage = 'Too many requests. Please wait a few minutes and try again.';
+        // Enhanced error message mapping
+        if (message.includes('api key') || message.includes('unauthorized') || message.includes('401')) {
+          errorMessage = 'API authentication failed. Please check your API key configuration.';
+        } else if (message.includes('credits') || message.includes('insufficient') || message.includes('402')) {
+          errorMessage = 'Insufficient API credits. Please check your account balance.';
+        } else if (message.includes('rate limit') || message.includes('429')) {
+          errorMessage = 'Too many requests. Please wait a moment and try again.';
         } else if (message.includes('timeout') || message.includes('timed out')) {
-          errorMessage = 'Request timed out. The AI service might be busy. Please try again.';
-        } else if (message.includes('network') || message.includes('connection')) {
+          errorMessage = 'Request timed out. Please try again.';
+        } else if (message.includes('network') || message.includes('connection') || message.includes('econnaborted') || message.includes('enotfound')) {
           errorMessage = 'Network connection issue. Please check your internet and try again.';
-        } else if (message.includes('temporarily unavailable') || message.includes('service')) {
+        } else if (message.includes('temporarily unavailable') || message.includes('service') || message.includes('5')) {
           errorMessage = 'AI service is temporarily unavailable. Please try again in a few minutes.';
         } else if (message.includes('empty') || message.includes('invalid')) {
           errorMessage = 'Invalid response from AI service. Please try capturing a new photo.';
+        } else if (message.includes('strength') || message.includes('parameter')) {
+          errorMessage = 'Invalid generation parameters. Please try again.';
+        } else if (message.includes('prompt')) {
+          errorMessage = 'Invalid prompt configuration. Please check your settings.';
         } else {
-          errorMessage = error.message;
+          // Use the original error message if it's user-friendly
+          if (error.message.length < 100 && !message.includes('stack') && !message.includes('undefined')) {
+            errorMessage = error.message;
+          }
         }
       }
       
@@ -429,15 +477,7 @@ export default function Photobooth() {
                       </p>
                     </div>
                   ) : error ? (
-                    <div className="text-center p-4">
-                      <AlertCircle className="w-12 h-12 mx-auto mb-2 text-red-500" />
-                      <p className="text-red-500 max-w-md">{error}</p>
-                      {generationAttempts > 0 && generationAttempts < 3 && (
-                        <p className="text-gray-400 text-sm mt-2">
-                          You can try again ({3 - generationAttempts} attempts remaining)
-                        </p>
-                      )}
-                    </div>
+                    <ErrorDisplay error={error} attempts={generationAttempts} />
                   ) : (
                     <div className="text-center">
                       <div className="flex items-center justify-center gap-2 mb-2">
