@@ -43,20 +43,20 @@ export async function generateImage(
 
 async function generateWithFacePreservation(prompt: string, originalContent: string): Promise<string> {
   try {
-    console.log('🎭 Preserving face, transforming background/clothing...');
+    console.log('🎭 Preserving face using advanced image-to-image approach...');
     
-    // Step 1: Create an inverted face mask (protect face, modify everything else)
-    const faceMask = await createInvertedFaceMask(originalContent);
+    // Skip inpainting entirely for now and use a refined image-to-image approach
+    // This avoids the circular mask issue completely
     
-    // Step 2: Use inpainting to modify everything EXCEPT the face
-    return await inpaintAroundFace(prompt, originalContent, faceMask);
+    const result = await generateWithImageToImage(prompt, originalContent, 0.65, true);
+    return result;
     
   } catch (error) {
     console.error('Face preservation failed:', error);
     
-    // Fallback to low-strength image-to-image
-    console.log('🔄 Falling back to low-strength image-to-image...');
-    return await generateWithImageToImage(prompt, originalContent, 0.25, true);
+    // Fallback to even lower strength
+    console.log('🔄 Falling back to minimal transformation...');
+    return await generateWithImageToImage(prompt, originalContent, 0.45, true);
   }
 }
 
@@ -95,20 +95,28 @@ async function createInvertedFaceMask(originalContent: string): Promise<string> 
         canvas.width = img.width;
         canvas.height = img.height;
 
-        // Create white background (areas to modify)
+        // Create white background (areas to modify - everything)
         ctx.fillStyle = 'white';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        // Create black oval for face area (areas to preserve)
+        // Create a much smaller, more precise black area for just the face
         ctx.fillStyle = 'black';
         ctx.save();
         
-        // Face detection area - upper center portion
-        const faceWidth = canvas.width * 0.4;
-        const faceHeight = canvas.height * 0.45;
+        // Much smaller face area - just the core facial features
+        const faceWidth = canvas.width * 0.25; // Reduced from 0.4
+        const faceHeight = canvas.height * 0.3; // Reduced from 0.45
         const centerX = canvas.width / 2;
-        const centerY = canvas.height * 0.35; // Upper third for face
+        const centerY = canvas.height * 0.32; // Slightly higher
 
+        // Create a more precise face mask with feathered edges
+        const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, faceWidth / 2);
+        gradient.addColorStop(0, 'black');     // Core face - preserve
+        gradient.addColorStop(0.7, 'black');   // Still preserve
+        gradient.addColorStop(0.9, 'gray');    // Transition zone
+        gradient.addColorStop(1, 'white');     // Modify everything else
+
+        ctx.fillStyle = gradient;
         ctx.beginPath();
         ctx.ellipse(
           centerX,
@@ -189,7 +197,7 @@ async function createFaceMask(originalContent: string): Promise<string> {
 
 async function inpaintAroundFace(prompt: string, originalContent: string, maskContent: string): Promise<string> {
   try {
-    console.log('🖌️ Inpainting around face area (preserving face)...');
+    console.log('🖌️ Inpainting around face area (preserving minimal face region)...');
     
     const originalBlob = base64ToBlob(originalContent);
     const maskBlob = base64ToBlob(maskContent);
@@ -197,10 +205,10 @@ async function inpaintAroundFace(prompt: string, originalContent: string, maskCo
     const formData = new FormData();
     formData.append('image', originalBlob, 'original.png');
     formData.append('mask', maskBlob, 'mask.png');
-    formData.append('prompt', `${prompt}, maintain the exact same face and person, only change background and clothing`);
-    formData.append('negative_prompt', 'face changes, different person, facial distortions, head modifications, face swap');
-    formData.append('strength', '0.85'); // Higher strength for background/clothing changes
-    formData.append('cfg_scale', '8');
+    formData.append('prompt', `${prompt}, completely transform the background and environment, change all clothing and accessories, only preserve the core facial features`);
+    formData.append('negative_prompt', 'preserve original background, keep original clothing, maintain original setting, preserve body, same environment');
+    formData.append('strength', '0.95'); // Very high strength for maximum transformation
+    formData.append('cfg_scale', '9'); // Higher for better prompt adherence
     formData.append('output_format', 'png');
 
     const response = await axios.post(
@@ -294,8 +302,8 @@ async function generateWithImageToImage(
     let negativePrompt = 'blurry, low quality, distorted';
     
     if (preserveFace) {
-      enhancedPrompt = `${prompt}, keep the exact same person and facial features, preserve identity, same face and expressions, only change background and clothing`;
-      negativePrompt = 'face changes, different person, facial distortions, face swap, changed identity';
+      enhancedPrompt = `${prompt}, keep the exact same person, same facial features, same face shape, same eyes, same nose, same mouth, preserve facial identity completely, transform background completely, change clothing completely, new environment, new setting`;
+      negativePrompt = 'different face, different person, face changes, facial distortions, face swap, changed identity, face modifications, altered facial features, preserve original background, keep original clothing, same environment, original setting';
     } else {
       enhancedPrompt = `${prompt}, generate new face that fits the scene, transform the person`;
       negativePrompt = 'preserve original face, same identity, blurry, low quality';
@@ -306,7 +314,7 @@ async function generateWithImageToImage(
     formData.append('prompt', enhancedPrompt);
     formData.append('negative_prompt', negativePrompt);
     formData.append('strength', strength.toString());
-    formData.append('cfg_scale', '7');
+    formData.append('cfg_scale', preserveFace ? '12' : '7'); // Much higher CFG for face preservation
     formData.append('output_format', 'png');
 
     const response = await axios.post(
