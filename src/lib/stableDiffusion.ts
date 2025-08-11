@@ -24,27 +24,8 @@ export async function generateImage(
     throw new Error('Prompt cannot be empty for generation');
   }
   
-  if (modelType === 'image' && !originalContent?.startsWith('data:image/')) {
+  if (!originalContent?.startsWith('data:image/')) {
     throw new Error('Invalid image format. Please provide a valid image.');
-  }
-  
-  if (modelType === 'video' && !originalContent?.startsWith('data:image/')) {
-    throw new Error('Invalid image format for video generation. Please provide a valid image.');
-  }
-
-  // Check API keys based on generation type
-  if (modelType === 'image') {
-    if (!STABILITY_API_KEY || STABILITY_API_KEY.includes('undefined')) {
-      throw new Error('Stability AI API key not found. Please check your .env file and make sure VITE_STABILITY_API_KEY is set.');
-    }
-  } else if (modelType === 'video') {
-    // For video, we'll try Stability AI first, then fallback to Replicate
-    if (!STABILITY_API_KEY || STABILITY_API_KEY.includes('undefined')) {
-      if (!REPLICATE_API_KEY || REPLICATE_API_KEY.includes('undefined')) {
-        throw new Error('Neither Stability AI nor Replicate API key found. Please check your .env file.');
-      }
-      console.log('⚠️ Stability AI key not found, will use Replicate for video generation');
-    }
   }
 
   try {
@@ -70,138 +51,15 @@ async function generateVideo(
   preserveFace: boolean,
   facePreservationMode: 'preserve_face' | 'replace_face'
 ): Promise<string> {
-  // Try Stability AI first if key is available
-  if (STABILITY_API_KEY && !STABILITY_API_KEY.includes('undefined')) {
-    try {
-      console.log('🎬 Attempting video generation with Stability AI...');
-      return await generateVideoWithStabilityAI(prompt, originalContent, videoDuration, preserveFace);
-    } catch (error) {
-      console.error('Stability AI video generation failed:', error);
-      
-      // Fallback to Replicate if available
-      if (REPLICATE_API_KEY && !REPLICATE_API_KEY.includes('undefined')) {
-        console.log('🔄 Falling back to Replicate for video generation...');
-        return await generateVideoWithReplicate(prompt, originalContent, videoDuration);
-      } else {
-        throw new Error('Video generation failed and no fallback service available. Please check your API keys.');
-      }
-    }
-  } else {
-    // Use Replicate as primary if Stability AI not available
-    if (REPLICATE_API_KEY && !REPLICATE_API_KEY.includes('undefined')) {
-      console.log('🎬 Using Replicate for video generation...');
-      return await generateVideoWithReplicate(prompt, originalContent, videoDuration);
-    } else {
-      throw new Error('No video generation service available. Please configure either Stability AI or Replicate API keys.');
-    }
+  // Video generation requires Replicate API key
+  if (!REPLICATE_API_KEY || REPLICATE_API_KEY.includes('undefined')) {
+    throw new Error('Replicate API key is required for video generation. Please add VITE_REPLICATE_API_KEY to your .env file.');
   }
-}
 
-async function generateVideoWithStabilityAI(
-  prompt: string,
-  originalContent: string,
-  videoDuration: number,
-  preserveFace: boolean
-): Promise<string> {
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      console.log(`🎬 Generating video with Stability AI (attempt ${attempt}/${MAX_RETRIES})...`);
-      
-      const imageBlob = base64ToBlob(originalContent);
-      
-      // Enhanced prompt for video generation
-      let enhancedPrompt = prompt;
-      let negativePrompt = 'static image, no movement, blurry, low quality, distorted, deformed, ugly, bad anatomy, extra limbs';
-      
-      if (preserveFace) {
-        enhancedPrompt = `${prompt}, preserve person's exact face and identity, keep same facial features, smooth natural movement, cinematic motion, high quality video, photorealistic animation`;
-        negativePrompt = 'different person, changed face, face swap, different identity, jerky movement, unnatural motion, static, frozen, blurry, low quality';
-      } else {
-        enhancedPrompt = `${prompt}, smooth natural movement, cinematic motion, high quality video, photorealistic animation`;
-        negativePrompt = 'jerky movement, unnatural motion, static, frozen, blurry, low quality';
-      }
-
-      const formData = new FormData();
-      formData.append('image', imageBlob, 'image.png');
-      formData.append('prompt', enhancedPrompt);
-      formData.append('negative_prompt', negativePrompt);
-      formData.append('cfg_scale', '7.5');
-      formData.append('motion_bucket_id', '127'); // Controls motion intensity
-      formData.append('seed', Math.floor(Math.random() * 2147483647).toString());
-      formData.append('fps', '24');
-      formData.append('video_length', Math.min(videoDuration, 4).toString()); // Cap at 4 seconds for Stability AI
-      
-      console.log('📡 Making video request to Stability AI...');
-      
-      const response = await axios.post(
-        'https://api.stability.ai/v2beta/image-to-video',
-        formData,
-        {
-          headers: {
-            Accept: 'video/*',
-            Authorization: `Bearer ${STABILITY_API_KEY}`,
-            'Content-Type': 'multipart/form-data',
-          },
-          responseType: 'arraybuffer',
-          timeout: 180000, // 3 minutes for video generation
-          validateStatus: (status) => status < 500,
-        }
-      );
-
-      if (response.status === 401) {
-        throw new Error('Invalid Stability AI API key. Please check your configuration.');
-      }
-      
-      if (response.status === 402) {
-        throw new Error('Insufficient Stability AI credits. Please check your account.');
-      }
-      
-      if (response.status === 429) {
-        throw new Error('Rate limit exceeded. Please wait and try again.');
-      }
-      
-      if (response.status >= 400) {
-        const errorText = new TextDecoder().decode(response.data);
-        console.error('Stability AI Video API Error Response:', errorText);
-        throw new Error(`Stability AI Video API Error (${response.status}): ${errorText || 'Unknown error'}`);
-      }
-
-      if (!response?.data || response.data.byteLength === 0) {
-        throw new Error('Empty response from Stability AI video generation');
-      }
-
-      // Convert video data to blob URL for playback
-      const videoBlob = new Blob([response.data], { type: 'video/mp4' });
-      const videoUrl = URL.createObjectURL(videoBlob);
-      
-      console.log('✅ Video generation with Stability AI successful');
-      return videoUrl;
-      
-    } catch (error) {
-      console.error(`Stability AI video generation failed (attempt ${attempt}):`, error);
-      
-      if (attempt === MAX_RETRIES) {
-        throw error;
-      }
-      
-      // Wait before retrying
-      console.log(`⏳ Waiting ${RETRY_DELAY}ms before retry...`);
-      await sleep(RETRY_DELAY * attempt);
-    }
-  }
-  
-  throw new Error('Failed to generate video with Stability AI after all retry attempts');
-}
-
-async function generateVideoWithReplicate(
-  prompt: string,
-  originalContent: string,
-  videoDuration: number
-): Promise<string> {
   try {
-    console.log('🎬 Generating video with Replicate...');
+    console.log('🎬 Generating video with state-of-the-art models...');
     
-    // Import Replicate dynamically to avoid build issues if not installed
+    // Import Replicate dynamically to avoid build issues
     const { default: Replicate } = await import('replicate');
     
     const replicate = new Replicate({
@@ -211,48 +69,104 @@ async function generateVideoWithReplicate(
     // Upload image to Replicate
     const imageUrl = await uploadImageToReplicate(originalContent);
     
-    console.log('🔄 Running Replicate video model...');
-    
-    // Use Stable Video Diffusion model
-    const output = await replicate.run(
-      "stability-ai/stable-video-diffusion:3f0457e4619daac51203dedb1a4c069b4bb91bc25be5667a0b525e63c21e2257",
-      {
-        input: {
-          cond_aug: 0.02,
-          decoding_t: 14,
-          video_length: "14_frames_with_svd",
-          sizing_strategy: "maintain_aspect_ratio",
-          motion_bucket_id: 127,
-          frames_per_second: 6,
-          image: imageUrl
+    // Enhanced prompt based on face preservation mode
+    let enhancedPrompt = prompt;
+    if (facePreservationMode === 'preserve_face') {
+      enhancedPrompt = `${prompt}, maintain the person's exact facial features and identity, preserve face, smooth natural movement, high quality video, photorealistic, cinematic motion`;
+    } else {
+      enhancedPrompt = `${prompt}, transform the person, smooth natural movement, cinematic motion, high quality video, photorealistic`;
+    }
+
+    // Try multiple models in order of quality/availability
+    let videoUrl: string | null = null;
+
+    // 1. Try Mochi 1 (best quality, latest model)
+    try {
+      console.log('🎭 Attempting Mochi 1 generation...');
+      const output = await replicate.run(
+        "genmoai/mochi-1-preview:394a2937d4f2d0d5071a6b0bdeafe3fe9e3fa99492c165e7edaf89cf79b45b75",
+        {
+          input: {
+            image: imageUrl,
+            prompt: enhancedPrompt,
+            num_inference_steps: 64,
+            guidance_scale: 4.5,
+            fps: 30,
+            num_frames: Math.min(162, Math.max(25, videoDuration * 30)), // Up to 5.4 seconds
+            seed: Math.floor(Math.random() * 2147483647)
+          }
         }
+      );
+
+      if (output && typeof output === 'string' && output.startsWith('http')) {
+        videoUrl = await downloadAndCreateBlobUrl(output, 'video');
+        console.log('✅ Mochi 1 generation successful');
       }
-    );
-
-    if (!output || typeof output !== 'string' || !output.startsWith('http')) {
-      console.error('Unexpected video output from Replicate:', output);
-      throw new Error('Invalid video response from Replicate API');
+    } catch (mochiError) {
+      console.log('⚠️ Mochi 1 unavailable, trying LTX-Video...');
     }
 
-    // Download the video and create blob URL
-    console.log('⬇️ Downloading generated video...');
-    const response = await fetch(output);
-    
-    if (!response.ok) {
-      throw new Error(`Failed to download video: ${response.statusText}`);
+    // 2. Try LTX-Video (ultra-fast)
+    if (!videoUrl) {
+      try {
+        console.log('⚡ Attempting LTX-Video generation...');
+        const output = await replicate.run(
+          "lightricks/ltx-video:82b7d0d09c04bb4a6e00e48db6c60a6e32bc78e78b2b5b3df6ebc0bc6b0d48cb",
+          {
+            input: {
+              image: imageUrl,
+              prompt: enhancedPrompt,
+              negative_prompt: "blurry, low quality, distorted, deformed, ugly, bad anatomy, watermark, text, logo, static image, no movement",
+              num_inference_steps: 25,
+              guidance_scale: 3.0,
+              fps: 24,
+              frame_rate: 24,
+              width: 768,
+              height: 512,
+              seed: Math.floor(Math.random() * 2147483647)
+            }
+          }
+        );
+
+        if (output && typeof output === 'string' && output.startsWith('http')) {
+          videoUrl = await downloadAndCreateBlobUrl(output, 'video');
+          console.log('✅ LTX-Video generation successful');
+        }
+      } catch (ltxError) {
+        console.log('⚠️ LTX-Video unavailable, trying Stable Video Diffusion...');
+      }
     }
-    
-    const videoBlob = await response.blob();
-    if (videoBlob.size === 0) {
-      throw new Error('Received empty video file');
+
+    // 3. Fallback to Stable Video Diffusion (most reliable)
+    if (!videoUrl) {
+      console.log('🔄 Using Stable Video Diffusion fallback...');
+      const output = await replicate.run(
+        "stability-ai/stable-video-diffusion:3f0457e4619daac51203dedb1a4c069b4bb91bc25be5667a0b525e63c21e2257",
+        {
+          input: {
+            cond_aug: 0.02,
+            decoding_t: 14,
+            video_length: "14_frames_with_svd",
+            sizing_strategy: "maintain_aspect_ratio",
+            motion_bucket_id: 127,
+            frames_per_second: 6,
+            image: imageUrl
+          }
+        }
+      );
+
+      if (!output || typeof output !== 'string' || !output.startsWith('http')) {
+        throw new Error('All video generation models failed or returned invalid output');
+      }
+
+      videoUrl = await downloadAndCreateBlobUrl(output, 'video');
+      console.log('✅ Stable Video Diffusion generation successful');
     }
-    
-    const videoUrl = URL.createObjectURL(videoBlob);
-    console.log('✅ Video generation with Replicate successful');
+
     return videoUrl;
-    
+
   } catch (error) {
-    console.error('Replicate video generation error:', error);
+    console.error('Video generation error:', error);
     
     if (error instanceof Error) {
       if (error.message.includes('rate limit')) {
@@ -262,9 +176,10 @@ async function generateVideoWithReplicate(
       } else if (error.message.includes('Invalid API key')) {
         throw new Error('Invalid Replicate API key. Please check your configuration.');
       }
+      throw error;
     }
     
-    throw new Error('Failed to generate video with Replicate: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    throw new Error('Failed to generate video: ' + (error instanceof Error ? error.message : 'Unknown error'));
   }
 }
 
@@ -272,6 +187,7 @@ async function uploadImageToReplicate(base64Image: string): Promise<string> {
   try {
     // Convert base64 to blob
     const imageBlob = base64ToBlob(base64Image);
+    const file = new File([imageBlob], 'input.png', { type: 'image/png' });
     
     // Get upload URL from Replicate
     const uploadResponse = await fetch('https://api.replicate.com/v1/uploads', {
@@ -296,23 +212,73 @@ async function uploadImageToReplicate(base64Image: string): Promise<string> {
     // Upload the file
     const uploadFileResponse = await fetch(uploadData.upload_url, {
       method: 'PUT',
-      body: imageBlob
+      headers: {
+        'Content-Type': 'image/png'
+      },
+      body: file
     });
     
     if (!uploadFileResponse.ok) {
       throw new Error(`Failed to upload image file (${uploadFileResponse.status}): ${uploadFileResponse.statusText}`);
     }
     
+    // Wait for processing
+    await sleep(1000);
+    
     return uploadData.serving_url;
     
   } catch (error) {
+    console.error('Upload error details:', error);
     throw new Error('Failed to upload image to Replicate: ' + (error instanceof Error ? error.message : 'Unknown error'));
   }
 }
 
-// Existing image generation functions remain the same...
+async function downloadAndCreateBlobUrl(url: string, type: 'image' | 'video'): Promise<string> {
+  try {
+    console.log(`⬇️ Downloading generated ${type}...`);
+    
+    const response = await fetch(url, {
+      signal: AbortSignal.timeout(120000) // 2 minute timeout
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Failed to download ${type}: ${response.statusText}`);
+    }
+    
+    const blob = await response.blob();
+    if (blob.size === 0) {
+      throw new Error(`Received empty ${type} file`);
+    }
+    
+    if (type === 'video') {
+      // For videos, return blob URL for direct playback
+      return URL.createObjectURL(blob);
+    } else {
+      // For images, convert to base64 data URL
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          if (typeof reader.result === 'string') {
+            resolve(reader.result);
+          } else {
+            reject(new Error('Failed to convert image to data URL'));
+          }
+        };
+        reader.onerror = () => reject(new Error('Failed to read image blob'));
+        reader.readAsDataURL(blob);
+      });
+    }
+  } catch (error) {
+    throw new Error(`Failed to download ${type}: ` + (error instanceof Error ? error.message : 'Unknown error'));
+  }
+}
 
+// Existing image generation functions for Stability AI
 async function generateWithFacePreservation(prompt: string, originalContent: string): Promise<string> {
+  if (!STABILITY_API_KEY || STABILITY_API_KEY.includes('undefined')) {
+    throw new Error('Stability AI API key not found. Please check your .env file and make sure VITE_STABILITY_API_KEY is set.');
+  }
+
   try {
     console.log('🎭 Using face-api.js for precise face detection and masking...');
    
@@ -336,6 +302,10 @@ async function generateWithFacePreservation(prompt: string, originalContent: str
 }
 
 async function generateWithFaceReplacement(prompt: string, originalContent: string): Promise<string> {
+  if (!STABILITY_API_KEY || STABILITY_API_KEY.includes('undefined')) {
+    throw new Error('Stability AI API key not found. Please check your .env file and make sure VITE_STABILITY_API_KEY is set.');
+  }
+
   try {
     console.log('🔄 Replacing face, preserving background/clothing...');
    
@@ -374,6 +344,7 @@ async function generateWithImageToImage(
         enhancedPrompt = `${prompt}, generate new face that fits the scene, transform the person`;
         negativePrompt = 'preserve original face, same identity, blurry, low quality, distorted';
       }
+
       const formData = new FormData();
       formData.append('image', imageBlob, 'image.png');
       formData.append('prompt', enhancedPrompt);
@@ -382,6 +353,7 @@ async function generateWithImageToImage(
       formData.append('cfg_scale', preserveFace ? '10' : '7');
       formData.append('output_format', 'png');
       formData.append('mode', 'image-to-image');
+
       console.log('📡 Making request to Stability AI...');
      
       const response = await axios.post(
@@ -395,9 +367,10 @@ async function generateWithImageToImage(
           },
           responseType: 'arraybuffer',
           timeout: 120000,
-          validateStatus: (status) => status < 500, // Don't throw on 4xx errors
+          validateStatus: (status) => status < 500,
         }
       );
+
       if (response.status === 401) {
         throw new Error('Invalid API key. Please check your Stability AI API key.');
       }
@@ -415,9 +388,11 @@ async function generateWithImageToImage(
         console.error('API Error Response:', errorText);
         throw new Error(`API Error (${response.status}): ${errorText || 'Unknown error'}`);
       }
+
       if (!response?.data || response.data.byteLength === 0) {
         throw new Error('Empty response from Stability AI');
       }
+
       const arrayBuffer = response.data;
       const base64String = btoa(
         new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
@@ -425,11 +400,11 @@ async function generateWithImageToImage(
       const result = `data:image/png;base64,${base64String}`;
       console.log('✅ Image generation successful');
       return result;
+
     } catch (error) {
       console.error(`Image-to-image generation failed (attempt ${attempt}):`, error);
      
       if (attempt === MAX_RETRIES) {
-        // Final attempt failed
         if (error instanceof AxiosError) {
           if (error.code === 'ECONNABORTED' || error.code === 'ENOTFOUND') {
             throw new Error('Network connection failed. Please check your internet connection and try again.');
@@ -448,9 +423,8 @@ async function generateWithImageToImage(
         throw new Error(error instanceof Error ? error.message : 'Failed to generate with image-to-image');
       }
      
-      // Wait before retrying
       console.log(`⏳ Waiting ${RETRY_DELAY}ms before retry...`);
-      await sleep(RETRY_DELAY * attempt); // Exponential backoff
+      await sleep(RETRY_DELAY * attempt);
     }
   }
  
@@ -484,7 +458,6 @@ async function createPreciseFaceMask(originalContent: string): Promise<string> {
       const img = new Image();
       img.onload = async () => {
         try {
-          // Create canvas for processing
           const canvas = document.createElement('canvas');
           canvas.width = img.width;
           canvas.height = img.height;
@@ -495,17 +468,14 @@ async function createPreciseFaceMask(originalContent: string): Promise<string> {
             return;
           }
          
-          // Draw image to canvas for face detection
           ctx.drawImage(img, 0, 0);
          
-          // Try to detect faces using face-api.js
           console.log('🔍 Detecting faces with face-api.js...');
           const detections = await detectFaces(canvas);
          
           if (detections && detections.length > 0) {
             console.log(`✅ Found ${detections.length} face(s), creating precise landmark-based mask with soft edges`);
            
-            // Create a new canvas for the mask
             const maskCanvas = document.createElement('canvas');
             maskCanvas.width = img.width;
             maskCanvas.height = img.height;
@@ -515,27 +485,19 @@ async function createPreciseFaceMask(originalContent: string): Promise<string> {
               return;
             }
            
-            // Start with white background (areas to modify)
             maskCtx.fillStyle = 'white';
             maskCtx.fillRect(0, 0, maskCanvas.width, maskCanvas.height);
            
-            // Create sharp face masks using landmarks
             detections.forEach(detection => {
               const landmarks = detection.landmarks;
-             
-              // Get facial landmark points for outline
               const jawLine = landmarks.getJawOutline();
               const leftEyebrow = landmarks.getLeftEyeBrow();
               const rightEyebrow = landmarks.getRightEyeBrow();
-             
-              // Create an expanded face outline
               const allPoints = [...jawLine, ...leftEyebrow, ...rightEyebrow.reverse()];
              
-              // Calculate face center and expand the boundary slightly more for better coverage
               const centerX = detection.detection.box.x + detection.detection.box.width / 2;
               const centerY = detection.detection.box.y + detection.detection.box.height / 2;
              
-              // Expand each point outward from center by 15% (increased from 10%)
               const expandedPoints = allPoints.map(point => {
                 const deltaX = point.x - centerX;
                 const deltaY = point.y - centerY;
@@ -545,7 +507,6 @@ async function createPreciseFaceMask(originalContent: string): Promise<string> {
                 };
               });
              
-              // Draw sharp face outline - black to preserve
               maskCtx.fillStyle = 'black';
               maskCtx.beginPath();
              
@@ -561,11 +522,9 @@ async function createPreciseFaceMask(originalContent: string): Promise<string> {
               maskCtx.fill();
             });
            
-            // Apply Gaussian blur for soft edges to improve blending
-            const blurRadius = Math.round(maskCanvas.width * 0.02); // Scale blur based on image width (2%)
+            const blurRadius = Math.round(maskCanvas.width * 0.02);
             console.log(`Applying Gaussian blur with radius ${blurRadius}px for soft mask edges`);
            
-            // Create temp canvas to hold sharp mask
             const tempCanvas = document.createElement('canvas');
             tempCanvas.width = maskCanvas.width;
             tempCanvas.height = maskCanvas.height;
@@ -576,7 +535,6 @@ async function createPreciseFaceMask(originalContent: string): Promise<string> {
             }
             tempCtx.drawImage(maskCanvas, 0, 0);
            
-            // Clear mask canvas and draw blurred version
             maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
             maskCtx.filter = `blur(${blurRadius}px)`;
             maskCtx.drawImage(tempCanvas, 0, 0);
@@ -586,14 +544,12 @@ async function createPreciseFaceMask(originalContent: string): Promise<string> {
            
           } else {
             console.log('⚠️ No faces detected, using fallback geometric mask');
-            // Fallback to geometric mask
             const fallbackMask = await createFallbackMask(originalContent);
             resolve(fallbackMask);
           }
          
         } catch (faceError) {
           console.log('⚠️ Face detection failed, using fallback mask:', faceError);
-          // Fallback to geometric mask
           const fallbackMask = await createFallbackMask(originalContent);
           resolve(fallbackMask);
         }
@@ -608,7 +564,6 @@ async function createPreciseFaceMask(originalContent: string): Promise<string> {
   });
 }
 
-// Fallback geometric mask when face detection fails
 async function createFallbackMask(originalContent: string): Promise<string> {
   return new Promise((resolve, reject) => {
     try {
@@ -618,34 +573,39 @@ async function createFallbackMask(originalContent: string): Promise<string> {
         reject(new Error('Failed to get canvas context'));
         return;
       }
+
       const img = new Image();
       img.onload = () => {
         canvas.width = img.width;
         canvas.height = img.height;
-        // Create white background (areas to modify)
+        
         ctx.fillStyle = 'white';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
-        // Create optimized face area with softer gradient for better blending
+        
         const centerX = canvas.width / 2;
         const centerY = canvas.height * 0.37;
         const faceWidth = canvas.width * 0.32;
         const faceHeight = canvas.height * 0.42;
+        
         const gradient = ctx.createRadialGradient(
           centerX, centerY, 0,
           centerX, centerY, faceWidth * 0.8
         );
         gradient.addColorStop(0, 'black');
-        gradient.addColorStop(0.3, 'black'); // Softer transition
+        gradient.addColorStop(0.3, 'black');
         gradient.addColorStop(0.6, '#404040');
         gradient.addColorStop(0.8, '#A0A0A0');
         gradient.addColorStop(1, 'white');
+        
         ctx.fillStyle = gradient;
         ctx.beginPath();
         ctx.ellipse(centerX, centerY, faceWidth/2, faceHeight/2, 0, 0, Math.PI * 2);
         ctx.fill();
+        
         const result = canvas.toDataURL('image/png');
         resolve(result);
       };
+      
       img.onerror = () => reject(new Error('Failed to load image for fallback mask'));
       img.src = originalContent;
     } catch (error) {
@@ -661,14 +621,16 @@ async function inpaintAroundFace(prompt: string, originalContent: string, maskCo
      
       const originalBlob = base64ToBlob(originalContent);
       const maskBlob = base64ToBlob(maskContent);
+      
       const formData = new FormData();
       formData.append('image', originalBlob, 'original.png');
       formData.append('mask', maskBlob, 'mask.png');
       formData.append('prompt', `${prompt}, completely transform the background and environment, change all clothing and accessories, new setting, new location, dramatic scene change, keep the person's face exactly the same, seamlessly blended face, natural integration, no visible boundaries`);
       formData.append('negative_prompt', 'preserve original background, keep original clothing, maintain original setting, same environment, face changes, different person, facial modifications, visible mask edges, blending artifacts, halo effects, dark rings, unnatural transitions, blurry, low quality');
-      formData.append('strength', '0.85'); // Slightly reduced strength for better blending and fewer artifacts
-      formData.append('cfg_scale', '10'); // Higher for better prompt adherence
+      formData.append('strength', '0.85');
+      formData.append('cfg_scale', '10');
       formData.append('output_format', 'png');
+      
       const response = await axios.post(
         'https://api.stability.ai/v2beta/stable-image/edit/inpaint',
         formData,
@@ -683,6 +645,7 @@ async function inpaintAroundFace(prompt: string, originalContent: string, maskCo
           validateStatus: (status) => status < 500,
         }
       );
+
       if (response.status === 401) {
         throw new Error('Invalid API key. Please check your Stability AI API key.');
       }
@@ -700,9 +663,11 @@ async function inpaintAroundFace(prompt: string, originalContent: string, maskCo
         console.error('Inpaint API Error Response:', errorText);
         throw new Error(`Inpaint API Error (${response.status}): ${errorText || 'Unknown error'}`);
       }
+
       if (!response?.data || response.data.byteLength === 0) {
         throw new Error('Empty response from Stability AI inpaint');
       }
+
       const arrayBuffer = response.data;
       const base64String = btoa(
         new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
@@ -710,6 +675,7 @@ async function inpaintAroundFace(prompt: string, originalContent: string, maskCo
       const result = `data:image/png;base64,${base64String}`;
       console.log('✅ Face preservation inpainting successful');
       return result;
+
     } catch (error) {
       console.error(`Inpainting around face failed (attempt ${attempt}):`, error);
      
@@ -717,7 +683,6 @@ async function inpaintAroundFace(prompt: string, originalContent: string, maskCo
         throw error;
       }
      
-      // Wait before retrying
       console.log(`⏳ Waiting ${RETRY_DELAY}ms before retry...`);
       await sleep(RETRY_DELAY * attempt);
     }
