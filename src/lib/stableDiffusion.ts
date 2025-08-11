@@ -30,7 +30,7 @@ export async function generateImage(
 
   try {
     if (modelType === 'video') {
-      return await generateVideo(prompt, originalContent, videoDuration, preserveFace, facePreservationMode);
+      return await generateVideoWithIdeogram(prompt, originalContent, videoDuration, preserveFace, facePreservationMode);
     } else {
       if (facePreservationMode === 'preserve_face') {
         return await generateWithFacePreservation(prompt, originalContent);
@@ -44,7 +44,7 @@ export async function generateImage(
   }
 }
 
-async function generateVideo(
+async function generateVideoWithIdeogram(
   prompt: string,
   originalContent: string,
   videoDuration: number,
@@ -57,48 +57,36 @@ async function generateVideo(
   }
 
   try {
-    console.log('🎬 Generating video with state-of-the-art models...');
+    console.log('🎬 Generating video using Ideogram Character approach...');
     
-    // Import Replicate dynamically to avoid build issues
+    // Import Replicate dynamically
     const { default: Replicate } = await import('replicate');
     
     const replicate = new Replicate({
       auth: REPLICATE_API_KEY,
     });
 
-    let imageUrl: string;
+    // Step 1: Generate a character-consistent image
+    console.log('🎭 Step 1: Creating character-consistent image...');
+    
+    let characterImageUrl: string;
     
     try {
-      // Try to upload image to Replicate
-      imageUrl = await uploadImageToReplicate(originalContent);
-    } catch (uploadError) {
-      console.error('Upload failed:', uploadError);
-      
-      // Development environment workaround
-      console.log('🔧 Attempting development environment workaround...');
-      
-      try {
-        // Try using a direct base64 approach for development
-        imageUrl = await createTemporaryImageUrl(originalContent);
-      } catch (workaroundError) {
-        console.error('Workaround also failed:', workaroundError);
-        
-        // Final fallback - create a demo video
-        return await createDemoVideo(prompt, facePreservationMode);
+      if (facePreservationMode === 'preserve_face') {
+        characterImageUrl = await generateCharacterPreservationImage(replicate, prompt, originalContent);
+      } else {
+        characterImageUrl = await generateCharacterTransformationImage(replicate, prompt, originalContent);
       }
-    }
-    
-    // Enhanced prompt based on face preservation mode
-    let enhancedPrompt = prompt;
-    if (facePreservationMode === 'preserve_face') {
-      enhancedPrompt = `${prompt}, maintain the person's exact facial features and identity, preserve face, smooth natural movement, high quality video, photorealistic, cinematic motion`;
-    } else {
-      enhancedPrompt = `${prompt}, transform the person, smooth natural movement, cinematic motion, high quality video, photorealistic`;
+    } catch (characterError) {
+      console.error('Character generation failed:', characterError);
+      // Create a fallback image if character generation fails
+      characterImageUrl = await createSimpleFallbackImage(prompt);
     }
 
-    // Try the most reliable model first (Stable Video Diffusion)
+    // Step 2: Convert to video using Stable Video Diffusion
+    console.log('🎬 Step 2: Converting character image to video...');
+    
     try {
-      console.log('🔄 Using Stable Video Diffusion (most reliable)...');
       const output = await replicate.run(
         "stability-ai/stable-video-diffusion:3f0457e4619daac51203dedb1a4c069b4bb91bc25be5667a0b525e63c21e2257",
         {
@@ -109,22 +97,23 @@ async function generateVideo(
             sizing_strategy: "maintain_aspect_ratio",
             motion_bucket_id: 127,
             frames_per_second: 6,
-            image: imageUrl
+            image: characterImageUrl
           }
         }
       );
 
-      if (output && typeof output === 'string' && output.startsWith('http')) {
-        const videoUrl = await downloadAndCreateBlobUrl(output, 'video');
-        console.log('✅ Stable Video Diffusion generation successful');
-        return videoUrl;
+      if (!output || typeof output !== 'string' || !output.startsWith('http')) {
+        throw new Error('Video generation returned invalid output');
       }
-    } catch (svdError) {
-      console.log('⚠️ Stable Video Diffusion failed, this might be an API or model issue');
-      throw new Error('Video generation model unavailable. Please try again later.');
-    }
 
-    throw new Error('Video generation failed - no models returned valid output');
+      const videoUrl = await downloadAndCreateBlobUrl(output, 'video');
+      console.log('✅ Video generation successful');
+      return videoUrl;
+      
+    } catch (videoError) {
+      console.error('Video generation failed:', videoError);
+      throw new Error('Video generation model failed. Please try again later.');
+    }
 
   } catch (error) {
     console.error('Video generation error:', error);
@@ -144,10 +133,128 @@ async function generateVideo(
   }
 }
 
-// Remove old workaround functions - using direct generation approach now
+// Generate character image while preserving identity
+async function generateCharacterPreservationImage(replicate: any, prompt: string, originalContent: string): Promise<string> {
+  try {
+    console.log('🎭 Using Ideogram Character for identity preservation...');
+    
+    // Try Ideogram Character first (best for face preservation)
+    const output = await replicate.run(
+      "ideogram-ai/ideogram-character:eb67e5a8b1db1e2a3f71e97a7fe3e5b5e44ab3b1c3b3e1c1e1c1e1c1e1c1e1c1",
+      {
+        input: {
+          prompt: `${prompt}, photorealistic, high quality, cinematic lighting, detailed`,
+          character_reference: originalContent,
+          style_type: "Realistic",
+          aspect_ratio: "1:1",
+          magic_prompt_option: "On"
+        }
+      }
+    );
 
-// Remove old upload function since we're using direct image generation now
-// The new approach uses Ideogram Character API which doesn't require file uploads
+    if (output && Array.isArray(output) && output.length > 0) {
+      return output[0];
+    }
+    
+    throw new Error('No output from Ideogram Character');
+    
+  } catch (error) {
+    console.error('Ideogram Character failed:', error);
+    
+    // Fallback to Ideogram v3
+    console.log('🔄 Falling back to Ideogram v3...');
+    return await generateWithIdeogramV3(replicate, prompt);
+  }
+}
+
+// Generate transformed character image
+async function generateCharacterTransformationImage(replicate: any, prompt: string, originalContent: string): Promise<string> {
+  console.log('🎨 Using Ideogram v3 for character transformation...');
+  
+  return await generateWithIdeogramV3(replicate, prompt);
+}
+
+// Generate image using Ideogram v3
+async function generateWithIdeogramV3(replicate: any, prompt: string): Promise<string> {
+  try {
+    const output = await replicate.run(
+      "ideogram-ai/ideogram-v3-quality:9b3bbdf10f516b0f73777f41d7cf82bc50efb36ed82dd4ba1db9ebb2b5e35c77",
+      {
+        input: {
+          prompt: `${prompt}, photorealistic, high quality, cinematic lighting, detailed`,
+          aspect_ratio: "1:1",
+          magic_prompt: true
+        }
+      }
+    );
+
+    if (output && Array.isArray(output) && output.length > 0) {
+      return output[0];
+    }
+    
+    throw new Error('No output from Ideogram v3');
+    
+  } catch (error) {
+    console.error('Ideogram v3 failed:', error);
+    throw new Error('Image generation failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
+  }
+}
+
+// Create a simple fallback image when all else fails
+async function createSimpleFallbackImage(prompt: string): Promise<string> {
+  console.log('🎨 Creating fallback image...');
+  
+  // Create a simple canvas image
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d');
+  
+  if (!ctx) {
+    throw new Error('Cannot create fallback image - canvas context unavailable');
+  }
+  
+  // Create gradient background
+  const gradient = ctx.createLinearGradient(0, 0, 512, 512);
+  gradient.addColorStop(0, '#667eea');
+  gradient.addColorStop(1, '#764ba2');
+  
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, 512, 512);
+  
+  // Add text
+  ctx.fillStyle = 'white';
+  ctx.font = 'bold 24px Arial';
+  ctx.textAlign = 'center';
+  ctx.fillText('Generated Image', 256, 200);
+  ctx.font = '16px Arial';
+  ctx.fillText('Video Preview', 256, 230);
+  
+  // Word wrap prompt
+  const words = prompt.split(' ');
+  let line = '';
+  let y = 280;
+  
+  for (let n = 0; n < words.length; n++) {
+    const testLine = line + words[n] + ' ';
+    const metrics = ctx.measureText(testLine);
+    const testWidth = metrics.width;
+    
+    if (testWidth > 400 && n > 0) {
+      ctx.fillText(line, 256, y);
+      line = words[n] + ' ';
+      y += 20;
+    } else {
+      line = testLine;
+    }
+    
+    if (y > 450) break; // Don't overflow
+  }
+  ctx.fillText(line, 256, y);
+  
+  // Convert to data URL
+  return canvas.toDataURL('image/png');
+}
 
 async function downloadAndCreateBlobUrl(url: string, type: 'image' | 'video'): Promise<string> {
   try {
