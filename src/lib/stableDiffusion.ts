@@ -1,4 +1,4 @@
-import axiosInstance from './axiosConfig';
+import axios from 'axios';
 
 const STABILITY_API_KEY = import.meta.env.VITE_STABILITY_API_KEY;
 
@@ -48,7 +48,7 @@ async function generateWithFacePreservation(prompt: string, originalContent: str
     // Skip inpainting entirely for now and use a refined image-to-image approach
     // This avoids the circular mask issue completely
     
-    const result = await generateWithImageToImage(prompt, originalContent, 0.55, true);
+    const result = await generateWithImageToImage(prompt, originalContent, 0.65, true);
     return result;
     
   } catch (error) {
@@ -56,7 +56,7 @@ async function generateWithFacePreservation(prompt: string, originalContent: str
     
     // Fallback to even lower strength
     console.log('🔄 Falling back to minimal transformation...');
-    return await generateWithImageToImage(prompt, originalContent, 0.35, true);
+    return await generateWithImageToImage(prompt, originalContent, 0.45, true);
   }
 }
 
@@ -75,7 +75,7 @@ async function generateWithFaceReplacement(prompt: string, originalContent: stri
     
     // Fallback to high-strength image-to-image with face-focused prompts
     console.log('🔄 Falling back to face-focused image-to-image...');
-    return await generateWithImageToImage(prompt, originalContent, 0.65, false);
+    return await generateWithImageToImage(prompt, originalContent, 0.7, false);
   }
 }
 
@@ -211,7 +211,7 @@ async function inpaintAroundFace(prompt: string, originalContent: string, maskCo
     formData.append('cfg_scale', '9'); // Higher for better prompt adherence
     formData.append('output_format', 'png');
 
-    const response = await axiosInstance.post(
+    const response = await axios.post(
       'https://api.stability.ai/v2beta/stable-image/edit/inpaint',
       formData,
       {
@@ -237,7 +237,7 @@ async function inpaintAroundFace(prompt: string, originalContent: string, maskCo
 
   } catch (error) {
     console.error('Inpainting around face failed:', error);
-    throw new Error(`Inpainting around face failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    throw new Error('Failed to inpaint around face area');
   }
 }
 
@@ -257,7 +257,7 @@ async function inpaintFaceArea(prompt: string, originalContent: string, maskCont
     formData.append('cfg_scale', '9');
     formData.append('output_format', 'png');
 
-    const response = await axiosInstance.post(
+    const response = await axios.post(
       'https://api.stability.ai/v2beta/stable-image/edit/inpaint',
       formData,
       {
@@ -283,7 +283,7 @@ async function inpaintFaceArea(prompt: string, originalContent: string, maskCont
 
   } catch (error) {
     console.error('Inpainting face area failed:', error);
-    throw new Error(`Inpainting face area failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    throw new Error('Failed to inpaint face area');
   }
 }
 
@@ -314,10 +314,10 @@ async function generateWithImageToImage(
     formData.append('prompt', enhancedPrompt);
     formData.append('negative_prompt', negativePrompt);
     formData.append('strength', strength.toString());
-    formData.append('cfg_scale', preserveFace ? '8' : '7'); // Moderate CFG for better stability
+    formData.append('cfg_scale', preserveFace ? '12' : '7'); // Much higher CFG for face preservation
     formData.append('output_format', 'png');
 
-    const response = await axiosInstance.post(
+    const response = await axios.post(
       'https://api.stability.ai/v2beta/stable-image/generate/sd3',
       formData,
       {
@@ -343,7 +343,7 @@ async function generateWithImageToImage(
 
   } catch (error) {
     console.error('Image-to-image generation failed:', error);
-    throw new Error(`Image-to-image generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    throw new Error('Failed to generate with image-to-image');
   }
 }
 
