@@ -57,7 +57,24 @@ async function generateVideoWithIdeogram(
   }
 
   try {
-    console.log('🎬 Generating video using Ideogram Character approach...');
+    console.log('🎬 Generating video using browser-compatible approach...');
+    
+    // Add Buffer polyfill for browser compatibility
+    if (typeof window !== 'undefined' && !window.Buffer) {
+      // Simple Buffer polyfill for browser
+      window.Buffer = {
+        from: (data: any, encoding?: string) => {
+          if (typeof data === 'string') {
+            if (encoding === 'base64') {
+              return atob(data);
+            }
+            return data;
+          }
+          return data;
+        },
+        isBuffer: () => false
+      } as any;
+    }
     
     // Import Replicate dynamically
     const { default: Replicate } = await import('replicate');
@@ -66,16 +83,16 @@ async function generateVideoWithIdeogram(
       auth: REPLICATE_API_KEY,
     });
 
-    // Step 1: Generate a character-consistent image
+    // Step 1: Generate a character-consistent image using direct API calls
     console.log('🎭 Step 1: Creating character-consistent image...');
     
     let characterImageUrl: string;
     
     try {
       if (facePreservationMode === 'preserve_face') {
-        characterImageUrl = await generateCharacterPreservationImage(replicate, prompt, originalContent);
+        characterImageUrl = await generateCharacterPreservationImageDirect(prompt, originalContent);
       } else {
-        characterImageUrl = await generateCharacterTransformationImage(replicate, prompt, originalContent);
+        characterImageUrl = await generateCharacterTransformationImageDirect(prompt, originalContent);
       }
     } catch (characterError) {
       console.error('Character generation failed:', characterError);
@@ -83,30 +100,11 @@ async function generateVideoWithIdeogram(
       characterImageUrl = await createSimpleFallbackImage(prompt);
     }
 
-    // Step 2: Convert to video using Stable Video Diffusion
+    // Step 2: Convert to video using direct API call
     console.log('🎬 Step 2: Converting character image to video...');
     
     try {
-      const output = await replicate.run(
-        "stability-ai/stable-video-diffusion:3f0457e4619daac51203dedb1a4c069b4bb91bc25be5667a0b525e63c21e2257",
-        {
-          input: {
-            cond_aug: 0.02,
-            decoding_t: 14,
-            video_length: "14_frames_with_svd",
-            sizing_strategy: "maintain_aspect_ratio",
-            motion_bucket_id: 127,
-            frames_per_second: 6,
-            image: characterImageUrl
-          }
-        }
-      );
-
-      if (!output || typeof output !== 'string' || !output.startsWith('http')) {
-        throw new Error('Video generation returned invalid output');
-      }
-
-      const videoUrl = await downloadAndCreateBlobUrl(output, 'video');
+      const videoUrl = await generateVideoFromImageDirect(characterImageUrl);
       console.log('✅ Video generation successful');
       return videoUrl;
       
@@ -131,6 +129,185 @@ async function generateVideoWithIdeogram(
     
     throw new Error('Failed to generate video: ' + (error instanceof Error ? error.message : 'Unknown error'));
   }
+}
+
+// Direct API calls without using the Replicate library (browser-compatible)
+async function generateCharacterPreservationImageDirect(prompt: string, originalContent: string): Promise<string> {
+  try {
+    console.log('🎭 Using direct API call for character preservation...');
+    
+    const response = await fetch('https://api.replicate.com/v1/predictions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Token ${REPLICATE_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        version: 'ideogram-ai/ideogram-character',
+        input: {
+          prompt: `${prompt}, photorealistic, high quality, cinematic lighting, detailed`,
+          character_reference_image: originalContent
+        }
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+    }
+
+    const prediction = await response.json();
+    
+    // Wait for the prediction to complete
+    const result = await waitForPrediction(prediction.id);
+    
+    if (result.output && result.output.length > 0) {
+      return result.output[0];
+    }
+    
+    throw new Error('No output from character generation');
+    
+  } catch (error) {
+    console.error('Direct character generation failed:', error);
+    
+    // Fallback to Ideogram v3
+    console.log('🔄 Falling back to Ideogram v3...');
+    return await generateWithIdeogramV3Direct(prompt);
+  }
+}
+
+async function generateCharacterTransformationImageDirect(prompt: string, originalContent: string): Promise<string> {
+  console.log('🎨 Using direct API call for character transformation...');
+  
+  return await generateWithIdeogramV3Direct(prompt);
+}
+
+async function generateWithIdeogramV3Direct(prompt: string): Promise<string> {
+  try {
+    const response = await fetch('https://api.replicate.com/v1/predictions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Token ${REPLICATE_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        version: 'ideogram-ai/ideogram-v3-quality',
+        input: {
+          prompt: `${prompt}, photorealistic, high quality, cinematic lighting, detailed`,
+          aspect_ratio: "1:1",
+          magic_prompt: true
+        }
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+    }
+
+    const prediction = await response.json();
+    
+    // Wait for the prediction to complete
+    const result = await waitForPrediction(prediction.id);
+    
+    if (result.output && result.output.length > 0) {
+      return result.output[0];
+    }
+    
+    throw new Error('No output from Ideogram v3');
+    
+  } catch (error) {
+    console.error('Direct Ideogram v3 failed:', error);
+    throw new Error('Image generation failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
+  }
+}
+
+async function generateVideoFromImageDirect(imageUrl: string): Promise<string> {
+  try {
+    const response = await fetch('https://api.replicate.com/v1/predictions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Token ${REPLICATE_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        version: 'stability-ai/stable-video-diffusion:3f0457e4619daac51203dedb1a4c069b4bb91bc25be5667a0b525e63c21e2257',
+        input: {
+          cond_aug: 0.02,
+          decoding_t: 14,
+          video_length: "14_frames_with_svd",
+          sizing_strategy: "maintain_aspect_ratio",
+          motion_bucket_id: 127,
+          frames_per_second: 6,
+          image: imageUrl
+        }
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Video API request failed: ${response.status} ${response.statusText}`);
+    }
+
+    const prediction = await response.json();
+    
+    // Wait for the prediction to complete
+    const result = await waitForPrediction(prediction.id);
+    
+    if (result.output && typeof result.output === 'string') {
+      // Download and create blob URL
+      return await downloadAndCreateBlobUrl(result.output, 'video');
+    }
+    
+    throw new Error('No video output received');
+    
+  } catch (error) {
+    console.error('Direct video generation failed:', error);
+    throw error;
+  }
+}
+
+// Wait for a Replicate prediction to complete
+async function waitForPrediction(predictionId: string): Promise<any> {
+  const maxAttempts = 60; // 5 minutes max (5 second intervals)
+  
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      const response = await fetch(`https://api.replicate.com/v1/predictions/${predictionId}`, {
+        headers: {
+          'Authorization': `Token ${REPLICATE_API_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to check prediction status: ${response.status}`);
+      }
+
+      const prediction = await response.json();
+      
+      console.log(`Prediction status: ${prediction.status}`);
+      
+      if (prediction.status === 'succeeded') {
+        return prediction;
+      } else if (prediction.status === 'failed') {
+        throw new Error(`Prediction failed: ${prediction.error || 'Unknown error'}`);
+      } else if (prediction.status === 'canceled') {
+        throw new Error('Prediction was canceled');
+      }
+      
+      // Still processing, wait before checking again
+      await sleep(5000); // Wait 5 seconds
+      
+    } catch (error) {
+      console.error(`Error checking prediction (attempt ${attempt + 1}):`, error);
+      
+      if (attempt === maxAttempts - 1) {
+        throw new Error('Prediction timed out or failed to complete');
+      }
+      
+      await sleep(5000);
+    }
+  }
+  
+  throw new Error('Prediction timed out');
 }
 
 // Generate character image while preserving identity
