@@ -87,140 +87,6 @@ async function generateWithFaceReplacement(prompt: string, originalContent: stri
   }
 }
 
-async function generateWithImageToImage(
-  prompt: string, 
-  originalContent: string, 
-  strength: number = 0.5, 
-  preserveFace: boolean = true
-): Promise<string> {
-  
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      console.log(`🔄 Using image-to-image with strength ${strength} (preserve face: ${preserveFace})... Attempt ${attempt}/${MAX_RETRIES}`);
-      
-      const imageBlob = base64ToBlob(originalContent);
-      
-      let enhancedPrompt = prompt;
-      let negativePrompt = 'blurry, low quality, distorted, deformed, ugly, bad anatomy, extra limbs';
-      
-      if (preserveFace) {
-        enhancedPrompt = `${prompt}, preserve person's exact face and identity, keep same facial features, transform everything else completely, new outfit new background new setting, natural face integration, high quality, photorealistic`;
-        negativePrompt = 'different person, changed face, face swap, different identity, circular mask artifacts, dark rings, halo effects, mask boundaries, original clothes, original background, blurry, low quality';
-      } else {
-        enhancedPrompt = `${prompt}, generate new face that fits the scene, transform the person`;
-        negativePrompt = 'preserve original face, same identity, blurry, low quality, distorted';
-      }
-
-      const formData = new FormData();
-      formData.append('image', imageBlob, 'image.png');
-      formData.append('prompt', enhancedPrompt);
-      formData.append('negative_prompt', negativePrompt);
-      formData.append('strength', preserveFace ? '0.8' : strength.toString());
-      formData.append('cfg_scale', preserveFace ? '10' : '7');
-      formData.append('output_format', 'png');
-      formData.append('mode', 'image-to-image');
-
-      console.log('📡 Making request to Stability AI...');
-      
-      const response = await axios.post(
-        'https://api.stability.ai/v2beta/stable-image/generate/sd3',
-        formData,
-        {
-          headers: {
-            Accept: 'image/*',
-            Authorization: `Bearer ${STABILITY_API_KEY}`,
-            'Content-Type': 'multipart/form-data',
-          },
-          responseType: 'arraybuffer',
-          timeout: 120000,
-          validateStatus: (status) => status < 500, // Don't throw on 4xx errors
-        }
-      );
-
-      if (response.status === 401) {
-        throw new Error('Invalid API key. Please check your Stability AI API key.');
-      }
-      
-      if (response.status === 402) {
-        throw new Error('Insufficient credits. Please check your Stability AI account.');
-      }
-      
-      if (response.status === 429) {
-        throw new Error('Rate limit exceeded. Please wait and try again.');
-      }
-      
-      if (response.status >= 400) {
-        const errorText = new TextDecoder().decode(response.data);
-        console.error('API Error Response:', errorText);
-        throw new Error(`API Error (${response.status}): ${errorText || 'Unknown error'}`);
-      }
-
-      if (!response?.data || response.data.byteLength === 0) {
-        throw new Error('Empty response from Stability AI');
-      }
-
-      const arrayBuffer = response.data;
-      const base64String = btoa(
-        new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
-      );
-
-      const result = `data:image/png;base64,${base64String}`;
-      console.log('✅ Image generation successful');
-      return result;
-
-    } catch (error) {
-      console.error(`Image-to-image generation failed (attempt ${attempt}):`, error);
-      
-      if (attempt === MAX_RETRIES) {
-        // Final attempt failed
-        if (error instanceof AxiosError) {
-          if (error.code === 'ECONNABORTED' || error.code === 'ENOTFOUND') {
-            throw new Error('Network connection failed. Please check your internet connection and try again.');
-          }
-          if (error.response?.status === 401) {
-            throw new Error('Invalid API key. Please check your Stability AI API key configuration.');
-          }
-          if (error.response?.status === 402) {
-            throw new Error('Insufficient Stability AI credits. Please check your account.');
-          }
-          if (error.response?.status === 429) {
-            throw new Error('Rate limit exceeded. Please wait a moment and try again.');
-          }
-        }
-        
-        throw new Error(error instanceof Error ? error.message : 'Failed to generate with image-to-image');
-      }
-      
-      // Wait before retrying
-      console.log(`⏳ Waiting ${RETRY_DELAY}ms before retry...`);
-      await sleep(RETRY_DELAY * attempt); // Exponential backoff
-    }
-  }
-  
-  throw new Error('Failed to generate image after all retry attempts');
-}
-
-function base64ToBlob(base64Data: string): Blob {
-  try {
-    const base64String = base64Data.split(',')[1];
-    if (!base64String) {
-      throw new Error('Invalid base64 data format');
-    }
-    
-    const byteCharacters = atob(base64String);
-    const byteNumbers = new Array(byteCharacters.length);
-    
-    for (let i = 0; i < byteCharacters.length; i++) {
-      byteNumbers[i] = byteCharacters.charCodeAt(i);
-    }
-    
-    const byteArray = new Uint8Array(byteNumbers);
-    return new Blob([byteArray], { type: 'image/png' });
-  } catch (error) {
-    throw new Error('Failed to convert base64 to blob: ' + (error instanceof Error ? error.message : 'Unknown error'));
-  }
-}
-
 async function createPreciseFaceMask(originalContent: string): Promise<string> {
   return new Promise(async (resolve, reject) => {
     try {
@@ -385,10 +251,123 @@ async function createFallbackMask(originalContent: string): Promise<string> {
   });
 }
 
+async function generateWithImageToImage(
+  prompt: string, 
+  originalContent: string, 
+  strength: number = 0.5, 
+  preserveFace: boolean = true
+): Promise<string> {
+  
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      console.log(`🔄 Using image-to-image with strength ${strength} (preserve face: ${preserveFace})... Attempt ${attempt}/${MAX_RETRIES}`);
+      
+      const imageBlob = base64ToBlob(originalContent);
+      
+      let enhancedPrompt = prompt;
+      let negativePrompt = 'blurry, low quality, distorted, deformed, ugly, bad anatomy, extra limbs';
+      
+      if (preserveFace) {
+        enhancedPrompt = `${prompt}, preserve person's exact face and identity, keep same facial features, transform everything else completely, new outfit new background new setting, natural face integration, high quality, photorealistic`;
+        negativePrompt = 'different person, changed face, face swap, different identity, circular mask artifacts, dark rings, halo effects, mask boundaries, original clothes, original background, blurry, low quality';
+      } else {
+        enhancedPrompt = `${prompt}, generate new face that fits the scene, transform the person`;
+        negativePrompt = 'preserve original face, same identity, blurry, low quality, distorted';
+      }
+
+      const formData = new FormData();
+      formData.append('image', imageBlob, 'image.png');
+      formData.append('prompt', enhancedPrompt);
+      formData.append('negative_prompt', negativePrompt);
+      formData.append('strength', strength.toString());
+      formData.append('cfg_scale', preserveFace ? '10' : '7');
+      formData.append('output_format', 'png');
+      formData.append('mode', 'image-to-image');
+
+      console.log('📡 Making request to Stability AI...');
+      
+      const response = await axios.post(
+        'https://api.stability.ai/v2beta/stable-image/generate/sd3',
+        formData,
+        {
+          headers: {
+            Accept: 'image/*',
+            Authorization: `Bearer ${STABILITY_API_KEY}`,
+            'Content-Type': 'multipart/form-data',
+          },
+          responseType: 'arraybuffer',
+          timeout: 120000,
+          validateStatus: (status) => status < 500, // Don't throw on 4xx errors
+        }
+      );
+
+      if (response.status === 401) {
+        throw new Error('Invalid API key. Please check your Stability AI API key.');
+      }
+      
+      if (response.status === 402) {
+        throw new Error('Insufficient credits. Please check your Stability AI account.');
+      }
+      
+      if (response.status === 429) {
+        throw new Error('Rate limit exceeded. Please wait and try again.');
+      }
+      
+      if (response.status >= 400) {
+        const errorText = new TextDecoder().decode(response.data);
+        console.error('API Error Response:', errorText);
+        throw new Error(`API Error (${response.status}): ${errorText || 'Unknown error'}`);
+      }
+
+      if (!response?.data || response.data.byteLength === 0) {
+        throw new Error('Empty response from Stability AI');
+      }
+
+      const arrayBuffer = response.data;
+      const base64String = btoa(
+        new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+      );
+
+      const result = `data:image/png;base64,${base64String}`;
+      console.log('✅ Image generation successful');
+      return result;
+
+    } catch (error) {
+      console.error(`Image-to-image generation failed (attempt ${attempt}):`, error);
+      
+      if (attempt === MAX_RETRIES) {
+        // Final attempt failed
+        if (error instanceof AxiosError) {
+          if (error.code === 'ECONNABORTED' || error.code === 'ENOTFOUND') {
+            throw new Error('Network connection failed. Please check your internet connection and try again.');
+          }
+          if (error.response?.status === 401) {
+            throw new Error('Invalid API key. Please check your Stability AI API key configuration.');
+          }
+          if (error.response?.status === 402) {
+            throw new Error('Insufficient Stability AI credits. Please check your account.');
+          }
+          if (error.response?.status === 429) {
+            throw new Error('Rate limit exceeded. Please wait a moment and try again.');
+          }
+        }
+        
+        throw new Error(error instanceof Error ? error.message : 'Failed to generate with image-to-image');
+      }
+      
+      // Wait before retrying
+      console.log(`⏳ Waiting ${RETRY_DELAY}ms before retry...`);
+      await sleep(RETRY_DELAY * attempt); // Exponential backoff
+    }
+  }
+  
+  throw new Error('Failed to generate image after all retry attempts');
+}
+
 async function inpaintAroundFace(prompt: string, originalContent: string, maskContent: string): Promise<string> {
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      console.log(`🖌️ Inpainting around face area (preserving face region)... Attempt ${attempt}/${MAX_RETRIES}`);
+      console.log(`🖌️ Creating entirely new scene while preserving face... Attempt ${attempt}/${MAX_RETRIES}`);
       
       const originalBlob = base64ToBlob(originalContent);
       const maskBlob = base64ToBlob(maskContent);
@@ -396,10 +375,10 @@ async function inpaintAroundFace(prompt: string, originalContent: string, maskCo
       const formData = new FormData();
       formData.append('image', originalBlob, 'original.png');
       formData.append('mask', maskBlob, 'mask.png');
-      formData.append('prompt', `${prompt}, completely transform the background and environment, change all clothing and accessories, new setting, new location, dramatic scene change, keep the person's face exactly the same`);
-      formData.append('negative_prompt', 'preserve original background, keep original clothing, maintain original setting, same environment, face changes, different person, facial modifications');
-      formData.append('strength', '0.95'); // Very high strength for maximum background transformation
-      formData.append('cfg_scale', '10'); // Higher for better prompt adherence
+      formData.append('prompt', `${prompt}, keep the exact same person's face completely unchanged, preserve original facial features exactly, same face identity, same person, transform only clothing and background, maintain original face without any modifications`);
+      formData.append('negative_prompt', 'different person, new face, generated face, changed facial features, different identity, old man, elderly person, aged face, wrinkled face, different skin, face modifications, facial changes, multiple people, extra faces, mask artifacts');
+      formData.append('strength', '0.85'); // Lower strength to better preserve the original face
+      formData.append('cfg_scale', '12'); // Much higher CFG to enforce face preservation
       formData.append('output_format', 'png');
 
       const response = await axios.post(
@@ -445,11 +424,11 @@ async function inpaintAroundFace(prompt: string, originalContent: string, maskCo
       );
 
       const result = `data:image/png;base64,${base64String}`;
-      console.log('✅ Face preservation inpainting successful');
+      console.log('✅ Complete scene transformation with face preservation successful');
       return result;
 
     } catch (error) {
-      console.error(`Inpainting around face failed (attempt ${attempt}):`, error);
+      console.error(`Scene transformation with face preservation failed (attempt ${attempt}):`, error);
       
       if (attempt === MAX_RETRIES) {
         throw error;
@@ -461,5 +440,26 @@ async function inpaintAroundFace(prompt: string, originalContent: string, maskCo
     }
   }
   
-  throw new Error('Failed to inpaint around face area after all retry attempts');
+  throw new Error('Failed to create new scene with face preservation after all retry attempts');
+}
+
+function base64ToBlob(base64Data: string): Blob {
+  try {
+    const base64String = base64Data.split(',')[1];
+    if (!base64String) {
+      throw new Error('Invalid base64 data format');
+    }
+    
+    const byteCharacters = atob(base64String);
+    const byteNumbers = new Array(byteCharacters.length);
+    
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    
+    const byteArray = new Uint8Array(byteNumbers);
+    return new Blob([byteArray], { type: 'image/png' });
+  } catch (error) {
+    throw new Error('Failed to convert base64 to blob: ' + (error instanceof Error ? error.message : 'Unknown error'));
+  }
 }
