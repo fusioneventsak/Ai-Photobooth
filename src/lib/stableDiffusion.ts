@@ -49,20 +49,18 @@ export async function generateImage(
 
 async function generateWithFacePreservation(prompt: string, originalContent: string): Promise<string> {
   try {
-    console.log('🎭 Using refined inpainting with optimized face mask...');
+    console.log('🎭 Trying organic mask inpainting first...');
     
-    // Create an optimized inverted face mask 
+    // Try inpainting with improved organic mask
     const invertedMask = await createInvertedFaceMask(originalContent);
-    
-    // Use inpainting to create completely new scene while keeping the face
     const result = await inpaintAroundFace(prompt, originalContent, invertedMask);
     return result;
     
   } catch (error) {
-    console.error('Face preservation inpainting failed:', error);
+    console.error('Organic mask inpainting failed, trying image-to-image:', error);
     
-    // Fallback to image-to-image only if inpainting completely fails
-    console.log('🔄 Falling back to image-to-image...');
+    // If inpainting fails or has artifacts, fall back to smart image-to-image
+    console.log('🔄 Falling back to high-quality image-to-image...');
     return await generateWithImageToImage(prompt, originalContent, 0.65, true);
   }
 }
@@ -100,8 +98,8 @@ async function generateWithImageToImage(
       let negativePrompt = 'blurry, low quality, distorted, deformed, ugly, bad anatomy, extra limbs';
       
       if (preserveFace) {
-        enhancedPrompt = `${prompt}, keep the same person's exact face and facial features, preserve identity, same eyes nose mouth, transform everything else completely, new clothes new background new setting, dramatic scene change, photorealistic`;
-        negativePrompt = 'different person, changed face, face swap, different identity, original clothes, original background, same setting, mask artifacts, holes, empty spaces, blurry, low quality';
+        enhancedPrompt = `${prompt}, preserve person's exact face and identity, keep same facial features, transform everything else completely, new outfit new background new setting, natural face integration, high quality, photorealistic`;
+        negativePrompt = 'different person, changed face, face swap, different identity, circular mask artifacts, dark rings, halo effects, mask boundaries, original clothes, original background, blurry, low quality';
       } else {
         enhancedPrompt = `${prompt}, generate new face that fits the scene, transform the person`;
         negativePrompt = 'preserve original face, same identity, blurry, low quality, distorted';
@@ -218,7 +216,7 @@ function base64ToBlob(base64Data: string): Blob {
 }
 
 async function createInvertedFaceMask(originalContent: string): Promise<string> {
-  // Creates a mask where face area is BLACK (preserved) and everything else is WHITE (modified)
+  // Creates a more natural face-shaped mask instead of perfect circle
   return new Promise((resolve, reject) => {
     try {
       const canvas = document.createElement('canvas');
@@ -233,57 +231,72 @@ async function createInvertedFaceMask(originalContent: string): Promise<string> 
         canvas.width = img.width;
         canvas.height = img.height;
 
-        // Create white background (areas to modify - everything)
+        // Create white background (areas to modify)
         ctx.fillStyle = 'white';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        // Create face area with extended soft blending to eliminate halo
         ctx.save();
         
-        // Face area with extended transition zone
-        const faceWidth = canvas.width * 0.36; 
-        const faceHeight = canvas.height * 0.46; 
+        // Face parameters
         const centerX = canvas.width / 2;
         const centerY = canvas.height * 0.37;
+        const faceWidth = canvas.width * 0.32;
+        const faceHeight = canvas.height * 0.42;
 
-        // Much larger outer radius to create very extended soft transition
-        const outerRadius = faceWidth * 1.8; // Much larger radius for softer blend
-        const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, outerRadius);
+        // Create a more natural face shape using multiple overlapping gradients
+        // This mimics a more organic face boundary
         
-        // Very extended gradient to eliminate any visible halo
-        gradient.addColorStop(0, 'black');      // Core face - preserve
-        gradient.addColorStop(0.15, 'black');   // Inner face - preserve
-        gradient.addColorStop(0.25, '#404040'); // Start very gradual transition
-        gradient.addColorStop(0.35, '#606060'); // Slow transition
-        gradient.addColorStop(0.45, '#808080'); // Medium gray
-        gradient.addColorStop(0.55, '#909090'); // Slightly lighter
-        gradient.addColorStop(0.65, '#A0A0A0'); // Light gray
-        gradient.addColorStop(0.75, '#B8B8B8'); // Lighter gray
-        gradient.addColorStop(0.85, '#D0D0D0'); // Very light gray
-        gradient.addColorStop(0.95, '#E8E8E8'); // Nearly white
-        gradient.addColorStop(1, 'white');      // Transform completely
-
-        ctx.fillStyle = gradient;
-        ctx.beginPath();
-        ctx.ellipse(
-          centerX,
-          centerY,
-          faceWidth / 2,
-          faceHeight / 2,
-          0, 0, Math.PI * 2
+        // Main face oval
+        const mainGradient = ctx.createRadialGradient(
+          centerX, centerY, 0, 
+          centerX, centerY, faceWidth * 0.8
         );
-        ctx.fill();
-        ctx.restore();
+        mainGradient.addColorStop(0, 'black');
+        mainGradient.addColorStop(0.4, 'black');
+        mainGradient.addColorStop(0.7, '#808080');
+        mainGradient.addColorStop(1, 'white');
 
+        // Draw main face area
+        ctx.fillStyle = mainGradient;
+        ctx.beginPath();
+        ctx.ellipse(centerX, centerY, faceWidth/2, faceHeight/2, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Add softer outer blending with multiple small gradients to break up the circle
+        for (let i = 0; i < 8; i++) {
+          const angle = (i * Math.PI * 2) / 8;
+          const offsetX = Math.cos(angle) * faceWidth * 0.3;
+          const offsetY = Math.sin(angle) * faceHeight * 0.3;
+          
+          const blendGradient = ctx.createRadialGradient(
+            centerX + offsetX, centerY + offsetY, 0,
+            centerX + offsetX, centerY + offsetY, faceWidth * 0.4
+          );
+          blendGradient.addColorStop(0, '#606060');
+          blendGradient.addColorStop(0.5, '#A0A0A0');
+          blendGradient.addColorStop(1, 'white');
+
+          ctx.globalCompositeOperation = 'multiply';
+          ctx.fillStyle = blendGradient;
+          ctx.beginPath();
+          ctx.ellipse(
+            centerX + offsetX, centerY + offsetY, 
+            faceWidth * 0.25, faceHeight * 0.25, 
+            0, 0, Math.PI * 2
+          );
+          ctx.fill();
+        }
+
+        ctx.restore();
         const result = canvas.toDataURL('image/png');
         resolve(result);
       };
 
-      img.onerror = () => reject(new Error('Failed to load image for inverted mask creation'));
+      img.onerror = () => reject(new Error('Failed to load image for mask creation'));
       img.src = originalContent;
 
     } catch (error) {
-      reject(new Error('Failed to create inverted face mask'));
+      reject(new Error('Failed to create face mask'));
     }
   });
 }
