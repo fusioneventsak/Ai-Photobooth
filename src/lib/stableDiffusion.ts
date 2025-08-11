@@ -109,7 +109,7 @@ async function generateWithImageToImage(
       formData.append('prompt', enhancedPrompt);
       formData.append('negative_prompt', negativePrompt);
       formData.append('strength', strength.toString());
-      formData.append('cfg_scale', preserveFace ? '12' : '7');
+      formData.append('cfg_scale', preserveFace ? '10' : '7');
       formData.append('output_format', 'png');
       formData.append('mode', 'image-to-image');
 
