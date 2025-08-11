@@ -1,11 +1,12 @@
 import axios from 'axios';
-import Replicate from 'replicate';
+import { generateWithReplicate } from './replicateService';
 
 const STABILITY_API_KEY = import.meta.env.VITE_STABILITY_API_KEY;
 const REPLICATE_API_KEY = import.meta.env.VITE_REPLICATE_API_KEY;
 
 const API_ENDPOINTS = {
-  image: 'https://api.stability.ai/v1/generation/stable-diffusion-xl-1024-v1-1/image-to-image'
+  // Updated to use the newer v2 beta endpoint
+  image: 'https://api.stability.ai/v2beta/stable-image/generate/core'
 };
 
 interface StabilityConfig {
@@ -21,8 +22,8 @@ const DEFAULT_CONFIG: StabilityConfig = {
 };
 
 // Maximum number of retries
-const MAX_RETRIES = 3;
-const INITIAL_RETRY_DELAY = 2000; // Start with 2 seconds
+const MAX_RETRIES = 2;
+const INITIAL_RETRY_DELAY = 2000;
 
 async function retryWithExponentialBackoff<T>(
   operation: () => Promise<T>,
@@ -39,7 +40,7 @@ async function retryWithExponentialBackoff<T>(
       const status = error.response?.status;
       
       // Don't retry on these status codes
-      if (status && ![404, 500, 502, 503, 504].includes(status)) {
+      if (status && ![404, 500, 502, 503, 504, 429].includes(status)) {
         throw error;
       }
     }
@@ -52,143 +53,12 @@ async function retryWithExponentialBackoff<T>(
   }
 }
 
-// Upload file to Replicate
-async function uploadToReplicate(imageData: string): Promise<string> {
-  if (!REPLICATE_API_KEY) {
-    throw new Error('Replicate API key not found');
-  }
-
-  // Convert base64 to blob
-  const base64Data = imageData.split(',')[1];
-  if (!base64Data) {
-    throw new Error('Invalid image data format');
-  }
-
-  const byteCharacters = atob(base64Data);
-  const byteNumbers = new Array(byteCharacters.length);
-  for (let i = 0; i < byteCharacters.length; i++) {
-    byteNumbers[i] = byteCharacters.charCodeAt(i);
-  }
-  const byteArray = new Uint8Array(byteNumbers);
-  const blob = new Blob([byteArray], { type: 'image/jpeg' });
-  const file = new File([blob], 'input.jpg', { type: 'image/jpeg' });
-
-  // Get upload URL from Replicate
-  const uploadResponse = await fetch('https://api.replicate.com/v1/uploads', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Token ${REPLICATE_API_KEY}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ purpose: 'input' })
-  });
-
-  if (!uploadResponse.ok) {
-    const errorText = await uploadResponse.text();
-    throw new Error(`Failed to get upload URL: ${errorText}`);
-  }
-
-  const uploadData = await uploadResponse.json();
-  if (!uploadData?.upload_url || !uploadData?.serving_url) {
-    throw new Error('Invalid upload response from Replicate');
-  }
-
-  // Upload the file
-  const uploadResult = await fetch(uploadData.upload_url, {
-    method: 'PUT',
-    body: file
-  });
-
-  if (!uploadResult.ok) {
-    throw new Error(`Failed to upload file: ${uploadResult.statusText}`);
-  }
-
-  return uploadData.serving_url;
-}
-
-export async function generateImage(
-  prompt: string, 
-  originalContent: string,
-  modelType: 'image' | 'video' = 'image',
-  videoDuration: number = 5
+async function generateWithStabilityAI(
+  prompt: string,
+  originalContent: string
 ): Promise<string> {
-  if (modelType === 'video') {
-    if (!REPLICATE_API_KEY) {
-      throw new Error('Replicate API key not found. Please check your environment variables.');
-    }
-
-    try {
-      // Upload image to Replicate
-      const imageUrl = await uploadToReplicate(originalContent);
-
-      // Initialize Replicate client
-      const replicate = new Replicate({
-        auth: REPLICATE_API_KEY,
-      });
-
-      // Run Flux's image-to-video model
-      const output = await replicate.run(
-        "lucataco/flux-in-context:703f38c44b9c2820b79b54f96ef5f6554240b3ec4035a0cf80ba04e1f87ae307",
-        {
-          input: {
-            image: imageUrl,
-            prompt: prompt,
-            num_frames: 24 * videoDuration,
-            fps: 24,
-            guidance_scale: 7.5,
-            num_inference_steps: 50,
-            negative_prompt: "blurry, low quality, distorted, deformed, ugly, bad anatomy"
-          }
-        }
-      );
-
-      if (!output || typeof output !== 'string' || !output.startsWith('http')) {
-        console.error('Unexpected output from Replicate:', output);
-        throw new Error('Invalid response from Replicate');
-      }
-
-      // Download the video
-      const response = await fetch(output);
-      if (!response.ok) {
-        throw new Error(`Failed to download generated video: ${response.statusText}`);
-      }
-
-      const blob = await response.blob();
-      if (blob.size === 0) {
-        throw new Error('Received empty video file');
-      }
-
-      return URL.createObjectURL(blob);
-    } catch (error) {
-      console.error('Video generation error:', error);
-      
-      // Handle specific error cases
-      if (error instanceof Error) {
-        if (error.message.includes('Invalid API key')) {
-          throw new Error('Invalid Replicate API key. Please check your configuration.');
-        } else if (error.message.includes('rate limit')) {
-          throw new Error('Rate limit exceeded. Please wait a moment and try again.');
-        } else if (error.message.includes('insufficient credits')) {
-          throw new Error('Insufficient Replicate credits. Please check your account.');
-        }
-        throw error;
-      }
-      
-      throw new Error('Failed to generate video. Please try again.');
-    }
-  }
-
-  // Image generation with Stability AI
-  if (!STABILITY_API_KEY) {
+  if (!STABILITY_API_KEY || STABILITY_API_KEY.includes('undefined')) {
     throw new Error('Stability API key not found. Please check your environment variables.');
-  }
-
-  if (!prompt.trim()) {
-    throw new Error('Prompt cannot be empty for image generation');
-  }
-
-  if (!originalContent?.startsWith('data:image/')) {
-    throw new Error('Invalid image format. Please provide a valid image.');
   }
 
   try {
@@ -214,32 +84,29 @@ export async function generateImage(
       throw new Error('Image size exceeds 10MB limit. Please try capturing a smaller photo.');
     }
 
-    // Prepare form data
+    // Prepare form data for v2beta API
     const formData = new FormData();
-    formData.append('init_image', imageBlob);
-    formData.append('image_strength', DEFAULT_CONFIG.imageStrength.toString());
-    formData.append('cfg_scale', DEFAULT_CONFIG.cfgScale.toString());
-    formData.append('steps', DEFAULT_CONFIG.steps.toString());
-    formData.append('samples', '1');
-    formData.append('text_prompts[0][text]', prompt);
-    formData.append('text_prompts[0][weight]', '1');
-    formData.append('text_prompts[1][text]', 'blurry, low quality, distorted, deformed, ugly, bad anatomy');
-    formData.append('text_prompts[1][weight]', '-1');
+    formData.append('image', imageBlob, 'input.jpg');
+    formData.append('prompt', prompt);
+    formData.append('negative_prompt', 'blurry, low quality, distorted, deformed, ugly, bad anatomy, watermark, text');
+    formData.append('aspect_ratio', '1:1'); // Square aspect ratio
+    formData.append('output_format', 'png');
 
     // Make API request with retry logic
     const response = await retryWithExponentialBackoff(async () => {
+      console.log('Attempting Stability AI generation...');
       const result = await axios.post(
         API_ENDPOINTS.image,
         formData,
         {
           headers: {
-            Accept: 'application/json',
+            Accept: 'image/*',
             Authorization: `Bearer ${STABILITY_API_KEY}`,
-            'Content-Type': 'multipart/form-data'
           },
+          responseType: 'arraybuffer',
           maxBodyLength: Infinity,
           maxContentLength: Infinity,
-          timeout: 30000
+          timeout: 60000 // Increased timeout for v2 API
         }
       );
 
@@ -250,18 +117,22 @@ export async function generateImage(
       return result;
     });
 
-    // Handle response
-    const artifact = response.data?.artifacts?.[0];
-    if (!artifact?.base64) {
-      throw new Error('Invalid response format from Stability AI. Please try again.');
-    }
+    // Convert arraybuffer to base64
+    const arrayBuffer = response.data;
+    const base64String = btoa(
+      new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+    );
 
-    return `data:image/png;base64,${artifact.base64}`;
+    return `data:image/png;base64,${base64String}`;
+
   } catch (error) {
+    console.error('Stability AI error:', error);
+    
     // Handle Axios errors
     if (axios.isAxiosError(error)) {
       const status = error.response?.status;
-      const message = error.response?.data?.message;
+      const message = error.response?.data?.message || 
+                     (typeof error.response?.data === 'string' ? error.response.data : '');
 
       if (!error.response) {
         throw new Error('Network error. Please check your internet connection and try again.');
@@ -269,25 +140,22 @@ export async function generateImage(
 
       switch (status) {
         case 400:
-          if (message?.includes('dimensions')) {
-            throw new Error('Invalid image dimensions. Please try capturing the photo again.');
-          }
-          throw new Error(`Invalid request: ${message || 'Please try again.'}`);
+          throw new Error(`Invalid request: ${message || 'Please check your image and try again.'}`);
         case 401:
-          throw new Error('Invalid API key. Please check your configuration.');
+          throw new Error('Invalid API key. Please check your Stability AI configuration.');
         case 402:
           throw new Error('Account credits depleted. Please check your Stability AI account.');
         case 404:
-          throw new Error('The AI model is temporarily unavailable. Please wait a moment and try again.');
+          throw new Error('Stability AI model not found. This may be a temporary issue.');
         case 429:
           throw new Error('Too many requests. Please wait a moment and try again.');
         case 500:
         case 502:
         case 503:
         case 504:
-          throw new Error('Stability AI service is temporarily unavailable. Please wait a moment and try again.');
+          throw new Error('Stability AI service is temporarily unavailable. Trying fallback service...');
         default:
-          throw new Error(message || 'An unexpected error occurred. Please try again.');
+          throw new Error(message || 'An unexpected error occurred with Stability AI.');
       }
     }
 
@@ -295,6 +163,92 @@ export async function generateImage(
       throw error;
     }
 
-    throw new Error('An unexpected error occurred. Please try again.');
+    throw new Error('An unexpected error occurred with Stability AI.');
   }
+}
+
+export async function generateImage(
+  prompt: string, 
+  originalContent: string,
+  modelType: 'image' | 'video' = 'image',
+  videoDuration: number = 5
+): Promise<string> {
+  console.log(`Starting ${modelType} generation with prompt:`, prompt);
+
+  // Input validation
+  if (!prompt.trim()) {
+    throw new Error('Prompt cannot be empty for generation');
+  }
+
+  if (!originalContent?.startsWith('data:image/')) {
+    throw new Error('Invalid image format. Please provide a valid image.');
+  }
+
+  // For video generation, use Replicate
+  if (modelType === 'video') {
+    if (!REPLICATE_API_KEY || REPLICATE_API_KEY.includes('undefined')) {
+      throw new Error('Replicate API key not found. Please check your environment variables.');
+    }
+
+    try {
+      console.log('Using Replicate for video generation...');
+      return await generateWithReplicate({
+        prompt,
+        inputData: originalContent,
+        type: 'video',
+        duration: videoDuration
+      });
+    } catch (error) {
+      console.error('Video generation failed:', error);
+      throw new Error(error instanceof Error ? error.message : 'Failed to generate video. Please try again.');
+    }
+  }
+
+  // For image generation, try Stability AI first, then Replicate as fallback
+  let lastError: Error | null = null;
+
+  // Try Stability AI first
+  if (STABILITY_API_KEY && !STABILITY_API_KEY.includes('undefined')) {
+    try {
+      console.log('Trying Stability AI first...');
+      return await generateWithStabilityAI(prompt, originalContent);
+    } catch (error) {
+      console.log('Stability AI failed, will try Replicate fallback...');
+      lastError = error instanceof Error ? error : new Error('Stability AI failed');
+      
+      // Don't fallback on authentication errors
+      if (lastError.message.includes('Invalid API key') || 
+          lastError.message.includes('Account credits depleted')) {
+        throw lastError;
+      }
+    }
+  } else {
+    console.log('No Stability AI key found, using Replicate...');
+  }
+
+  // Fallback to Replicate for image generation
+  if (REPLICATE_API_KEY && !REPLICATE_API_KEY.includes('undefined')) {
+    try {
+      console.log('Using Replicate as fallback for image generation...');
+      return await generateWithReplicate({
+        prompt,
+        inputData: originalContent,
+        type: 'image'
+      });
+    } catch (error) {
+      console.error('Replicate fallback also failed:', error);
+      
+      // If both services failed, throw a combined error
+      const replicateError = error instanceof Error ? error.message : 'Replicate service failed';
+      const stabilityError = lastError ? lastError.message : 'Stability AI not configured';
+      
+      throw new Error(`Both AI services failed. Stability AI: ${stabilityError}. Replicate: ${replicateError}`);
+    }
+  }
+
+  // If no services are available
+  const errorMsg = !STABILITY_API_KEY ? 'Stability AI key missing' : (lastError?.message || 'Stability AI failed');
+  const replicateMsg = !REPLICATE_API_KEY ? 'Replicate API key missing' : 'Replicate not attempted';
+  
+  throw new Error(`No AI services available. Stability AI: ${errorMsg}. Replicate: ${replicateMsg}`);
 }
