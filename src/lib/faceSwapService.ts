@@ -1,376 +1,302 @@
-import Replicate from 'replicate';
+import axios from 'axios';
+import { generateWithReplicate } from './replicateService';
 
+const STABILITY_API_KEY = import.meta.env.VITE_STABILITY_API_KEY;
 const REPLICATE_API_KEY = import.meta.env.VITE_REPLICATE_API_KEY;
 
-interface FaceSwapOptions {
-  sourceImage: string; // Base64 data URL of the person's face
-  targetPrompt: string; // What you want them to look like
-  preserveFaceAccuracy?: number; // How much to preserve the original face (0.1-1.0)
+const API_ENDPOINTS = {
+  // Updated to use the newer v2 beta endpoint
+  image: 'https://api.stability.ai/v2beta/stable-image/generate/core'
+};
+
+interface StabilityConfig {
+  imageStrength: number;
+  cfgScale: number;
+  steps: number;
 }
 
-interface FaceSwapResult {
-  swappedImage: string;
-  detectedFaces: number;
-  confidence: number;
+interface GenerationOptions {
+  enableFaceSwap?: boolean;
+  faceSwapAccuracy?: number; // 0.1 to 1.0
+  useAdvancedFaceSwap?: boolean;
 }
 
-// Helper function to convert data URI to blob
-function dataURItoBlob(dataURI: string): Blob {
+const DEFAULT_CONFIG: StabilityConfig = {
+  imageStrength: 0.35,
+  cfgScale: 7,
+  steps: 30
+};
+
+// Maximum number of retries
+const MAX_RETRIES = 2;
+const INITIAL_RETRY_DELAY = 2000;
+
+async function retryWithExponentialBackoff<T>(
+  operation: () => Promise<T>,
+  retries = MAX_RETRIES,
+  delay = INITIAL_RETRY_DELAY
+): Promise<T> {
   try {
-    const byteString = atob(dataURI.split(',')[1]);
-    const mimeString = dataURI.split(',')[0].split(':')[1].split(';')[0];
-    const ab = new ArrayBuffer(byteString.length);
-    const ia = new Uint8Array(ab);
-    for (let i = 0; i < byteString.length; i++) {
-      ia[i] = byteString.charCodeAt(i);
-    }
-    return new Blob([ab], { type: mimeString });
+    return await operation();
   } catch (error) {
-    console.error('Error converting data URI to blob:', error);
-    throw new Error('Failed to process image data');
-  }
-}
+    if (retries === 0) throw error;
 
-// Retry fetch with exponential backoff
-async function retryFetch(url: string, options: RequestInit, retries = 2): Promise<Response> {
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      const response = await fetch(url, {
-        ...options,
-        signal: AbortSignal.timeout(60000)
-      });
+    // Only retry on specific error conditions
+    if (axios.isAxiosError(error)) {
+      const status = error.response?.status;
       
-      if (response.ok) {
-        return response;
+      // Don't retry on these status codes
+      if (status && ![404, 500, 502, 503, 504, 429].includes(status)) {
+        throw error;
       }
-      
-      if (response.status >= 400 && response.status < 500) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-      
-      if (attempt < retries) {
-        console.log(`Attempt ${attempt + 1} failed, retrying...`);
-        await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt)));
-        continue;
-      }
-      
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    } catch (error) {
-      if (attempt < retries && (error instanceof TypeError || error.message.includes('fetch'))) {
-        console.log(`Network error on attempt ${attempt + 1}, retrying...`);
-        await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt)));
-        continue;
-      }
-      throw error;
-    }
-  }
-  
-  throw new Error('All retry attempts failed');
-}
-
-// Upload image to Replicate
-async function uploadToReplicate(imageData: string): Promise<string> {
-  try {
-    const blob = dataURItoBlob(imageData);
-    const file = new File([blob], 'input.jpg', { type: 'image/jpeg' });
-
-    // Get upload URL from Replicate
-    const uploadResponse = await fetch('https://api.replicate.com/v1/uploads', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Token ${REPLICATE_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ purpose: 'input' })
-    });
-
-    if (!uploadResponse.ok) {
-      const errorText = await uploadResponse.text();
-      throw new Error(`Failed to get upload URL: ${errorText}`);
     }
 
-    const uploadData = await uploadResponse.json();
-    if (!uploadData?.upload_url || !uploadData?.serving_url) {
-      throw new Error('Invalid upload response from Replicate');
-    }
+    // Wait before retrying
+    await new Promise(resolve => setTimeout(resolve, delay));
 
-    // Upload the file
-    const uploadResult = await retryFetch(uploadData.upload_url, {
-      method: 'PUT',
-      body: file
-    });
-
-    if (!uploadResult.ok) {
-      throw new Error(`Failed to upload file: ${uploadResult.statusText}`);
-    }
-
-    return uploadData.serving_url;
-  } catch (error) {
-    console.error('Error uploading to Replicate:', error);
-    throw new Error('Failed to upload image to Replicate service');
+    // Retry with exponential backoff
+    return retryWithExponentialBackoff(operation, retries - 1, delay * 2);
   }
 }
 
-/**
- * Advanced face swap using multiple models for best results
- */
-export async function performFaceSwap({
-  sourceImage,
-  targetPrompt,
-  preserveFaceAccuracy = 0.8
-}: FaceSwapOptions): Promise<FaceSwapResult> {
-  if (!REPLICATE_API_KEY || REPLICATE_API_KEY.includes('undefined')) {
-    throw new Error('Valid Replicate API key not found. Please check your environment variables.');
-  }
-
-  try {
-    console.log('🎭 Starting advanced face swap process...');
-    const replicate = new Replicate({
-      auth: REPLICATE_API_KEY,
-    });
-
-    // Step 1: Upload the source image
-    console.log('📤 Uploading source image...');
-    const sourceImageUrl = await uploadToReplicate(sourceImage);
-
-    // Step 2: Generate the target scene with face-aware prompting
-    console.log('🎨 Generating target scene...');
-    const sceneGeneration = await replicate.run(
-      "stability-ai/sdxl:7762fd07cf82c948538e41f63f77d685e02b063e37e496e96eefd46c929f9bdc",
-      {
-        input: {
-          prompt: `${targetPrompt}, professional portrait photography, high detail face, perfect facial features, 8k resolution`,
-          negative_prompt: "blurry face, distorted face, low quality, deformed face, ugly face, extra limbs, bad anatomy",
-          width: 1024,
-          height: 1024,
-          guidance_scale: 7.5,
-          num_inference_steps: 30,
-          scheduler: "K_EULER"
-        }
-      }
-    );
-
-    if (!sceneGeneration || (Array.isArray(sceneGeneration) && sceneGeneration.length === 0)) {
-      throw new Error('Failed to generate target scene');
-    }
-
-    const targetSceneUrl = Array.isArray(sceneGeneration) ? sceneGeneration[0] : sceneGeneration;
-
-    // Step 3: Perform face swap using specialized face swap model
-    console.log('🔄 Performing face swap...');
-    const faceSwapResult = await replicate.run(
-      "yan-ops/face_swap:d5900f9ebed33e7ae6a8d5b1d6d5a95b8ae8c7b2f0a1f2b3c4d5e6f7g8h9i0j1",
-      {
-        input: {
-          source_image: sourceImageUrl,
-          target_image: targetSceneUrl,
-          face_restore: true,
-          background_enhance: true,
-          face_upsample: true,
-          upscale: 2
-        }
-      }
-    );
-
-    if (!faceSwapResult) {
-      throw new Error('Face swap failed to generate result');
-    }
-
-    const swappedImageUrl = Array.isArray(faceSwapResult) ? faceSwapResult[0] : faceSwapResult;
-
-    // Step 4: Download the final result
-    console.log('⬇️ Downloading final result...');
-    const finalResponse = await retryFetch(swappedImageUrl, {});
-    
-    if (!finalResponse.ok) {
-      throw new Error(`Failed to download final result: ${finalResponse.statusText}`);
-    }
-    
-    const finalBlob = await finalResponse.blob();
-    if (finalBlob.size === 0) {
-      throw new Error('Received empty result file');
-    }
-
-    // Convert to base64 data URL
-    const finalDataUrl = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result === 'string') {
-          resolve(reader.result);
-        } else {
-          reject(new Error('Failed to convert result to data URL'));
-        }
-      };
-      reader.onerror = () => reject(new Error('Failed to read result blob'));
-      reader.readAsDataURL(finalBlob);
-    });
-
-    console.log('✅ Face swap completed successfully!');
-
-    return {
-      swappedImage: finalDataUrl,
-      detectedFaces: 1, // This would be detected by the model
-      confidence: preserveFaceAccuracy
-    };
-
-  } catch (error) {
-    console.error('❌ Face swap error:', error);
-    
-    if (error instanceof Error) {
-      if (error.message.includes('rate limit')) {
-        throw new Error('Rate limit exceeded. Please wait a moment and try again.');
-      } else if (error.message.includes('insufficient credits')) {
-        throw new Error('Insufficient Replicate credits. Please check your account.');
-      } else if (error.message.includes('Invalid API key')) {
-        throw new Error('Invalid Replicate API key. Please check your configuration.');
-      }
-      throw error;
-    }
-    
-    throw new Error('Failed to perform face swap');
-  }
-}
-
-/**
- * Alternative face swap using InstantID for more consistent results
- */
-export async function performInstantIDFaceSwap({
-  sourceImage,
-  targetPrompt,
-  preserveFaceAccuracy = 0.8
-}: FaceSwapOptions): Promise<FaceSwapResult> {
-  if (!REPLICATE_API_KEY || REPLICATE_API_KEY.includes('undefined')) {
-    throw new Error('Valid Replicate API key not found. Please check your environment variables.');
-  }
-
-  try {
-    console.log('🆔 Starting InstantID face swap...');
-    const replicate = new Replicate({
-      auth: REPLICATE_API_KEY,
-    });
-
-    // Upload the source image
-    console.log('📤 Uploading source image...');
-    const sourceImageUrl = await uploadToReplicate(sourceImage);
-
-    // Use InstantID model for consistent face generation
-    console.log('🎨 Generating with InstantID...');
-    const instantIdResult = await replicate.run(
-      "fofr/face-to-many:35cea9c3164d9fb7fbd48b51ddec4917f60c386c6b9ee347a4d4b0e3fb1d5b7c",
-      {
-        input: {
-          image: sourceImageUrl,
-          prompt: targetPrompt,
-          negative_prompt: "blurry, low quality, distorted face, deformed, ugly, bad anatomy, extra limbs",
-          num_outputs: 1,
-          guidance_scale: 5,
-          num_inference_steps: 30,
-          seed: Math.floor(Math.random() * 1000000),
-          identity_strength: preserveFaceAccuracy,
-          adapter_strength: 1.0
-        }
-      }
-    );
-
-    if (!instantIdResult || (Array.isArray(instantIdResult) && instantIdResult.length === 0)) {
-      throw new Error('InstantID failed to generate result');
-    }
-
-    const resultUrl = Array.isArray(instantIdResult) ? instantIdResult[0] : instantIdResult;
-
-    // Download the result
-    console.log('⬇️ Downloading InstantID result...');
-    const response = await retryFetch(resultUrl, {});
-    
-    if (!response.ok) {
-      throw new Error(`Failed to download result: ${response.statusText}`);
-    }
-    
-    const blob = await response.blob();
-    if (blob.size === 0) {
-      throw new Error('Received empty result file');
-    }
-
-    // Convert to base64 data URL
-    const dataUrl = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result === 'string') {
-          resolve(reader.result);
-        } else {
-          reject(new Error('Failed to convert result to data URL'));
-        }
-      };
-      reader.onerror = () => reject(new Error('Failed to read result blob'));
-      reader.readAsDataURL(blob);
-    });
-
-    console.log('✅ InstantID face swap completed successfully!');
-
-    return {
-      swappedImage: dataUrl,
-      detectedFaces: 1,
-      confidence: preserveFaceAccuracy
-    };
-
-  } catch (error) {
-    console.error('❌ InstantID face swap error:', error);
-    
-    if (error instanceof Error) {
-      if (error.message.includes('rate limit')) {
-        throw new Error('Rate limit exceeded. Please wait a moment and try again.');
-      } else if (error.message.includes('insufficient credits')) {
-        throw new Error('Insufficient Replicate credits. Please check your account.');
-      } else if (error.message.includes('Invalid API key')) {
-        throw new Error('Invalid Replicate API key. Please check your configuration.');
-      }
-      throw error;
-    }
-    
-    throw new Error('Failed to perform InstantID face swap');
-  }
-}
-
-/**
- * Main face swap function that tries multiple approaches for best results
- */
-export async function generateFaceSwappedImage(
-  sourceImage: string,
-  targetPrompt: string,
-  preserveFaceAccuracy: number = 0.8
+async function generateWithStabilityAI(
+  prompt: string,
+  originalContent: string
 ): Promise<string> {
-  console.log('🎭 Starting face swap generation...');
+  if (!STABILITY_API_KEY || STABILITY_API_KEY.includes('undefined')) {
+    throw new Error('Stability API key not found. Please check your environment variables.');
+  }
 
   try {
-    // Try InstantID first as it's more reliable for face consistency
-    const result = await performInstantIDFaceSwap({
-      sourceImage,
-      targetPrompt,
-      preserveFaceAccuracy
+    // Process base64 image
+    const base64Data = originalContent.split(',')[1];
+    if (!base64Data) {
+      throw new Error('Invalid image data. Please try capturing the photo again.');
+    }
+
+    const byteCharacters = atob(base64Data);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    const imageBlob = new Blob([byteArray], { type: 'image/jpeg' });
+
+    if (imageBlob.size === 0) {
+      throw new Error('Empty image content received. Please try capturing the photo again.');
+    }
+
+    if (imageBlob.size > 10 * 1024 * 1024) {
+      throw new Error('Image size exceeds 10MB limit. Please try capturing a smaller photo.');
+    }
+
+    // Prepare form data for v2beta API
+    const formData = new FormData();
+    formData.append('image', imageBlob, 'input.jpg');
+    formData.append('prompt', prompt);
+    formData.append('negative_prompt', 'blurry, low quality, distorted, deformed, ugly, bad anatomy, watermark, text');
+    formData.append('aspect_ratio', '1:1'); // Square aspect ratio
+    formData.append('output_format', 'png');
+
+    // Make API request with retry logic
+    const response = await retryWithExponentialBackoff(async () => {
+      console.log('Attempting Stability AI generation...');
+      const result = await axios.post(
+        API_ENDPOINTS.image,
+        formData,
+        {
+          headers: {
+            Accept: 'image/*',
+            Authorization: `Bearer ${STABILITY_API_KEY}`,
+          },
+          responseType: 'arraybuffer',
+          maxBodyLength: Infinity,
+          maxContentLength: Infinity,
+          timeout: 60000 // Increased timeout for v2 API
+        }
+      );
+
+      if (!result?.data) {
+        throw new Error('Empty response from Stability AI');
+      }
+
+      return result;
     });
 
-    return result.swappedImage;
+    // Convert arraybuffer to base64
+    const arrayBuffer = response.data;
+    const base64String = btoa(
+      new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+    );
 
-  } catch (instantIdError) {
-    console.log('InstantID failed, trying alternative face swap...');
+    return `data:image/png;base64,${base64String}`;
+
+  } catch (error) {
+    console.error('Stability AI error:', error);
     
+    // Handle Axios errors
+    if (axios.isAxiosError(error)) {
+      const status = error.response?.status;
+      const message = error.response?.data?.message || 
+                     (typeof error.response?.data === 'string' ? error.response.data : '');
+
+      if (!error.response) {
+        throw new Error('Network error. Please check your internet connection and try again.');
+      }
+
+      switch (status) {
+        case 400:
+          throw new Error(`Invalid request: ${message || 'Please check your image and try again.'}`);
+        case 401:
+          throw new Error('Invalid API key. Please check your Stability AI configuration.');
+        case 402:
+          throw new Error('Account credits depleted. Please check your Stability AI account.');
+        case 404:
+          throw new Error('Stability AI model not found. This may be a temporary issue.');
+        case 429:
+          throw new Error('Too many requests. Please wait a moment and try again.');
+        case 500:
+        case 502:
+        case 503:
+        case 504:
+          throw new Error('Stability AI service is temporarily unavailable. Trying fallback service...');
+        default:
+          throw new Error(message || 'An unexpected error occurred with Stability AI.');
+      }
+    }
+
+    if (error instanceof Error) {
+      throw error;
+    }
+
+    throw new Error('An unexpected error occurred with Stability AI.');
+  }
+}
+
+export async function generateImage(
+  prompt: string, 
+  originalContent: string,
+  modelType: 'image' | 'video' = 'image',
+  videoDuration: number = 5,
+  options: GenerationOptions = {}
+): Promise<string> {
+  console.log(`Starting ${modelType} generation with prompt:`, prompt);
+
+  // Input validation
+  if (!prompt.trim()) {
+    throw new Error('Prompt cannot be empty for generation');
+  }
+
+  if (!originalContent?.startsWith('data:image/')) {
+    throw new Error('Invalid image format. Please provide a valid image.');
+  }
+
+  // Default options
+  const {
+    enableFaceSwap = false, // Disabled for now until face swap service is created
+    faceSwapAccuracy = 0.8,
+    useAdvancedFaceSwap = false
+  } = options;
+
+  // For video generation, use Replicate
+  if (modelType === 'video') {
+    if (!REPLICATE_API_KEY || REPLICATE_API_KEY.includes('undefined')) {
+      throw new Error('Replicate API key not found. Please check your environment variables.');
+    }
+
     try {
-      // Fallback to traditional face swap
-      const result = await performFaceSwap({
-        sourceImage,
-        targetPrompt,
-        preserveFaceAccuracy
+      console.log('Using Replicate for video generation...');
+      const result = await generateWithReplicate({
+        prompt,
+        inputData: originalContent,
+        type: 'video',
+        duration: videoDuration
       });
 
-      return result.swappedImage;
+      return result;
 
-    } catch (faceSwapError) {
-      console.error('Both face swap methods failed:', {
-        instantIdError,
-        faceSwapError
-      });
-
-      throw new Error('All face swap methods failed. Please try again or check your image quality.');
+    } catch (error) {
+      console.error('Video generation failed:', error);
+      throw new Error(error instanceof Error ? error.message : 'Failed to generate video. Please try again.');
     }
   }
+
+  // For image generation - face swap disabled for now
+  if (enableFaceSwap) {
+    console.log('Face swap requested but not yet implemented. Using regular generation...');
+  }
+
+  // Regular image generation fallback
+  let lastError: Error | null = null;
+
+  // Try Stability AI first
+  if (STABILITY_API_KEY && !STABILITY_API_KEY.includes('undefined')) {
+    try {
+      console.log('Trying Stability AI...');
+      return await generateWithStabilityAI(prompt, originalContent);
+    } catch (error) {
+      console.log('Stability AI failed, will try Replicate fallback...');
+      lastError = error instanceof Error ? error : new Error('Stability AI failed');
+      
+      // Don't fallback on authentication errors
+      if (lastError.message.includes('Invalid API key') || 
+          lastError.message.includes('Account credits depleted')) {
+        throw lastError;
+      }
+    }
+  } else {
+    console.log('No Stability AI key found, using Replicate...');
+  }
+
+  // Fallback to Replicate for image generation
+  if (REPLICATE_API_KEY && !REPLICATE_API_KEY.includes('undefined')) {
+    try {
+      console.log('Using Replicate as fallback for image generation...');
+      return await generateWithReplicate({
+        prompt,
+        inputData: originalContent,
+        type: 'image'
+      });
+    } catch (error) {
+      console.error('Replicate fallback also failed:', error);
+      
+      // If both services failed, throw a combined error
+      const replicateError = error instanceof Error ? error.message : 'Replicate service failed';
+      const stabilityError = lastError ? lastError.message : 'Stability AI not configured';
+      
+      throw new Error(`Both AI services failed. Stability AI: ${stabilityError}. Replicate: ${replicateError}`);
+    }
+  }
+
+  // If no services are available
+  const errorMsg = !STABILITY_API_KEY ? 'Stability AI key missing' : (lastError?.message || 'Stability AI failed');
+  const replicateMsg = !REPLICATE_API_KEY ? 'Replicate API key missing' : 'Replicate not attempted';
+  
+  throw new Error(`No AI services available. Stability AI: ${errorMsg}. Replicate: ${replicateMsg}`);
+}
+
+/**
+ * Generate image with explicit face swap enabled (placeholder for now)
+ */
+export async function generateImageWithFaceSwap(
+  prompt: string,
+  originalContent: string,
+  faceSwapAccuracy: number = 0.8
+): Promise<string> {
+  console.log('Face swap requested but service not yet implemented. Using regular generation.');
+  return generateImage(prompt, originalContent, 'image', 5, {
+    enableFaceSwap: false // Disabled until face swap service is created
+  });
+}
+
+/**
+ * Generate image without face swap (original behavior)
+ */
+export async function generateImageWithoutFaceSwap(
+  prompt: string,
+  originalContent: string
+): Promise<string> {
+  return generateImage(prompt, originalContent, 'image', 5, {
+    enableFaceSwap: false
+  });
 }
