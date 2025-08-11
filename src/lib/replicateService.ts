@@ -13,7 +13,270 @@ interface GenerationOptions {
 const MAX_RETRIES = 2;
 const RETRY_DELAY = 1000; // milliseconds
 
-export async function generateWithReplicate({ prompt, inputData, type, duration = 5 }: GenerationOptions): Promise<string> {
+// Helper function to convert data URI to blob
+function dataURItoBlob(dataURI: string): Blob {
+  try {
+    const byteString = atob(dataURI.split(',')[1]);
+    const mimeString = dataURI.split(',')[0].split(':')[1].split(';')[0];
+    const ab = new ArrayBuffer(byteString.length);
+    const ia = new Uint8Array(ab);
+    for (let i = 0; i < byteString.length; i++) {
+      ia[i] = byteString.charCodeAt(i);
+    }
+    return new Blob([ab], { type: mimeString });
+  } catch (error) {
+    console.error('Error converting data URI to blob:', error);
+    throw new Error('Failed to process image data');
+  }
+}
+
+// Retry fetch with exponential backoff
+async function retryFetch(url: string, options: RequestInit, retries = MAX_RETRIES): Promise<Response> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const response = await fetch(url, {
+        ...options,
+        signal: AbortSignal.timeout(60000) // 60 second timeout
+      });
+      
+      if (response.ok) {
+        return response;
+      }
+      
+      // Don't retry on client errors (4xx)
+      if (response.status >= 400 && response.status < 500) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      // Retry on server errors (5xx) or network issues
+      if (attempt < retries) {
+        console.log(`Attempt ${attempt + 1} failed, retrying...`);
+        await new Promise(resolve => setTimeout(resolve, RETRY_DELAY * Math.pow(2, attempt)));
+        continue;
+      }
+      
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    } catch (error) {
+      if (attempt < retries && (error instanceof TypeError || error.message.includes('fetch'))) {
+        console.log(`Network error on attempt ${attempt + 1}, retrying...`);
+        await new Promise(resolve => setTimeout(resolve, RETRY_DELAY * Math.pow(2, attempt)));
+        continue;
+      }
+      throw error;
+    }
+  }
+  
+  throw new Error('All retry attempts failed');
+}
+
+// Upload image to Replicate
+async function uploadToReplicate(imageData: string): Promise<string> {
+  try {
+    // Convert base64 to blob
+    const blob = dataURItoBlob(imageData);
+    const file = new File([blob], 'input.jpg', { type: 'image/jpeg' });
+
+    // Get upload URL from Replicate
+    const uploadResponse = await fetch('https://api.replicate.com/v1/uploads', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Token ${REPLICATE_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ purpose: 'input' })
+    });
+
+    if (!uploadResponse.ok) {
+      const errorText = await uploadResponse.text();
+      throw new Error(`Failed to get upload URL: ${errorText}`);
+    }
+
+    const uploadData = await uploadResponse.json();
+    if (!uploadData?.upload_url || !uploadData?.serving_url) {
+      throw new Error('Invalid upload response from Replicate');
+    }
+
+    // Upload the file
+    const uploadResult = await retryFetch(uploadData.upload_url, {
+      method: 'PUT',
+      body: file
+    });
+
+    if (!uploadResult.ok) {
+      throw new Error(`Failed to upload file: ${uploadResult.statusText}`);
+    }
+
+    return uploadData.serving_url;
+  } catch (error) {
+    console.error('Error uploading to Replicate:', error);
+    throw new Error('Failed to upload image to Replicate service');
+  }
+}
+
+async function generateVideo(
+  replicate: Replicate, 
+  prompt: string, 
+  imageData: string, 
+  duration: number = 5
+): Promise<string> {
+  try {
+    // Upload image to Replicate first
+    console.log('Uploading image to Replicate...');
+    const imageUrl = await uploadToReplicate(imageData);
+
+    // Run video generation model
+    console.log('Running video generation model...');
+    const output = await replicate.run(
+      "lucataco/flux-in-context:703f38c44b9c2820b79b54f96ef5f6554240b3ec4035a0cf80ba04e1f87ae307",
+      {
+        input: {
+          image: imageUrl,
+          prompt: prompt,
+          num_frames: Math.min(24 * duration, 120), // Cap at 120 frames (5 seconds at 24fps)
+          fps: 24,
+          guidance_scale: 7.5,
+          num_inference_steps: 50,
+          negative_prompt: "blurry, low quality, distorted, deformed, ugly, bad anatomy, watermark, text"
+        }
+      }
+    );
+
+    if (!output || typeof output !== 'string' || !output.startsWith('http')) {
+      console.error('Unexpected video output from Replicate:', output);
+      throw new Error('Invalid video response from Replicate API');
+    }
+
+    // Download the video
+    console.log('Downloading generated video...');
+    const response = await retryFetch(output, {});
+    
+    if (!response.ok) {
+      throw new Error(`Failed to download video: ${response.statusText}`);
+    }
+    
+    const videoBlob = await response.blob();
+    if (videoBlob.size === 0) {
+      throw new Error('Received empty video file');
+    }
+    
+    return URL.createObjectURL(videoBlob);
+
+  } catch (error) {
+    console.error('Video generation error:', error);
+    
+    if (error instanceof Error) {
+      if (error.message.includes('rate limit')) {
+        throw new Error('Rate limit exceeded. Please wait a moment and try again.');
+      } else if (error.message.includes('insufficient credits')) {
+        throw new Error('Insufficient Replicate credits. Please check your account.');
+      } else if (error.message.includes('Invalid API key')) {
+        throw new Error('Invalid Replicate API key. Please check your configuration.');
+      }
+      throw error;
+    }
+    
+    throw new Error('Failed to generate video with Replicate');
+  }
+}
+
+async function generateImage(
+  replicate: Replicate, 
+  prompt: string, 
+  imageData: string
+): Promise<string> {
+  try {
+    // Upload image to Replicate first
+    console.log('Uploading image to Replicate...');
+    const imageUrl = await uploadToReplicate(imageData);
+
+    // Run image-to-image generation model
+    console.log('Running image generation model...');
+    const output = await replicate.run(
+      "stability-ai/stable-diffusion-3",
+      {
+        input: {
+          image: imageUrl,
+          prompt: prompt,
+          negative_prompt: "blurry, low quality, distorted, deformed, ugly, bad anatomy, watermark, text, logo",
+          strength: 0.4, // How much to transform the original image
+          num_inference_steps: 30,
+          guidance_scale: 7.5,
+          output_format: "png",
+          output_quality: 90
+        }
+      }
+    );
+
+    if (!output) {
+      throw new Error('Received empty response from Replicate API');
+    }
+
+    // Handle different output formats
+    let imageUrl: string;
+    if (Array.isArray(output) && output.length > 0) {
+      imageUrl = output[0];
+    } else if (typeof output === 'string') {
+      imageUrl = output;
+    } else {
+      console.error('Unexpected image output format:', typeof output, output);
+      throw new Error('Invalid image response format from Replicate API');
+    }
+
+    if (!imageUrl.startsWith('http')) {
+      throw new Error('Invalid image URL from Replicate API');
+    }
+
+    // Download the generated image
+    console.log('Downloading generated image...');
+    const response = await retryFetch(imageUrl, {});
+    
+    if (!response.ok) {
+      throw new Error(`Failed to download image: ${response.statusText}`);
+    }
+    
+    const imageBlob = await response.blob();
+    if (imageBlob.size === 0) {
+      throw new Error('Received empty image file');
+    }
+
+    // Convert blob to base64 data URL
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          resolve(reader.result);
+        } else {
+          reject(new Error('Failed to convert image to data URL'));
+        }
+      };
+      reader.onerror = () => reject(new Error('Failed to read image blob'));
+      reader.readAsDataURL(imageBlob);
+    });
+
+  } catch (error) {
+    console.error('Image generation error:', error);
+    
+    if (error instanceof Error) {
+      if (error.message.includes('rate limit')) {
+        throw new Error('Rate limit exceeded. Please wait a moment and try again.');
+      } else if (error.message.includes('insufficient credits')) {
+        throw new Error('Insufficient Replicate credits. Please check your account.');
+      } else if (error.message.includes('Invalid API key')) {
+        throw new Error('Invalid Replicate API key. Please check your configuration.');
+      }
+      throw error;
+    }
+    
+    throw new Error('Failed to generate image with Replicate');
+  }
+}
+
+export async function generateWithReplicate({ 
+  prompt, 
+  inputData, 
+  type, 
+  duration = 5 
+}: GenerationOptions): Promise<string> {
   if (!REPLICATE_API_KEY || REPLICATE_API_KEY.includes('undefined')) {
     throw new Error('Valid Replicate API key not found. Please check your environment variables.');
   }
@@ -30,333 +293,11 @@ export async function generateWithReplicate({ prompt, inputData, type, duration 
     }
   } catch (error) {
     console.error('Replicate API Error:', error);
+    
     if (error instanceof Error) {
       throw error;
     } else {
-      throw new Error(`Failed to generate ${type} with Replicate. Please try again later.`);
+      throw new Error(`Failed to generate ${type} with Replicate API`);
     }
-  }
-}
-
-// Helper function to retry fetch operations
-async function retryFetch(url: string, options: RequestInit, maxRetries = MAX_RETRIES): Promise<Response> {
-  let lastError;
-  
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      const response = await fetch(url, {
-        ...options,
-        // Add a cache buster to prevent caching issues
-        headers: {
-          ...options.headers,
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache',
-          'Expires': '0'
-        }
-      });
-      
-      // If it's a network error or server error, retry
-      if (!response.ok && (response.status === 0 || response.status >= 500)) {
-        throw new Error(`Server error: ${response.status} ${response.statusText}`);
-      }
-      
-      return response;
-    } catch (error) {
-      lastError = error;
-      
-      // Don't retry client errors
-      if (error instanceof Error) {
-        const statusMatch = error.message.match(/(\d{3})/); // Extract status code if present
-        if (statusMatch) {
-          const status = parseInt(statusMatch[1], 10);
-          if (status >= 400 && status < 500) {
-            throw error; // Don't retry client errors
-          }
-        }
-      }
-      
-      // If we've exhausted our retries, throw the last error
-      if (attempt === maxRetries) {
-        break;
-      }
-      
-      // Exponential backoff delay
-      const delay = RETRY_DELAY * Math.pow(2, attempt);
-      console.log(`Retry fetch attempt ${attempt + 1}/${maxRetries} after ${delay}ms`);
-      await new Promise(resolve => setTimeout(resolve, delay));
-    }
-  }
-  
-  throw lastError;
-}
-
-async function generateVideo(replicate: Replicate, prompt: string, videoData: string, duration: number): Promise<string> {
-  // For Replicate we need to convert the base64 video data to a File object
-  // that can be uploaded via fetch
-  let blob: Blob;
-  try {
-    blob = dataURItoBlob(videoData);
-    if (blob.size === 0) {
-      throw new Error('Created empty blob from video data');
-    }
-  } catch (error) {
-    console.error('Error converting video data to blob:', error);
-    throw new Error('Failed to process video data. Please try recording again.');
-  }
-  
-  const file = new File([blob], 'input.webm', { type: 'video/webm' });
-  
-  try {
-    // Get the upload URL from Replicate
-    console.log('Getting upload URL from Replicate...');
-    const uploadResponse = await retryFetch('https://api.replicate.com/v1/uploads', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Token ${REPLICATE_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ purpose: 'input' })
-    });
-    
-    if (!uploadResponse.ok) {
-      const errorText = await uploadResponse.text();
-      throw new Error(`Failed to get upload URL (${uploadResponse.status}): ${errorText}`);
-    }
-    
-    const uploadData = await uploadResponse.json();
-    if (!uploadData || !uploadData.upload_url || !uploadData.serving_url) {
-      console.error('Invalid upload data response:', uploadData);
-      throw new Error('Invalid response from Replicate upload API');
-    }
-    
-    // Upload the file to the URL provided by Replicate
-    console.log('Uploading video file to Replicate...');
-    const uploadFileResponse = await retryFetch(uploadData.upload_url, {
-      method: 'PUT',
-      body: file
-    });
-    
-    if (!uploadFileResponse.ok) {
-      throw new Error(`Failed to upload video file (${uploadFileResponse.status}): ${uploadFileResponse.statusText}`);
-    }
-    
-    // Now run the video-to-video model using the uploaded file
-    console.log('Starting video generation with Replicate...');
-    let output;
-    try {
-      output = await replicate.run(
-        "stability-ai/stable-video-diffusion:3d0d3610da454c1fa31e0d07a2049152c30f75b58da9b39686de2843ab4ba923",
-        {
-          input: {
-            video: uploadData.serving_url,
-            prompt: prompt,
-            video_length: duration,
-            fps: 24,
-            sizing_strategy: "maintain_aspect_ratio",
-            motion_bucket_id: 127,
-            frames: duration * 24,
-            seed: Math.floor(Math.random() * 2147483647)
-          }
-        }
-      );
-    } catch (error) {
-      console.error('Replicate model run error:', error);
-      if (error instanceof Error && error.message.includes('failed')) {
-        throw new Error('Replicate model run failed. The service may be temporarily unavailable. Please try again later.');
-      }
-      throw error;
-    }
-
-    if (!output) {
-      throw new Error('Received empty response from Replicate API');
-    }
-
-    if (typeof output !== 'string') {
-      console.error('Unexpected output type from Replicate:', typeof output, output);
-      throw new Error('Invalid response format from Replicate API');
-    }
-
-    // Download the video from the returned URL
-    console.log('Downloading generated video...');
-    const response = await retryFetch(output, {});
-    if (!response.ok) {
-      throw new Error(`Failed to download video (${response.status}): ${response.statusText}`);
-    }
-    
-    const videoBlob = await response.blob();
-    if (videoBlob.size === 0) {
-      throw new Error('Received empty video file from Replicate');
-    }
-    
-    return URL.createObjectURL(videoBlob);
-  } catch (error) {
-    console.error('Video generation error:', error);
-    // Rethrow the error to be handled by the caller
-    throw error;
-  }
-}
-
-async function generateImage(replicate: Replicate, prompt: string, imageData: string): Promise<string> {
-  // For Replicate we need to convert the base64 image data to a File object
-  // that can be uploaded via fetch
-  let blob: Blob;
-  try {
-    blob = dataURItoBlob(imageData);
-    if (blob.size === 0) {
-      throw new Error('Created empty blob from image data');
-    }
-  } catch (error) {
-    console.error('Error converting image data to blob:', error);
-    throw new Error('Failed to process image data. Please try capturing again.');
-  }
-  
-  const file = new File([blob], 'input.jpg', { type: 'image/jpeg' });
-  
-  try {
-    // Get the upload URL from Replicate
-    console.log('Getting upload URL from Replicate...');
-    const uploadResponse = await retryFetch('https://api.replicate.com/v1/uploads', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Token ${REPLICATE_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ purpose: 'input' })
-    });
-    
-    if (!uploadResponse.ok) {
-      const errorText = await uploadResponse.text();
-      throw new Error(`Failed to get upload URL (${uploadResponse.status}): ${errorText}`);
-    }
-    
-    const uploadData = await uploadResponse.json();
-    if (!uploadData || !uploadData.upload_url || !uploadData.serving_url) {
-      console.error('Invalid upload data response:', uploadData);
-      throw new Error('Invalid response from Replicate upload API');
-    }
-    
-    // Upload the file to the URL provided by Replicate
-    console.log('Uploading image file to Replicate...');
-    const uploadFileResponse = await retryFetch(uploadData.upload_url, {
-      method: 'PUT',
-      body: file
-    });
-    
-    if (!uploadFileResponse.ok) {
-      throw new Error(`Failed to upload image file (${uploadFileResponse.status}): ${uploadFileResponse.statusText}`);
-    }
-    
-    // Run the image-to-image model using the uploaded file
-    console.log('Starting image generation with Replicate...');
-    let output;
-    try {
-      output = await replicate.run(
-        "stability-ai/sdxl:1bfb924045802467cf8869d31ec7c3a3105683a3868f13426becc97eca71d442",
-        {
-          input: {
-            image: uploadData.serving_url,
-            prompt: prompt,
-            strength: 0.35,
-            guidance_scale: 7.5,
-            num_inference_steps: 25,
-            negative_prompt: "blurry, low quality, distorted, deformed, ugly, bad anatomy"
-          }
-        }
-      );
-    } catch (error) {
-      console.error('Replicate model run error:', error);
-      if (error instanceof Error && error.message.includes('failed')) {
-        throw new Error('Replicate model run failed. The service may be temporarily unavailable. Please try again later.');
-      }
-      throw error;
-    }
-
-    if (!output) {
-      throw new Error('Received empty response from Replicate API');
-    }
-
-    // Check output format
-    if (!Array.isArray(output) || output.length === 0) {
-      console.error('Unexpected output format from Replicate:', output);
-      throw new Error('Invalid response format from Replicate API');
-    }
-
-    // Get the first output image URL
-    const outputUrl = output[0];
-    if (typeof outputUrl !== 'string' || !outputUrl.startsWith('http')) {
-      console.error('Invalid image URL from Replicate:', outputUrl);
-      throw new Error('Invalid image URL received from Replicate');
-    }
-
-    // Download the image from the returned URL
-    console.log('Downloading generated image...');
-    const response = await retryFetch(outputUrl, {});
-    if (!response.ok) {
-      throw new Error(`Failed to download image (${response.status}): ${response.statusText}`);
-    }
-    
-    const imageBlob = await response.blob();
-    if (imageBlob.size === 0) {
-      throw new Error('Received empty image file from Replicate');
-    }
-    
-    return URL.createObjectURL(imageBlob);
-  } catch (error) {
-    console.error('Image generation error:', error);
-    // Rethrow the error to be handled by the caller
-    throw error;
-  }
-}
-
-// Helper function to convert a data URI to a Blob
-function dataURItoBlob(dataURI: string): Blob {
-  try {
-    // Validate data URI format
-    if (!dataURI || typeof dataURI !== 'string') {
-      throw new Error('Invalid data URI: empty or not a string');
-    }
-    
-    // Split the data URI to get the base64 data
-    const splitDataURI = dataURI.split(',');
-    if (splitDataURI.length !== 2) {
-      throw new Error('Invalid data URI format: missing comma separator');
-    }
-    
-    // Validate mime type
-    const mimeTypeMatch = splitDataURI[0].match(/:(.*?);/);
-    if (!mimeTypeMatch) {
-      throw new Error('Invalid data URI format: cannot extract MIME type');
-    }
-    const mimeString = mimeTypeMatch[1];
-    
-    const base64Data = splitDataURI[1];
-    if (!base64Data) {
-      throw new Error('Invalid data URI: missing base64 data');
-    }
-    
-    let byteString: string;
-    try {
-      byteString = atob(base64Data);
-    } catch (e) {
-      throw new Error('Failed to decode base64 data: ' + (e instanceof Error ? e.message : String(e)));
-    }
-    
-    if (byteString.length === 0) {
-      throw new Error('Decoded base64 data is empty');
-    }
-    
-    // Write the bytes of the string to an ArrayBuffer
-    const ab = new ArrayBuffer(byteString.length);
-    const ia = new Uint8Array(ab);
-    
-    for (let i = 0; i < byteString.length; i++) {
-      ia[i] = byteString.charCodeAt(i);
-    }
-    
-    // Create a Blob with the ArrayBuffer and the appropriate MIME type
-    return new Blob([ab], { type: mimeString });
-  } catch (error) {
-    console.error('Error in dataURItoBlob:', error);
-    throw error;
   }
 }
