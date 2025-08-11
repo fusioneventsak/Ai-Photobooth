@@ -140,23 +140,27 @@ async function generateCharacterPreservationImage(replicate: any, prompt: string
     
     // Try Ideogram Character first (best for face preservation)
     const output = await replicate.run(
-      "ideogram-ai/ideogram-character:eb67e5a8b1db1e2a3f71e97a7fe3e5b5e44ab3b1c3b3e1c1e1c1e1c1e1c1e1c1",
+      "ideogram-ai/ideogram-character",
       {
         input: {
           prompt: `${prompt}, photorealistic, high quality, cinematic lighting, detailed`,
-          character_reference: originalContent,
-          style_type: "Realistic",
-          aspect_ratio: "1:1",
-          magic_prompt_option: "On"
+          character_reference_image: originalContent
         }
       }
     );
 
+    if (output && output.url && typeof output.url === 'function') {
+      const imageUrl = output.url();
+      console.log('✅ Ideogram Character generated image:', imageUrl);
+      return imageUrl;
+    }
+    
+    // Handle array output (fallback)
     if (output && Array.isArray(output) && output.length > 0) {
       return output[0];
     }
     
-    throw new Error('No output from Ideogram Character');
+    throw new Error('No valid output from Ideogram Character');
     
   } catch (error) {
     console.error('Ideogram Character failed:', error);
@@ -178,7 +182,7 @@ async function generateCharacterTransformationImage(replicate: any, prompt: stri
 async function generateWithIdeogramV3(replicate: any, prompt: string): Promise<string> {
   try {
     const output = await replicate.run(
-      "ideogram-ai/ideogram-v3-quality:9b3bbdf10f516b0f73777f41d7cf82bc50efb36ed82dd4ba1db9ebb2b5e35c77",
+      "ideogram-ai/ideogram-v3-quality",
       {
         input: {
           prompt: `${prompt}, photorealistic, high quality, cinematic lighting, detailed`,
@@ -188,11 +192,18 @@ async function generateWithIdeogramV3(replicate: any, prompt: string): Promise<s
       }
     );
 
+    if (output && output.url && typeof output.url === 'function') {
+      const imageUrl = output.url();
+      console.log('✅ Ideogram v3 generated image:', imageUrl);
+      return imageUrl;
+    }
+    
+    // Handle array output (fallback)
     if (output && Array.isArray(output) && output.length > 0) {
       return output[0];
     }
     
-    throw new Error('No output from Ideogram v3');
+    throw new Error('No valid output from Ideogram v3');
     
   } catch (error) {
     console.error('Ideogram v3 failed:', error);
