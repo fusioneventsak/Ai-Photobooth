@@ -23,6 +23,9 @@ export default function Photobooth() {
       const stabilityKey = import.meta.env.VITE_STABILITY_API_KEY;
       const replicateKey = import.meta.env.VITE_REPLICATE_API_KEY;
       
+      // Check if the key is being read
+      console.log('API Key:', import.meta.env.VITE_REPLICATE_API_KEY?.substring(0, 10) + '...');
+      
       console.log('🔍 API Keys Status:');
       console.log('Stability AI:', stabilityKey ? 
         `✅ Present (${stabilityKey.substring(0, 10)}...)` : 
