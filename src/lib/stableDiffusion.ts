@@ -49,18 +49,21 @@ export async function generateImage(
 
 async function generateWithFacePreservation(prompt: string, originalContent: string): Promise<string> {
   try {
-    console.log('🎭 Preserving face using advanced image-to-image approach...');
+    console.log('🎭 Preserving face using advanced inpainting approach...');
     
-    // Use a refined image-to-image approach
-    const result = await generateWithImageToImage(prompt, originalContent, 0.65, true);
+    // Step 1: Create an inverted face mask (preserve face, modify everything else)
+    const invertedMask = await createInvertedFaceMask(originalContent);
+    
+    // Step 2: Use inpainting to modify everything EXCEPT the face
+    const result = await inpaintAroundFace(prompt, originalContent, invertedMask);
     return result;
     
   } catch (error) {
-    console.error('Face preservation failed:', error);
+    console.error('Face preservation inpainting failed:', error);
     
-    // Fallback to even lower strength
-    console.log('🔄 Falling back to minimal transformation...');
-    return await generateWithImageToImage(prompt, originalContent, 0.45, true);
+    // Fallback to low-strength image-to-image with better prompts
+    console.log('🔄 Falling back to controlled image-to-image...');
+    return await generateWithImageToImage(prompt, originalContent, 0.35, true);
   }
 }
 
@@ -97,8 +100,8 @@ async function generateWithImageToImage(
       let negativePrompt = 'blurry, low quality, distorted, deformed, ugly, bad anatomy, extra limbs';
       
       if (preserveFace) {
-        enhancedPrompt = `${prompt}, keep the exact same person, same facial features, same face shape, same eyes, same nose, same mouth, preserve facial identity completely, transform background completely, change clothing completely, new environment, new setting`;
-        negativePrompt = 'different face, different person, face changes, facial distortions, face swap, changed identity, face modifications, altered facial features, preserve original background, keep original clothing, same environment, original setting, blurry, low quality';
+        enhancedPrompt = `${prompt}, completely transform background and environment, change clothing and accessories, new setting, new location, dramatic background change, keep person's exact facial features identical`;
+        negativePrompt = 'face changes, different person, facial distortions, face swap, changed identity, face modifications, altered facial features, same background, original environment, unchanged setting, blurry, low quality';
       } else {
         enhancedPrompt = `${prompt}, generate new face that fits the scene, transform the person`;
         negativePrompt = 'preserve original face, same identity, blurry, low quality, distorted';
@@ -108,7 +111,7 @@ async function generateWithImageToImage(
       formData.append('image', imageBlob, 'image.png');
       formData.append('prompt', enhancedPrompt);
       formData.append('negative_prompt', negativePrompt);
-      formData.append('strength', strength.toString());
+      formData.append('strength', preserveFace ? '0.75' : strength.toString());
       formData.append('cfg_scale', preserveFace ? '10' : '7');
       formData.append('output_format', 'png');
       formData.append('mode', 'image-to-image');
@@ -214,8 +217,8 @@ function base64ToBlob(base64Data: string): Blob {
   }
 }
 
-// Simplified face mask creation (if needed for future enhancements)
-async function createFaceMask(originalContent: string): Promise<string> {
+async function createInvertedFaceMask(originalContent: string): Promise<string> {
+  // Creates a mask where face area is BLACK (preserved) and everything else is WHITE (modified)
   return new Promise((resolve, reject) => {
     try {
       const canvas = document.createElement('canvas');
@@ -230,20 +233,28 @@ async function createFaceMask(originalContent: string): Promise<string> {
         canvas.width = img.width;
         canvas.height = img.height;
 
-        // Create black background (areas to preserve)
-        ctx.fillStyle = 'black';
+        // Create white background (areas to modify - everything)
+        ctx.fillStyle = 'white';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        // Create white oval for face area (areas to modify)
-        ctx.fillStyle = 'white';
+        // Create a precise black area for just the face
+        ctx.fillStyle = 'black';
         ctx.save();
         
-        // Face detection area - upper center portion
-        const faceWidth = canvas.width * 0.4;
-        const faceHeight = canvas.height * 0.45;
+        // Precise face area - just the core facial features
+        const faceWidth = canvas.width * 0.28; // Slightly larger for better preservation
+        const faceHeight = canvas.height * 0.35;
         const centerX = canvas.width / 2;
-        const centerY = canvas.height * 0.35; // Upper third for face
+        const centerY = canvas.height * 0.35; // Face position
 
+        // Create a soft-edged face mask with feathered edges
+        const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, faceWidth / 1.8);
+        gradient.addColorStop(0, 'black');     // Core face - preserve
+        gradient.addColorStop(0.6, 'black');   // Still preserve
+        gradient.addColorStop(0.85, 'gray');   // Transition zone
+        gradient.addColorStop(1, 'white');     // Modify everything else
+
+        ctx.fillStyle = gradient;
         ctx.beginPath();
         ctx.ellipse(
           centerX,
@@ -259,11 +270,90 @@ async function createFaceMask(originalContent: string): Promise<string> {
         resolve(result);
       };
 
-      img.onerror = () => reject(new Error('Failed to load image for face mask creation'));
+      img.onerror = () => reject(new Error('Failed to load image for inverted mask creation'));
       img.src = originalContent;
 
     } catch (error) {
-      reject(new Error('Failed to create face mask'));
+      reject(new Error('Failed to create inverted face mask'));
     }
   });
+}
+
+async function inpaintAroundFace(prompt: string, originalContent: string, maskContent: string): Promise<string> {
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      console.log(`🖌️ Inpainting around face area (preserving face region)... Attempt ${attempt}/${MAX_RETRIES}`);
+      
+      const originalBlob = base64ToBlob(originalContent);
+      const maskBlob = base64ToBlob(maskContent);
+
+      const formData = new FormData();
+      formData.append('image', originalBlob, 'original.png');
+      formData.append('mask', maskBlob, 'mask.png');
+      formData.append('prompt', `${prompt}, completely transform the background and environment, change all clothing and accessories, new setting, new location, dramatic scene change, keep the person's face exactly the same`);
+      formData.append('negative_prompt', 'preserve original background, keep original clothing, maintain original setting, same environment, face changes, different person, facial modifications');
+      formData.append('strength', '0.95'); // Very high strength for maximum background transformation
+      formData.append('cfg_scale', '10'); // Higher for better prompt adherence
+      formData.append('output_format', 'png');
+
+      const response = await axios.post(
+        'https://api.stability.ai/v2beta/stable-image/edit/inpaint',
+        formData,
+        {
+          headers: {
+            Accept: 'image/*',
+            Authorization: `Bearer ${STABILITY_API_KEY}`,
+            'Content-Type': 'multipart/form-data',
+          },
+          responseType: 'arraybuffer',
+          timeout: 120000,
+          validateStatus: (status) => status < 500,
+        }
+      );
+
+      if (response.status === 401) {
+        throw new Error('Invalid API key. Please check your Stability AI API key.');
+      }
+      
+      if (response.status === 402) {
+        throw new Error('Insufficient credits. Please check your Stability AI account.');
+      }
+      
+      if (response.status === 429) {
+        throw new Error('Rate limit exceeded. Please wait and try again.');
+      }
+      
+      if (response.status >= 400) {
+        const errorText = new TextDecoder().decode(response.data);
+        console.error('Inpaint API Error Response:', errorText);
+        throw new Error(`Inpaint API Error (${response.status}): ${errorText || 'Unknown error'}`);
+      }
+
+      if (!response?.data || response.data.byteLength === 0) {
+        throw new Error('Empty response from Stability AI inpaint');
+      }
+
+      const arrayBuffer = response.data;
+      const base64String = btoa(
+        new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+      );
+
+      const result = `data:image/png;base64,${base64String}`;
+      console.log('✅ Face preservation inpainting successful');
+      return result;
+
+    } catch (error) {
+      console.error(`Inpainting around face failed (attempt ${attempt}):`, error);
+      
+      if (attempt === MAX_RETRIES) {
+        throw error;
+      }
+      
+      // Wait before retrying
+      console.log(`⏳ Waiting ${RETRY_DELAY}ms before retry...`);
+      await sleep(RETRY_DELAY * attempt);
+    }
+  }
+  
+  throw new Error('Failed to inpaint around face area after all retry attempts');
 }
