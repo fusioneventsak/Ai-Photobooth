@@ -237,25 +237,30 @@ async function createInvertedFaceMask(originalContent: string): Promise<string> 
         ctx.fillStyle = 'white';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        // Create optimized face area - not too big, not too small
+        // Create face area with extended soft blending to eliminate halo
         ctx.save();
         
-        // Balanced face area 
-        const faceWidth = canvas.width * 0.38; 
-        const faceHeight = canvas.height * 0.48; 
+        // Face area with extended transition zone
+        const faceWidth = canvas.width * 0.36; 
+        const faceHeight = canvas.height * 0.46; 
         const centerX = canvas.width / 2;
-        const centerY = canvas.height * 0.37; // Face position
+        const centerY = canvas.height * 0.37;
 
-        // Create a balanced gradient - soft but not too extreme
-        const outerRadius = faceWidth / 1.3; 
+        // Much larger outer radius to create very extended soft transition
+        const outerRadius = faceWidth * 1.8; // Much larger radius for softer blend
         const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, outerRadius);
         
-        // Simplified gradient with fewer steps for cleaner blending
+        // Very extended gradient to eliminate any visible halo
         gradient.addColorStop(0, 'black');      // Core face - preserve
-        gradient.addColorStop(0.3, 'black');    // Inner face - preserve
-        gradient.addColorStop(0.5, '#606060');  // Medium gray transition
-        gradient.addColorStop(0.7, '#A0A0A0');  // Light gray transition
+        gradient.addColorStop(0.15, 'black');   // Inner face - preserve
+        gradient.addColorStop(0.25, '#404040'); // Start very gradual transition
+        gradient.addColorStop(0.35, '#606060'); // Slow transition
+        gradient.addColorStop(0.45, '#808080'); // Medium gray
+        gradient.addColorStop(0.55, '#909090'); // Slightly lighter
+        gradient.addColorStop(0.65, '#A0A0A0'); // Light gray
+        gradient.addColorStop(0.75, '#B8B8B8'); // Lighter gray
         gradient.addColorStop(0.85, '#D0D0D0'); // Very light gray
+        gradient.addColorStop(0.95, '#E8E8E8'); // Nearly white
         gradient.addColorStop(1, 'white');      // Transform completely
 
         ctx.fillStyle = gradient;
