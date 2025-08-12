@@ -18,6 +18,48 @@ export default function Photobooth() {
   
   const webcamRef = React.useRef<Webcam>(null);
 
+  // Enhanced image validation function
+  const validateImageData = (imageData: string): { isValid: boolean; error?: string; info: any } => {
+    const info = {
+      type: typeof imageData,
+      length: imageData.length,
+      startsWithData: imageData.startsWith('data:'),
+      format: null,
+      base64Length: 0,
+      mimeType: null
+    };
+
+    if (typeof imageData !== 'string') {
+      return { isValid: false, error: 'Image data must be a string', info };
+    }
+
+    if (!imageData.startsWith('data:')) {
+      return { isValid: false, error: 'Image data must be a data URL', info };
+    }
+
+    try {
+      const [header, base64Data] = imageData.split(',');
+      if (!base64Data) {
+        return { isValid: false, error: 'No base64 data found', info };
+      }
+
+      const mimeMatch = header.match(/data:([^;]+)/);
+      info.mimeType = mimeMatch ? mimeMatch[1] : null;
+      info.base64Length = base64Data.length;
+      
+      // Try to decode to check validity
+      atob(base64Data);
+      
+      return { isValid: true, info };
+    } catch (error) {
+      return { 
+        isValid: false, 
+        error: `Invalid base64 data: ${error instanceof Error ? error.message : 'Unknown error'}`, 
+        info 
+      };
+    }
+  };
+
   // Environment variable checker for debugging
   useEffect(() => {
     const checkEnv = () => {
@@ -88,7 +130,18 @@ export default function Photobooth() {
     };
   }, [processedMedia]);
 
+  // Enhanced resize function with validation
   const resizeImage = async (imageData: string): Promise<string> => {
+    console.log('🔍 Starting image resize with validation...');
+    
+    // Validate input
+    const validation = validateImageData(imageData);
+    if (!validation.isValid) {
+      throw new Error(`Invalid input image: ${validation.error}`);
+    }
+    
+    console.log('📊 Input validation passed:', validation.info);
+
     return new Promise((resolve, reject) => {
       const img = new Image();
       
@@ -99,7 +152,15 @@ export default function Photobooth() {
 
       img.onload = () => {
         clearTimeout(timeout);
+        
         try {
+          console.log('🖼️ Original image loaded:', {
+            width: img.width,
+            height: img.height,
+            naturalWidth: img.naturalWidth,
+            naturalHeight: img.naturalHeight
+          });
+
           const canvas = document.createElement('canvas');
           const ctx = canvas.getContext('2d');
           if (!ctx) {
@@ -131,26 +192,50 @@ export default function Photobooth() {
           const x = (targetWidth - drawWidth) / 2;
           const y = (targetHeight - drawHeight) / 2;
 
+          console.log('🎨 Drawing image:', {
+            sourceSize: `${img.width}x${img.height}`,
+            targetSize: `${targetWidth}x${targetHeight}`,
+            drawSize: `${drawWidth}x${drawHeight}`,
+            position: `${x},${y}`,
+            aspectRatio
+          });
+
           ctx.drawImage(img, x, y, drawWidth, drawHeight);
 
           const resizedImage = canvas.toDataURL('image/jpeg', 0.95);
+          
+          // Validate output
+          const outputValidation = validateImageData(resizedImage);
+          if (!outputValidation.isValid) {
+            reject(new Error(`Invalid output image: ${outputValidation.error}`));
+            return;
+          }
+
           if (!resizedImage || resizedImage === 'data:,') {
             reject(new Error('Failed to resize image - invalid output'));
             return;
           }
 
+          console.log('✅ Image resize completed:', {
+            inputSize: validation.info.length,
+            outputSize: outputValidation.info.length,
+            compression: ((validation.info.length - outputValidation.info.length) / validation.info.length * 100).toFixed(1) + '%'
+          });
+
           resolve(resizedImage);
         } catch (error) {
-          console.error('Error resizing image:', error);
+          console.error('❌ Canvas processing error:', error);
           reject(new Error('Failed to resize image: ' + (error instanceof Error ? error.message : String(error))));
         }
       };
 
       img.onerror = () => {
         clearTimeout(timeout);
+        console.error('❌ Failed to load image for resizing');
         reject(new Error('Failed to load image for resizing'));
       };
 
+      console.log('📥 Loading image for resize...');
       img.src = imageData;
     });
   };
@@ -162,6 +247,12 @@ export default function Photobooth() {
       if (!imageSrc) {
         throw new Error('Failed to capture photo');
       }
+      
+      console.log('📷 Photo captured:', {
+        format: imageSrc.substring(0, 30) + '...',
+        size: imageSrc.length
+      });
+      
       setMediaData(imageSrc);
       setProcessedMedia(null);
       setGenerationAttempts(0);
@@ -209,6 +300,7 @@ export default function Photobooth() {
     </div>
   );
 
+  // Enhanced processMedia function with comprehensive debugging
   const processMedia = async () => {
     if (!mediaData) {
       setError('No photo captured');
@@ -231,11 +323,30 @@ export default function Photobooth() {
     try {
       setGenerationAttempts(prev => prev + 1);
 
-      console.log('Resizing captured image...');
-      const processedContent = await resizeImage(mediaData);
+      console.log('🔄 Starting AI generation process...');
+      console.log('📋 Generation details:', {
+        prompt: config.global_prompt,
+        modelType: currentModelType,
+        faceMode: config.face_preservation_mode || 'preserve_face',
+        attempt: generationAttempts + 1
+      });
 
-      console.log(`Generating AI ${currentModelType}...`);
-      console.log('Prompt:', config.global_prompt);
+      // Resize image first
+      console.log('🖼️ Resizing captured image...');
+      const processedContent = await resizeImage(mediaData);
+      
+      // Verify the resized image
+      if (!processedContent || !processedContent.startsWith('data:image/')) {
+        throw new Error('Image resizing failed - invalid output format');
+      }
+      
+      console.log('✅ Image resized successfully:', {
+        originalSize: mediaData.length,
+        processedSize: processedContent.length,
+        format: processedContent.substring(0, 50) + '...'
+      });
+
+      console.log(`🎨 Generating AI ${currentModelType}...`);
       
       let aiContent: string;
 
@@ -272,18 +383,66 @@ export default function Photobooth() {
         aiContent = await Promise.race([generationPromise, timeoutPromise]);
       }
       
+      // Validate AI content
       if (!aiContent) {
         throw new Error('Generated content is empty. Please try again.');
       }
 
-      console.log('✅ AI generation completed successfully');
+      // Check if it's a valid data URL or blob URL
+      if (!aiContent.startsWith('data:') && !aiContent.startsWith('blob:')) {
+        console.error('❌ Invalid AI content format:', aiContent.substring(0, 100));
+        throw new Error('Invalid AI content format received.');
+      }
+
+      console.log('🔍 Validating AI generated content...', {
+        contentType: typeof aiContent,
+        length: aiContent.length,
+        startsWithData: aiContent.startsWith('data:'),
+        startsWithBlob: aiContent.startsWith('blob:'),
+        preview: aiContent.substring(0, 100) + '...'
+      });
+
+      // Test if the generated image can be loaded (for data URLs only)
+      if (aiContent.startsWith('data:')) {
+        const testImg = new Image();
+        await new Promise<void>((resolve, reject) => {
+          testImg.onload = () => {
+            console.log('✅ AI generated image loads successfully:', {
+              width: testImg.width,
+              height: testImg.height
+            });
+            resolve();
+          };
+          testImg.onerror = () => {
+            console.error('❌ AI generated image failed to load!');
+            reject(new Error('Generated image is corrupted'));
+          };
+          testImg.src = aiContent;
+          
+          // Timeout after 5 seconds
+          setTimeout(() => {
+            reject(new Error('Image validation timeout'));
+          }, 5000);
+        });
+      }
+
+      console.log('✅ AI generation completed successfully:', {
+        type: currentModelType,
+        format: aiContent.startsWith('data:') ? 'data URL' : 'blob URL',
+        size: aiContent.length
+      });
+
       setProcessedMedia(aiContent);
       setError(null);
 
-      // Upload to gallery if successful
-      try {
-        if (config.enable_uploads && aiContent) {
-          console.log('Uploading to Supabase...');
+      // Upload to gallery if successful and enabled
+      if (config.enable_uploads && aiContent) {
+        console.log('📤 Starting gallery upload...');
+        
+        try {
+          // Add a small delay to ensure the UI updates
+          await new Promise(resolve => setTimeout(resolve, 100));
+          
           const uploadResult = await uploadPhoto(
             aiContent, 
             config.global_prompt,
@@ -291,11 +450,38 @@ export default function Photobooth() {
           );
           
           if (uploadResult) {
-            console.log('✅ Photo uploaded to gallery successfully');
+            console.log('🎉 Photo uploaded to gallery successfully:', {
+              id: uploadResult.id,
+              url: uploadResult.processed_url,
+              type: uploadResult.content_type
+            });
+
+            // Dispatch gallery update event
+            window.dispatchEvent(new CustomEvent('galleryUpdate', {
+              detail: { newPhoto: uploadResult }
+            }));
+
+            // Show success notification in console
+            console.log('📢 Gallery update event dispatched - gallery should refresh automatically');
+            
+          } else {
+            console.warn('⚠️ Upload completed but no result returned');
           }
+          
+        } catch (uploadError) {
+          console.error('❌ Upload failed (non-critical):', uploadError);
+          
+          // Don't fail the entire process for upload errors
+          // Just log them as warnings since the user still has their generated image
+          console.warn('🤷 Upload failed but AI generation was successful. Image is still available for viewing.');
+          
+          // Show a subtle warning to the user
+          setTimeout(() => {
+            console.warn('💾 Note: Image generated successfully but gallery upload failed. The image is still visible above.');
+          }, 2000);
         }
-      } catch (uploadError) {
-        console.warn('Upload failed (non-critical):', uploadError);
+      } else if (!config.enable_uploads) {
+        console.log('⚠️ Gallery uploads are disabled in configuration');
       }
 
     } catch (error) {
@@ -324,7 +510,12 @@ export default function Photobooth() {
           errorMessage = 'Invalid generation parameters. Please try again.';
         } else if (message.includes('prompt')) {
           errorMessage = 'Invalid prompt configuration. Please check your settings.';
+        } else if (message.includes('resize') || message.includes('format')) {
+          errorMessage = 'Image processing failed. Please try capturing a new photo.';
+        } else if (message.includes('corrupted') || message.includes('validation')) {
+          errorMessage = 'Generated image failed validation. Please try again.';
         } else {
+          // Only show the original error message if it's user-friendly
           if (error.message.length < 100 && !message.includes('stack') && !message.includes('undefined')) {
             errorMessage = error.message;
           }
@@ -388,8 +579,136 @@ export default function Photobooth() {
     }
   };
 
-  // Don't need separate result area anymore
-  const showResultArea = false;
+  // Enhanced debugging test button
+  const debugUploadTest = async () => {
+    console.log('🔧 === ENHANCED DEBUGGING UPLOAD SYSTEM ===');
+    
+    try {
+      // Test 1: Environment variables
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      
+      console.log('1. Environment Check:', {
+        supabaseUrl: supabaseUrl ? '✅ Present' : '❌ Missing',
+        supabaseKey: supabaseKey ? '✅ Present' : '❌ Missing'
+      });
+
+      if (!supabaseUrl || !supabaseKey) {
+        alert('❌ Missing Supabase environment variables!');
+        return;
+      }
+
+      // Test 2: Create a proper test image (colorful pattern, not solid)
+      const canvas = document.createElement('canvas');
+      canvas.width = 200;
+      canvas.height = 200;
+      const ctx = canvas.getContext('2d');
+      
+      if (!ctx) {
+        throw new Error('Canvas context not available');
+      }
+
+      // Create a colorful test pattern instead of solid color
+      const gradient = ctx.createLinearGradient(0, 0, 200, 200);
+      gradient.addColorStop(0, '#FF6B6B');
+      gradient.addColorStop(0.25, '#4ECDC4');
+      gradient.addColorStop(0.5, '#45B7D1');
+      gradient.addColorStop(0.75, '#96CEB4');
+      gradient.addColorStop(1, '#FFEAA7');
+      
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, 200, 200);
+      
+      // Add some geometric shapes
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+      ctx.beginPath();
+      ctx.arc(50, 50, 30, 0, 2 * Math.PI);
+      ctx.fill();
+      
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+      ctx.fillRect(120, 30, 60, 60);
+      
+      // Add some text
+      ctx.fillStyle = 'white';
+      ctx.font = 'bold 16px Arial';
+      ctx.fillText('DEBUG TEST', 60, 130);
+      ctx.fillText(new Date().toLocaleTimeString(), 45, 150);
+      
+      const testImageData = canvas.toDataURL('image/png');
+      
+      console.log('2. Test Image Created:', {
+        format: testImageData.substring(0, 30) + '...',
+        size: testImageData.length,
+        canvas: `${canvas.width}x${canvas.height}`
+      });
+
+      // Validate the test image
+      const validation = validateImageData(testImageData);
+      console.log('3. Test Image Validation:', validation);
+      
+      if (!validation.isValid) {
+        alert(`❌ Test image validation failed: ${validation.error}`);
+        return;
+      }
+
+      // Test 4: Upload the test image
+      console.log('4. Testing upload...');
+      const uploadResult = await uploadPhoto(testImageData, 'Enhanced Debug Test - Colorful gradient pattern with shapes and text', 'image');
+      
+      if (!uploadResult) {
+        alert('❌ Upload returned null result');
+        return;
+      }
+
+      console.log('5. Upload Success:', uploadResult);
+      
+      // Test 5: Verify the uploaded image can be loaded
+      const testImg = new Image();
+      
+      const imageLoadPromise = new Promise<void>((resolve, reject) => {
+        testImg.onload = () => {
+          console.log('6. ✅ Uploaded image loads successfully:', {
+            width: testImg.width,
+            height: testImg.height,
+            src: uploadResult.processed_url
+          });
+          resolve();
+        };
+        
+        testImg.onerror = (err) => {
+          console.error('6. ❌ Uploaded image failed to load:', err);
+          reject(new Error('Uploaded image failed to load'));
+        };
+        
+        // Set timeout for image loading
+        setTimeout(() => {
+          reject(new Error('Image loading timeout'));
+        }, 10000);
+        
+        testImg.src = uploadResult.processed_url || uploadResult.original_url;
+      });
+
+      try {
+        await imageLoadPromise;
+        
+        alert(`🎉 ENHANCED DEBUG TEST SUCCESSFUL!\n\nDetails:\n• ID: ${uploadResult.id}\n• Type: ${uploadResult.content_type}\n• Size: ${testImageData.length} bytes\n• URL: ${uploadResult.processed_url}\n\n✅ Check the gallery now to see the colorful test image!`);
+        
+        // Dispatch gallery update
+        window.dispatchEvent(new CustomEvent('galleryUpdate', {
+          detail: { newPhoto: uploadResult }
+        }));
+        
+        console.log('📢 Gallery update event dispatched for debug test');
+        
+      } catch (loadError) {
+        alert(`⚠️ Upload succeeded but image verification failed:\n${loadError instanceof Error ? loadError.message : 'Unknown error'}\n\nCheck the gallery and browser network tab for more details.`);
+      }
+      
+    } catch (error) {
+      console.error('Enhanced debug test failed:', error);
+      alert(`❌ Enhanced debug test failed:\n${error instanceof Error ? error.message : 'Unknown error'}\n\nCheck the browser console for detailed logs.`);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-900">
@@ -462,12 +781,14 @@ export default function Photobooth() {
                   muted
                   playsInline
                   className="w-full h-full object-cover"
+                  data-testid="processed-media"
                 />
               ) : (
                 <img 
                   src={processedMedia} 
                   alt="AI Generated" 
-                  className="w-full h-full object-cover" 
+                  className="w-full h-full object-cover"
+                  data-testid="processed-media"
                 />
               )
             ) : processing ? (
@@ -619,75 +940,15 @@ export default function Photobooth() {
             </div>
           )}
           
-          {/* Manual Gallery Test Button */}
+          {/* Enhanced Debug Test Button */}
           <button
-            onClick={async () => {
-              console.log('🧪 MANUAL GALLERY TEST STARTING...');
-              try {
-                const { createClient } = await import('@supabase/supabase-js');
-                const supabase = createClient(
-                  import.meta.env.VITE_SUPABASE_URL!,
-                  import.meta.env.VITE_SUPABASE_ANON_KEY!
-                );
-
-                // Create a test image data URL (1x1 red pixel)
-                const testImageData = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==';
-                
-                const response = await fetch(testImageData);
-                const blob = await response.blob();
-                
-                const filename = `test_photo_${Date.now()}.png`;
-                console.log('📤 Testing upload:', filename);
-
-                const { data, error } = await supabase.storage
-                  .from('photos')
-                  .upload(filename, blob, { contentType: 'image/png', upsert: true });
-
-                if (error) {
-                  alert(`❌ Storage test failed: ${error.message}`);
-                  return;
-                }
-
-                const { data: urlData } = supabase.storage
-                  .from('photos')
-                  .getPublicUrl(data.path);
-
-                const { data: dbData, error: dbError } = await supabase
-                  .from('photos')
-                  .insert({
-                    original_url: urlData.publicUrl,
-                    processed_url: urlData.publicUrl,
-                    prompt: 'Manual test photo',
-                    content_type: 'image',
-                    public: true
-                  })
-                  .select()
-                  .single();
-
-                if (dbError) {
-                  alert(`❌ Database test failed: ${dbError.message}`);
-                  return;
-                }
-
-                alert(`✅ Manual test SUCCESS!\nPhoto ID: ${dbData.id}\nCheck gallery now!`);
-                
-                window.dispatchEvent(new CustomEvent('galleryUpdate', {
-                  detail: { newPhoto: dbData }
-                }));
-                
-              } catch (err) {
-                console.error('Test failed:', err);
-                alert(`❌ Test failed: ${err.message}`);
-              }
-            }}
+            onClick={debugUploadTest}
             className="w-full flex items-center justify-center gap-2 py-3 bg-purple-600 rounded-xl hover:bg-purple-700 transition font-medium"
           >
             <Wand2 className="w-5 h-5" />
-            🧪 Test Gallery Upload
+            🔧 Enhanced Debug Test
           </button>
         </div>
-
-        {/* Removed separate AI result section - now shows in main view */}
       </div>
     </div>
   );
