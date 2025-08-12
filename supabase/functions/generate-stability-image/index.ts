@@ -85,29 +85,37 @@ serve(async (req) => {
     const imageBytes = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0))
     const imageBlob = new Blob([imageBytes], { type: 'image/png' })
 
-    // Prepare form data
+    // Choose API endpoint based on mode
+    const apiUrl = mode === 'inpaint' 
+      ? 'https://api.stability.ai/v2beta/stable-image/edit/inpaint'
+      : 'https://api.stability.ai/v2beta/stable-image/generate/sd3'
+
+    // Prepare form data based on mode
     const formData = new FormData()
-    formData.append('image', imageBlob, 'image.png')
+    
+    // Common parameters
     formData.append('prompt', prompt)
     formData.append('negative_prompt', negativePrompt)
-    formData.append('strength', strength.toString())
     formData.append('cfg_scale', cfgScale.toString())
     formData.append('output_format', 'png')
 
-    // Add mask for inpainting
     if (mode === 'inpaint' && maskData) {
+      // Inpainting mode - requires image, mask, and strength
+      formData.append('image', imageBlob, 'image.png')
+      formData.append('strength', strength.toString())
+      
       const maskBase64 = maskData.split(',')[1]
       if (maskBase64) {
         const maskBytes = Uint8Array.from(atob(maskBase64), c => c.charCodeAt(0))
         const maskBlob = new Blob([maskBytes], { type: 'image/png' })
         formData.append('mask', maskBlob, 'mask.png')
       }
+    } else {
+      // Image-to-image mode - requires explicit mode parameter
+      formData.append('mode', 'image-to-image')
+      formData.append('image', imageBlob, 'image.png')
+      formData.append('strength', strength.toString())
     }
-
-    // Choose API endpoint based on mode
-    const apiUrl = mode === 'inpaint' 
-      ? 'https://api.stability.ai/v2beta/stable-image/edit/inpaint'
-      : 'https://api.stability.ai/v2beta/stable-image/generate/sd3'
 
     console.log(`Making request to Stability AI: ${mode} mode`)
 
