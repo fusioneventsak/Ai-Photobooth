@@ -37,9 +37,45 @@ const BUILT_IN_BORDERS: BuiltInBorder[] = [
     category: 'elegant',
   },
   {
+    id: 'holographic-prism',
+    name: 'Holographic Prism',
+    description: 'Iridescent rainbow holographic effect',
+    category: 'modern',
+  },
+  {
+    id: 'copper-oxidized',
+    name: 'Oxidized Copper',
+    description: 'Weathered copper with patina effects',
+    category: 'modern',
+  },
+  {
+    id: 'titanium-brushed',
+    name: 'Brushed Titanium',
+    description: 'Industrial brushed metal finish',
+    category: 'modern',
+  },
+  {
+    id: 'aurora-gradient',
+    name: 'Aurora Borealis',
+    description: 'Northern lights inspired flowing gradient',
+    category: 'modern',
+  },
+  {
+    id: 'carbon-fiber',
+    name: 'Carbon Fiber',
+    description: 'High-tech woven carbon fiber pattern',
+    category: 'tech',
+  },
+  {
+    id: 'neon-circuit',
+    name: 'Neon Circuit',
+    description: 'Electric circuit board pattern with glow',
+    category: 'tech',
+  },
+  {
     id: 'neon-cyber',
-    name: 'Neon Cyber',
-    description: 'Glowing cyberpunk-style border',
+    name: 'Neon Glow',
+    description: 'Cyberpunk-style glowing border',
     category: 'tech',
   },
   {
