@@ -717,7 +717,7 @@ export default function OverlayIntegration() {
     offsetY: 20
   });
 
-  // Handle overlay image upload
+  // Handle overlay image upload with smart auto-settings
   const handleOverlayChange = (event: ChangeEvent<HTMLInputElement>) => {
     setError(null);
     
@@ -740,9 +740,69 @@ export default function OverlayIntegration() {
     const reader = new FileReader();
     reader.onload = (e) => {
       if (e.target?.result && typeof e.target.result === 'string') {
-        setOverlayImage(e.target.result);
-        setSelectedBorder(null); // Clear border selection when uploading custom image
-        setError(null);
+        const imageData = e.target.result;
+        
+        // Load image to analyze dimensions for smart settings
+        const img = new Image();
+        img.onload = () => {
+          const imageWidth = img.width;
+          const imageHeight = img.height;
+          const imageSize = Math.max(imageWidth, imageHeight);
+          
+          console.log('📐 Analyzing uploaded image:', {
+            dimensions: `${imageWidth}x${imageHeight}`,
+            maxSize: imageSize,
+            fileName: file.name
+          });
+          
+          // Smart detection: Is this likely a border/frame or a logo/watermark?
+          const isLikelyBorder = imageWidth >= 800 && imageHeight >= 800;
+          const isSquareish = Math.abs(imageWidth - imageHeight) / Math.max(imageWidth, imageHeight) < 0.2;
+          
+          console.log('🧠 Smart overlay detection:', {
+            isLikelyBorder,
+            isSquareish,
+            fileSize: file.size
+          });
+          
+          setOverlayImage(imageData);
+          setSelectedBorder(null); // Clear border selection
+          
+          // Auto-configure settings based on image analysis
+          if (isLikelyBorder) {
+            // Large image - treat as border/frame
+            setOverlaySettings(prev => ({
+              ...prev,
+              position: 'center',
+              scale: 1.0, // Will auto-scale to fit
+              opacity: 0.85,
+              blendMode: 'normal',
+              offsetX: 0,
+              offsetY: 0
+            }));
+            console.log('🖼️ Configured as border/frame');
+          } else {
+            // Smaller image - treat as logo/watermark
+            setOverlaySettings(prev => ({
+              ...prev,
+              position: 'bottom-right', // Classic watermark position
+              scale: 0.25, // Will auto-scale proportionally
+              opacity: 0.8,
+              blendMode: 'normal',
+              offsetX: 20,
+              offsetY: 20
+            }));
+            console.log('🏷️ Configured as logo/watermark');
+          }
+          
+          setError(null);
+        };
+        
+        img.onerror = () => {
+          setError('Failed to analyze uploaded image');
+        };
+        
+        img.src = imageData;
       } else {
         setError('Failed to read overlay image file');
       }
@@ -952,55 +1012,7 @@ export default function OverlayIntegration() {
     }
   }, [overlaySettings, overlayImage, testImage]);
 
-  // Compress image data for storage
-  const compressImageForStorage = (imageData: string): string => {
-    try {
-      // For built-in borders, store reference instead of full image data
-      if (selectedBorder) {
-        return JSON.stringify({ 
-          type: 'built-in', 
-          borderId: selectedBorder,
-          compressed: true 
-        });
-      }
-      
-      // For custom images, compress if too large
-      if (imageData.length > 500000) { // If larger than ~500KB
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        const img = new Image();
-        
-        return new Promise<string>((resolve) => {
-          img.onload = () => {
-            // Reduce size while maintaining quality
-            const maxSize = 800;
-            let { width, height } = img;
-            
-            if (width > maxSize || height > maxSize) {
-              const ratio = Math.min(maxSize / width, maxSize / height);
-              width *= ratio;
-              height *= ratio;
-            }
-            
-            canvas.width = width;
-            canvas.height = height;
-            ctx!.drawImage(img, 0, 0, width, height);
-            
-            // Use higher compression for storage
-            resolve(canvas.toDataURL('image/jpeg', 0.7));
-          };
-          img.src = imageData;
-        }).then(compressed => compressed);
-      }
-      
-      return imageData;
-    } catch (error) {
-      console.warn('Compression failed, using original:', error);
-      return imageData;
-    }
-  };
-
-  // Save overlay configuration with compression and error handling
+  // Enhanced save with proper overlay type detection
   const saveOverlayConfig = async () => {
     if (!overlayImage || !overlayName.trim()) {
       setError('Please provide an overlay image and name');
@@ -1011,6 +1023,38 @@ export default function OverlayIntegration() {
     setError(null);
     
     try {
+      // Determine overlay type more intelligently
+      let overlayType: 'border' | 'custom' = 'custom';
+      
+      if (selectedBorder) {
+        overlayType = 'border';
+      } else {
+        // Analyze the custom image to determine if it's border-like
+        const img = new Image();
+        await new Promise<void>((resolve, reject) => {
+          img.onload = () => {
+            const imageWidth = img.width;
+            const imageHeight = img.height;
+            
+            // Detect if custom upload is actually a border/frame
+            const isLargeDimensions = imageWidth >= 800 && imageHeight >= 800;
+            const isSquareish = Math.abs(imageWidth - imageHeight) / Math.max(imageWidth, imageHeight) < 0.2;
+            const isLikelyFrame = isLargeDimensions && isSquareish;
+            
+            if (isLikelyFrame) {
+              overlayType = 'border';
+              console.log('🔍 Custom upload detected as border-type');
+            } else {
+              console.log('🔍 Custom upload detected as logo-type');
+            }
+            
+            resolve();
+          };
+          img.onerror = () => reject(new Error('Failed to analyze image'));
+          img.src = overlayImage;
+        });
+      }
+
       // Compress image for storage
       let compressedImage: string;
       
@@ -1058,7 +1102,7 @@ export default function OverlayIntegration() {
         image: compressedImage,
         settings: overlaySettings,
         createdAt: new Date().toISOString(),
-        type: selectedBorder ? 'border' : 'custom',
+        type: overlayType, // Properly detected type
         borderId: selectedBorder || undefined
       };
 
@@ -1165,7 +1209,8 @@ export default function OverlayIntegration() {
       }
 
       // Success message
-      alert(`✅ Overlay "${overlayName}" saved successfully!\n\nThis overlay will now be automatically applied to all AI generated photos.`);
+      const typeDescription = overlayType === 'border' ? 'border/frame' : 'logo/watermark';
+      alert(`✅ Overlay "${overlayName}" saved successfully as ${typeDescription}!\n\nThis overlay will now be automatically applied to all AI generated photos with smart auto-scaling.`);
       
       // Reset form
       resetForm();
