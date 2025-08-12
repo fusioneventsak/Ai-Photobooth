@@ -1,3 +1,4 @@
+// src/types/config.ts
 export interface Config {
   id: string;
   created_at: string;
