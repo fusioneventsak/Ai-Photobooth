@@ -1,4 +1,4 @@
-// Add these utility functions to src/lib/overlayUtils.ts
+// src/lib/overlayUtils.ts
 
 export interface OverlayConfig {
   name: string;
@@ -168,6 +168,64 @@ export function clearAllOverlays(): boolean {
     return true;
   } catch (error) {
     console.error('Error clearing overlays:', error);
+    return false;
+  }
+}
+
+// Get overlay by name
+export function getOverlayByName(name: string): OverlayConfig | null {
+  try {
+    const overlays = getAllOverlays();
+    return overlays.find(overlay => overlay.name === name) || null;
+  } catch (error) {
+    console.error('Error getting overlay by name:', error);
+    return null;
+  }
+}
+
+// Set active overlay (make a specific overlay the active one)
+export function setActiveOverlay(overlayName: string): boolean {
+  try {
+    const overlays = getAllOverlays();
+    const targetOverlay = overlays.find(overlay => overlay.name === overlayName);
+    
+    if (!targetOverlay) {
+      console.error('Overlay not found:', overlayName);
+      return false;
+    }
+
+    // Remove the target overlay from its current position
+    const otherOverlays = overlays.filter(overlay => overlay.name !== overlayName);
+    
+    // Add it to the end (making it the "active" one since getActiveOverlay() returns the last one)
+    const reorderedOverlays = [...otherOverlays, targetOverlay];
+    
+    localStorage.setItem('photoboothOverlays', JSON.stringify(reorderedOverlays));
+    return true;
+  } catch (error) {
+    console.error('Error setting active overlay:', error);
+    return false;
+  }
+}
+
+// Update overlay settings
+export function updateOverlaySettings(overlayName: string, newSettings: Partial<OverlayConfig['settings']>): boolean {
+  try {
+    const overlays = getAllOverlays();
+    const overlayIndex = overlays.findIndex(overlay => overlay.name === overlayName);
+    
+    if (overlayIndex === -1) {
+      console.error('Overlay not found:', overlayName);
+      return false;
+    }
+
+    // Update the overlay settings
+    overlays[overlayIndex].settings = { ...overlays[overlayIndex].settings, ...newSettings };
+    
+    localStorage.setItem('photoboothOverlays', JSON.stringify(overlays));
+    return true;
+  } catch (error) {
+    console.error('Error updating overlay settings:', error);
     return false;
   }
 }
