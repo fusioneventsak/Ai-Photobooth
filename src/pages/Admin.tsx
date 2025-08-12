@@ -1,3 +1,4 @@
+// src/pages/Admin.tsx
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { 
@@ -9,58 +10,18 @@ import {
   RefreshCw, 
   Save, 
   Eye,
-  EyeOff,
   Monitor,
   Smartphone,
-  Grid3X3,
-  Columns,
-  Play,
-  Pause,
   Download,
   Share2,
   Users,
   Lock,
-  Unlock,
   Globe
 } from 'lucide-react';
+import { useConfigStore } from '../store/configStore';
+import type { Config } from '../types/config';
 
-// Mock config store for demonstration
-const useConfigStore = () => ({
-  config: {
-    id: '1',
-    created_at: '2024-01-01',
-    brand_name: 'Virtual Photobooth',
-    brand_logo_url: null,
-    primary_color: '#3B82F6',
-    secondary_color: '#6B7280',
-    global_prompt: 'Create a stunning artistic portrait',
-    gallery_animation: 'fade',
-    gallery_speed: 3000,
-    gallery_layout: 'grid',
-    stability_api_key: null,
-    model_type: 'image',
-    video_duration: 5,
-    image_provider: 'stability',
-    video_provider: 'stability',
-    use_provider_fallback: true,
-    face_preservation_mode: 'preserve_face',
-    gallery_images_per_page: 12
-  },
-  fetchConfig: async () => {},
-  updateConfig: async (data) => ({ ...data })
-});
-
-interface AdminFormData {
-  brand_name?: string;
-  brand_logo_url?: string;
-  primary_color?: string;
-  secondary_color?: string;
-  global_prompt?: string;
-  gallery_animation?: string;
-  gallery_speed?: number;
-  gallery_layout?: string;
-  stability_api_key?: string;
-  gallery_images_per_page?: number;
+interface AdminFormData extends Partial<Config> {
   gallery_public_access?: boolean;
   gallery_allow_downloads?: boolean;
   gallery_show_metadata?: boolean;
@@ -73,6 +34,8 @@ export default function Admin() {
   const { config, fetchConfig, updateConfig } = useConfigStore();
   const [formData, setFormData] = useState<AdminFormData>({});
   const [saving, setSaving] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [previewMode, setPreviewMode] = useState<'desktop' | 'mobile'>('desktop');
   const [activeTab, setActiveTab] = useState<'branding' | 'gallery' | 'privacy' | 'advanced'>('branding');
 
@@ -96,22 +59,45 @@ export default function Admin() {
     
     setFormData(prev => ({
       ...prev,
-      [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : value
+      [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : 
+              type === 'number' ? Number(value) : value
     }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
+    setError(null);
 
     try {
-      const success = await updateConfig(formData);
-      if (success) {
+      // Only send fields that actually exist in the Config type
+      const updates: Partial<Config> = {};
+      
+      // Core config fields
+      if (formData.brand_name !== undefined) updates.brand_name = formData.brand_name;
+      if (formData.brand_logo_url !== undefined) updates.brand_logo_url = formData.brand_logo_url;
+      if (formData.primary_color !== undefined) updates.primary_color = formData.primary_color;
+      if (formData.secondary_color !== undefined) updates.secondary_color = formData.secondary_color;
+      if (formData.global_prompt !== undefined) updates.global_prompt = formData.global_prompt;
+      if (formData.gallery_animation !== undefined) updates.gallery_animation = formData.gallery_animation;
+      if (formData.gallery_speed !== undefined) updates.gallery_speed = formData.gallery_speed;
+      if (formData.gallery_layout !== undefined) updates.gallery_layout = formData.gallery_layout;
+      if (formData.stability_api_key !== undefined) updates.stability_api_key = formData.stability_api_key;
+      if (formData.gallery_images_per_page !== undefined) updates.gallery_images_per_page = formData.gallery_images_per_page;
+
+      const result = await updateConfig(updates);
+      
+      if (result) {
+        setSuccess(true);
+        setTimeout(() => setSuccess(false), 3000);
         console.log('✅ Configuration updated successfully');
         await fetchConfig(); // Refresh to get latest data
+      } else {
+        throw new Error('Failed to update configuration');
       }
     } catch (error) {
       console.error('❌ Failed to update configuration:', error);
+      setError(error instanceof Error ? error.message : 'Failed to update configuration');
     } finally {
       setSaving(false);
     }
@@ -159,6 +145,27 @@ export default function Admin() {
           </p>
         </motion.div>
 
+        {/* Success/Error Messages */}
+        {success && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6 p-4 bg-green-900/20 border border-green-600/30 rounded-xl text-green-200"
+          >
+            ✅ Configuration updated successfully!
+          </motion.div>
+        )}
+
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6 p-4 bg-red-900/20 border border-red-600/30 rounded-xl text-red-200"
+          >
+            ❌ {error}
+          </motion.div>
+        )}
+
         <div className="max-w-6xl mx-auto">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             {/* Settings Form */}
@@ -184,7 +191,7 @@ export default function Admin() {
                 })}
               </div>
 
-              <div className="space-y-8">
+              <form onSubmit={handleSubmit} className="space-y-8">
                 {/* Branding Tab */}
                 {activeTab === 'branding' && (
                   <motion.div
@@ -559,7 +566,7 @@ export default function Admin() {
                   className="flex gap-4"
                 >
                   <button
-                    onClick={handleSubmit}
+                    type="submit"
                     disabled={saving}
                     className="flex-1 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 disabled:from-gray-600 disabled:to-gray-600 text-white px-8 py-4 rounded-xl font-medium transition-all duration-200 flex items-center justify-center gap-3 shadow-lg disabled:cursor-not-allowed"
                   >
@@ -576,7 +583,7 @@ export default function Admin() {
                     )}
                   </button>
                 </motion.div>
-              </div>
+              </form>
             </div>
 
             {/* Live Preview */}
