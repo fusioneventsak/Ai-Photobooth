@@ -25,37 +25,368 @@ interface BuiltInBorder {
 
 const BUILT_IN_BORDERS: BuiltInBorder[] = [
   {
-    id: 'classic-frame',
-    name: 'Classic Frame',
-    description: 'Elegant golden border with shadow',
-    category: 'elegant',
+    id: 'chrome-metallic',
+    name: 'Chrome Metallic',
+    description: 'Shiny chrome with realistic reflections',
+    category: 'modern',
     generateCanvas: (width: number, height: number) => {
       const canvas = document.createElement('canvas');
       canvas.width = width;
       canvas.height = height;
       const ctx = canvas.getContext('2d')!;
       
-      const borderWidth = Math.min(width, height) * 0.08;
+      const borderWidth = Math.min(width, height) * 0.06;
       
-      // Outer shadow
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+      // Chrome gradient - outer
+      const chromeGrad = ctx.createLinearGradient(0, 0, 0, height);
+      chromeGrad.addColorStop(0, '#E8E8E8');
+      chromeGrad.addColorStop(0.1, '#F8F8F8');
+      chromeGrad.addColorStop(0.2, '#C8C8C8');
+      chromeGrad.addColorStop(0.3, '#F0F0F0');
+      chromeGrad.addColorStop(0.4, '#A8A8A8');
+      chromeGrad.addColorStop(0.6, '#D8D8D8');
+      chromeGrad.addColorStop(0.7, '#B8B8B8');
+      chromeGrad.addColorStop(0.8, '#F0F0F0');
+      chromeGrad.addColorStop(0.9, '#C8C8C8');
+      chromeGrad.addColorStop(1, '#E8E8E8');
+      
+      ctx.fillStyle = chromeGrad;
       ctx.fillRect(0, 0, width, height);
       
-      // Main border
-      const gradient = ctx.createLinearGradient(0, 0, width, height);
-      gradient.addColorStop(0, '#DAA520');
-      gradient.addColorStop(0.5, '#FFD700');
-      gradient.addColorStop(1, '#B8860B');
-      ctx.fillStyle = gradient;
-      ctx.fillRect(borderWidth/2, borderWidth/2, width - borderWidth, height - borderWidth);
+      // Inner beveled edge
+      const innerGrad = ctx.createLinearGradient(0, 0, 0, height);
+      innerGrad.addColorStop(0, '#FFFFFF');
+      innerGrad.addColorStop(0.5, '#CCCCCC');
+      innerGrad.addColorStop(1, '#999999');
       
-      // Inner frame
-      ctx.fillStyle = '#8B4513';
-      ctx.fillRect(borderWidth, borderWidth, width - borderWidth*2, height - borderWidth*2);
+      ctx.fillStyle = innerGrad;
+      ctx.fillRect(borderWidth*0.3, borderWidth*0.3, width - borderWidth*0.6, height - borderWidth*0.6);
       
       // Clear center
       ctx.globalCompositeOperation = 'destination-out';
-      ctx.fillRect(borderWidth*1.5, borderWidth*1.5, width - borderWidth*3, height - borderWidth*3);
+      ctx.fillRect(borderWidth, borderWidth, width - borderWidth*2, height - borderWidth*2);
+      
+      return canvas.toDataURL();
+    }
+  },
+  {
+    id: 'rose-gold-gradient',
+    name: 'Rose Gold Gradient',
+    description: 'Luxurious rose gold with warm highlights',
+    category: 'modern',
+    generateCanvas: (width: number, height: number) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d')!;
+      
+      const borderWidth = Math.min(width, height) * 0.05;
+      
+      // Rose gold gradient
+      const roseGrad = ctx.createRadialGradient(width/2, height/2, 0, width/2, height/2, Math.max(width, height)/2);
+      roseGrad.addColorStop(0, '#F7E7CE');
+      roseGrad.addColorStop(0.2, '#E8B4B8');
+      roseGrad.addColorStop(0.4, '#D4A574');
+      roseGrad.addColorStop(0.6, '#C49991');
+      roseGrad.addColorStop(0.8, '#B87333');
+      roseGrad.addColorStop(1, '#8B4513');
+      
+      ctx.fillStyle = roseGrad;
+      ctx.fillRect(0, 0, width, height);
+      
+      // Highlight shimmer
+      const shimmerGrad = ctx.createLinearGradient(0, 0, width, height);
+      shimmerGrad.addColorStop(0, 'rgba(255, 255, 255, 0.4)');
+      shimmerGrad.addColorStop(0.3, 'rgba(255, 192, 203, 0.2)');
+      shimmerGrad.addColorStop(0.7, 'rgba(255, 215, 0, 0.15)');
+      shimmerGrad.addColorStop(1, 'rgba(255, 255, 255, 0.3)');
+      
+      ctx.fillStyle = shimmerGrad;
+      ctx.fillRect(0, 0, width, height);
+      
+      // Clear center
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.fillRect(borderWidth, borderWidth, width - borderWidth*2, height - borderWidth*2);
+      
+      return canvas.toDataURL();
+    }
+  },
+  {
+    id: 'holographic-prism',
+    name: 'Holographic Prism',
+    description: 'Iridescent rainbow holographic effect',
+    category: 'modern',
+    generateCanvas: (width: number, height: number) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d')!;
+      
+      const borderWidth = Math.min(width, height) * 0.04;
+      
+      // Create multiple overlapping gradients for holographic effect
+      const gradients = [
+        { colors: ['#FF0080', '#00FFFF', '#8000FF'], angle: 0 },
+        { colors: ['#00FF80', '#FF8000', '#0080FF'], angle: 45 },
+        { colors: ['#FF8080', '#80FF00', '#8080FF'], angle: 90 },
+        { colors: ['#FFFF00', '#FF00FF', '#00FFFF'], angle: 135 }
+      ];
+      
+      ctx.globalCompositeOperation = 'screen';
+      
+      gradients.forEach((grad, index) => {
+        const angle = (grad.angle * Math.PI) / 180;
+        const x1 = width/2 - Math.cos(angle) * width/2;
+        const y1 = height/2 - Math.sin(angle) * height/2;
+        const x2 = width/2 + Math.cos(angle) * width/2;
+        const y2 = height/2 + Math.sin(angle) * height/2;
+        
+        const gradient = ctx.createLinearGradient(x1, y1, x2, y2);
+        grad.colors.forEach((color, i) => {
+          gradient.addColorStop(i / (grad.colors.length - 1), color + '40');
+        });
+        
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, width, height);
+      });
+      
+      ctx.globalCompositeOperation = 'source-over';
+      
+      // Clear center
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.fillRect(borderWidth, borderWidth, width - borderWidth*2, height - borderWidth*2);
+      
+      return canvas.toDataURL();
+    }
+  },
+  {
+    id: 'copper-oxidized',
+    name: 'Oxidized Copper',
+    description: 'Weathered copper with patina effects',
+    category: 'modern',
+    generateCanvas: (width: number, height: number) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d')!;
+      
+      const borderWidth = Math.min(width, height) * 0.07;
+      
+      // Base copper color
+      const copperGrad = ctx.createRadialGradient(width/3, height/3, 0, width/2, height/2, Math.max(width, height));
+      copperGrad.addColorStop(0, '#B87333');
+      copperGrad.addColorStop(0.3, '#CD853F');
+      copperGrad.addColorStop(0.6, '#8B4513');
+      copperGrad.addColorStop(0.8, '#A0522D');
+      copperGrad.addColorStop(1, '#654321');
+      
+      ctx.fillStyle = copperGrad;
+      ctx.fillRect(0, 0, width, height);
+      
+      // Patina/verdigris effect
+      const patinaGrad = ctx.createRadialGradient(width*0.7, height*0.2, 0, width/2, height/2, Math.max(width, height)*0.8);
+      patinaGrad.addColorStop(0, 'rgba(72, 201, 176, 0.6)');
+      patinaGrad.addColorStop(0.4, 'rgba(64, 224, 208, 0.3)');
+      patinaGrad.addColorStop(0.7, 'rgba(32, 178, 170, 0.4)');
+      patinaGrad.addColorStop(1, 'rgba(0, 128, 128, 0.2)');
+      
+      ctx.fillStyle = patinaGrad;
+      ctx.fillRect(0, 0, width, height);
+      
+      // Add some texture spots
+      for (let i = 0; i < 20; i++) {
+        const x = Math.random() * width;
+        const y = Math.random() * height;
+        const radius = Math.random() * borderWidth * 0.3;
+        const opacity = Math.random() * 0.3 + 0.1;
+        
+        ctx.fillStyle = `rgba(72, 201, 176, ${opacity})`;
+        ctx.beginPath();
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      
+      // Clear center
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.fillRect(borderWidth, borderWidth, width - borderWidth*2, height - borderWidth*2);
+      
+      return canvas.toDataURL();
+    }
+  },
+  {
+    id: 'titanium-brushed',
+    name: 'Brushed Titanium',
+    description: 'Industrial brushed metal finish',
+    category: 'modern',
+    generateCanvas: (width: number, height: number) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d')!;
+      
+      const borderWidth = Math.min(width, height) * 0.055;
+      
+      // Base titanium color
+      const titaniumGrad = ctx.createLinearGradient(0, 0, 0, height);
+      titaniumGrad.addColorStop(0, '#C0C0C0');
+      titaniumGrad.addColorStop(0.25, '#D3D3D3');
+      titaniumGrad.addColorStop(0.5, '#A9A9A9');
+      titaniumGrad.addColorStop(0.75, '#DCDCDC');
+      titaniumGrad.addColorStop(1, '#B0B0B0');
+      
+      ctx.fillStyle = titaniumGrad;
+      ctx.fillRect(0, 0, width, height);
+      
+      // Brushed texture lines
+      ctx.globalAlpha = 0.3;
+      for (let i = 0; i < height; i += 2) {
+        const opacity = Math.sin(i * 0.1) * 0.5 + 0.5;
+        ctx.strokeStyle = `rgba(255, 255, 255, ${opacity * 0.4})`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(0, i);
+        ctx.lineTo(width, i);
+        ctx.stroke();
+        
+        ctx.strokeStyle = `rgba(0, 0, 0, ${opacity * 0.2})`;
+        ctx.beginPath();
+        ctx.moveTo(0, i + 1);
+        ctx.lineTo(width, i + 1);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+      
+      // Clear center
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.fillRect(borderWidth, borderWidth, width - borderWidth*2, height - borderWidth*2);
+      
+      return canvas.toDataURL();
+    }
+  },
+  {
+    id: 'aurora-gradient',
+    name: 'Aurora Borealis',
+    description: 'Northern lights inspired flowing gradient',
+    category: 'modern',
+    generateCanvas: (width: number, height: number) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d')!;
+      
+      const borderWidth = Math.min(width, height) * 0.045;
+      
+      // Create flowing aurora effect
+      const centerX = width / 2;
+      const centerY = height / 2;
+      
+      // Multiple flowing gradients
+      const flows = [
+        { start: [0, height*0.3], end: [width, height*0.7], colors: ['#001122', '#003366', '#006699', '#0099CC'] },
+        { start: [width*0.2, 0], end: [width*0.8, height], colors: ['#1a0033', '#330066', '#6600CC', '#9933FF'] },
+        { start: [width, height*0.2], end: [0, height*0.8], colors: ['#001a00', '#003300', '#006600', '#00CC33'] }
+      ];
+      
+      flows.forEach((flow, index) => {
+        const gradient = ctx.createLinearGradient(flow.start[0], flow.start[1], flow.end[0], flow.end[1]);
+        flow.colors.forEach((color, i) => {
+          gradient.addColorStop(i / (flow.colors.length - 1), color + (index === 0 ? '80' : '60'));
+        });
+        
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, width, height);
+      });
+      
+      // Add shimmer highlights
+      const shimmer = ctx.createRadialGradient(centerX, centerY*0.3, 0, centerX, centerY, Math.max(width, height)*0.6);
+      shimmer.addColorStop(0, 'rgba(255, 255, 255, 0.3)');
+      shimmer.addColorStop(0.5, 'rgba(180, 255, 255, 0.2)');
+      shimmer.addColorStop(1, 'rgba(255, 180, 255, 0.1)');
+      
+      ctx.fillStyle = shimmer;
+      ctx.fillRect(0, 0, width, height);
+      
+      // Clear center
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.fillRect(borderWidth, borderWidth, width - borderWidth*2, height - borderWidth*2);
+      
+      return canvas.toDataURL();
+    }
+  },
+  {
+    id: 'carbon-fiber',
+    name: 'Carbon Fiber',
+    description: 'High-tech woven carbon fiber pattern',
+    category: 'tech',
+    generateCanvas: (width: number, height: number) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d')!;
+      
+      const borderWidth = Math.min(width, height) * 0.06;
+      const weaveSize = borderWidth * 0.3;
+      
+      // Base dark color
+      ctx.fillStyle = '#1a1a1a';
+      ctx.fillRect(0, 0, width, height);
+      
+      // Create carbon fiber weave pattern
+      for (let x = 0; x < width; x += weaveSize * 2) {
+        for (let y = 0; y < height; y += weaveSize * 2) {
+          // Horizontal weave
+          ctx.fillStyle = '#333333';
+          ctx.fillRect(x, y, weaveSize * 2, weaveSize);
+          
+          // Vertical weave
+          ctx.fillStyle = '#2a2a2a';
+          ctx.fillRect(x + weaveSize, y, weaveSize, weaveSize * 2);
+          
+          // Highlight threads
+          ctx.fillStyle = '#404040';
+          ctx.fillRect(x + weaveSize * 0.1, y + weaveSize * 0.1, weaveSize * 1.8, weaveSize * 0.1);
+          ctx.fillRect(x + weaveSize + weaveSize * 0.1, y + weaveSize * 0.1, weaveSize * 0.1, weaveSize * 1.8);
+        }
+      }
+      
+      // Add glossy overlay
+      const glossy = ctx.createLinearGradient(0, 0, width, height);
+      glossy.addColorStop(0, 'rgba(255, 255, 255, 0.1)');
+      glossy.addColorStop(0.5, 'rgba(255, 255, 255, 0.05)');
+      glossy.addColorStop(1, 'rgba(255, 255, 255, 0.15)');
+      
+      ctx.fillStyle = glossy;
+      ctx.fillRect(0, 0, width, height);
+      
+      // Clear center
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.fillRect(borderWidth, borderWidth, width - borderWidth*2, height - borderWidth*2);
+      
+      return canvas.toDataURL();
+    }
+  },
+  {
+    id: 'minimal-line',
+    name: 'Minimal Line',
+    description: 'Clean, thin border line',
+    category: 'modern',
+    generateCanvas: (width: number, height: number) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d')!;
+      
+      const lineWidth = Math.min(width, height) * 0.008;
+      const offset = lineWidth * 3;
+      
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = lineWidth;
+      ctx.strokeRect(offset, offset, width - offset*2, height - offset*2);
+      
+      // Double line effect
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+      ctx.lineWidth = lineWidth/2;
+      ctx.strokeRect(offset*2, offset*2, width - offset*4, height - offset*4);
       
       return canvas.toDataURL();
     }
@@ -383,7 +714,7 @@ export default function OverlayIntegration() {
   };
 
   // Handle test image upload
-  const handleTestImageChange = (event: ChangeEvent<HTMLInputInput>) => {
+  const handleTestImageChange = (event: ChangeEvent<HTMLInputElement>) => {
     setError(null);
     
     if (!event.target.files || event.target.files.length === 0) {
@@ -419,27 +750,29 @@ export default function OverlayIntegration() {
     reader.readAsDataURL(file);
   };
 
-  // Handle border selection
+  // Handle border selection with auto-settings
   const handleBorderSelect = (borderId: string) => {
     const border = BUILT_IN_BORDERS.find(b => b.id === borderId);
     if (border) {
-      // Generate border at standard size
-      const borderImage = border.generateCanvas(512, 512);
+      // Generate border at a high resolution for quality
+      const borderImage = border.generateCanvas(1024, 1024);
       setOverlayImage(borderImage);
       setSelectedBorder(borderId);
       setOverlayName(border.name);
+      
+      // Auto-configure settings for borders vs logos
       setOverlaySettings(prev => ({
         ...prev,
         position: 'center',
-        scale: 1.0, // Full size for borders
-        opacity: 0.9,
-        blendMode: 'normal'
+        scale: 1.0, // Will be auto-scaled to fit image
+        opacity: border.id.includes('holographic') || border.id.includes('aurora') ? 0.7 : 0.9,
+        blendMode: border.id.includes('metallic') || border.id.includes('chrome') ? 'multiply' : 'normal'
       }));
       setError(null);
     }
   };
 
-  // Generate preview with overlay
+  // Generate preview with overlay and proper scaling
   const generatePreview = async (overlayData: string, backgroundData: string) => {
     try {
       setError(null);
@@ -479,50 +812,81 @@ export default function OverlayIntegration() {
       // Draw background
       ctx.drawImage(bgImg, 0, 0);
 
-      // Calculate overlay position and size
-      const overlayWidth = overlayImg.width * overlaySettings.scale;
-      const overlayHeight = overlayImg.height * overlaySettings.scale;
+      // **ENHANCED: Smart scaling based on overlay type and canvas size**
+      let finalScale = overlaySettings.scale;
+      let overlayWidth = overlayImg.width * finalScale;
+      let overlayHeight = overlayImg.height * finalScale;
+
+      // Auto-scale logic
+      if (selectedBorder) {
+        // For borders: scale to match canvas size exactly
+        finalScale = 1.0;
+        overlayWidth = canvas.width;
+        overlayHeight = canvas.height;
+      } else {
+        // For logos/watermarks: intelligent scaling based on canvas size
+        const canvasSize = Math.min(canvas.width, canvas.height);
+        const overlaySize = Math.max(overlayImg.width, overlayImg.height);
+        
+        // Calculate a smart scale factor
+        const smartScale = Math.min(
+          canvasSize * 0.3 / overlaySize, // Don't exceed 30% of canvas
+          1.0 // Don't upscale beyond original size
+        );
+        
+        // Apply the smart scale multiplied by user's scale preference
+        finalScale = smartScale * overlaySettings.scale;
+        overlayWidth = overlayImg.width * finalScale;
+        overlayHeight = overlayImg.height * finalScale;
+      }
 
       let overlayX = 0;
       let overlayY = 0;
 
       // Calculate position based on setting
-      switch (overlaySettings.position) {
-        case 'top-left':
-          overlayX = overlaySettings.offsetX;
-          overlayY = overlaySettings.offsetY;
-          break;
-        case 'top-right':
-          overlayX = canvas.width - overlayWidth - overlaySettings.offsetX;
-          overlayY = overlaySettings.offsetY;
-          break;
-        case 'bottom-left':
-          overlayX = overlaySettings.offsetX;
-          overlayY = canvas.height - overlayHeight - overlaySettings.offsetY;
-          break;
-        case 'bottom-right':
-          overlayX = canvas.width - overlayWidth - overlaySettings.offsetX;
-          overlayY = canvas.height - overlayHeight - overlaySettings.offsetY;
-          break;
-        case 'center':
-          overlayX = (canvas.width - overlayWidth) / 2;
-          overlayY = (canvas.height - overlayHeight) / 2;
-          break;
-        case 'top-center':
-          overlayX = (canvas.width - overlayWidth) / 2;
-          overlayY = overlaySettings.offsetY;
-          break;
-        case 'bottom-center':
-          overlayX = (canvas.width - overlayWidth) / 2;
-          overlayY = canvas.height - overlayHeight - overlaySettings.offsetY;
-          break;
+      if (selectedBorder) {
+        // Borders always center and fill
+        overlayX = 0;
+        overlayY = 0;
+      } else {
+        // Smart positioning for logos/watermarks
+        switch (overlaySettings.position) {
+          case 'top-left':
+            overlayX = overlaySettings.offsetX;
+            overlayY = overlaySettings.offsetY;
+            break;
+          case 'top-right':
+            overlayX = canvas.width - overlayWidth - overlaySettings.offsetX;
+            overlayY = overlaySettings.offsetY;
+            break;
+          case 'bottom-left':
+            overlayX = overlaySettings.offsetX;
+            overlayY = canvas.height - overlayHeight - overlaySettings.offsetY;
+            break;
+          case 'bottom-right':
+            overlayX = canvas.width - overlayWidth - overlaySettings.offsetX;
+            overlayY = canvas.height - overlayHeight - overlaySettings.offsetY;
+            break;
+          case 'center':
+            overlayX = (canvas.width - overlayWidth) / 2;
+            overlayY = (canvas.height - overlayHeight) / 2;
+            break;
+          case 'top-center':
+            overlayX = (canvas.width - overlayWidth) / 2;
+            overlayY = overlaySettings.offsetY;
+            break;
+          case 'bottom-center':
+            overlayX = (canvas.width - overlayWidth) / 2;
+            overlayY = canvas.height - overlayHeight - overlaySettings.offsetY;
+            break;
+        }
       }
 
       // Apply overlay settings
       ctx.globalAlpha = overlaySettings.opacity;
       ctx.globalCompositeOperation = overlaySettings.blendMode as GlobalCompositeOperation;
 
-      // Draw overlay
+      // Draw overlay with smart scaling
       ctx.drawImage(overlayImg, overlayX, overlayY, overlayWidth, overlayHeight);
 
       // Reset canvas state
