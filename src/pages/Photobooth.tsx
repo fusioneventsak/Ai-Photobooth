@@ -321,33 +321,79 @@ export default function Photobooth() {
   // Dedicated function to upload AI content to gallery - DIRECT DATABASE INSERT
   const uploadToGallery = async (aiContent: string, prompt: string, contentType: 'image' | 'video') => {
     try {
-      console.log('🚀 DIRECT GALLERY UPLOAD STARTED');
-      console.log('📤 Upload details:', {
-        contentType,
-        promptLength: prompt.length,
-        contentLength: aiContent.length,
+      console.log('🚀 === GALLERY UPLOAD STARTED ===');
+      console.log('📊 Upload parameters:', {
+        hasContent: !!aiContent,
+        contentLength: aiContent?.length || 0,
+        contentPreview: aiContent?.substring(0, 50) + '...',
+        prompt: prompt,
+        contentType: contentType,
         timestamp: new Date().toISOString()
       });
 
-      // Direct database insert - bypassing the uploadPhoto function to avoid issues
+      // Validate inputs
+      if (!aiContent || !aiContent.startsWith('data:')) {
+        throw new Error('❌ Invalid AI content - not a data URL');
+      }
+
+      // Import Supabase client
+      console.log('🔗 Importing Supabase client...');
       const { createClient } = await import('@supabase/supabase-js');
-      const supabase = createClient(
-        import.meta.env.VITE_SUPABASE_URL,
-        import.meta.env.VITE_SUPABASE_ANON_KEY
-      );
+      
+      const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+      const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      
+      console.log('🔑 Supabase config:', {
+        url: SUPABASE_URL ? '✅ Present' : '❌ Missing',
+        key: SUPABASE_KEY ? '✅ Present' : '❌ Missing'
+      });
+      
+      if (!SUPABASE_URL || !SUPABASE_KEY) {
+        throw new Error('❌ Missing Supabase configuration!');
+      }
 
-      // Create a unique filename
+      const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+      console.log('✅ Supabase client created');
+
+      // Create unique filename
       const timestamp = Date.now();
+      const random = Math.random().toString(36).substring(7);
       const fileExtension = contentType === 'video' ? 'mp4' : 'png';
-      const filename = `ai_${contentType}_${timestamp}.${fileExtension}`;
-
-      console.log('📁 Creating file for upload:', filename);
+      const filename = `ai_${contentType}_${timestamp}_${random}.${fileExtension}`;
+      
+      console.log('📁 Generated filename:', filename);
 
       // Convert data URL to blob
+      console.log('🔄 Converting data URL to blob...');
       const response = await fetch(aiContent);
       const blob = await response.blob();
       
-      console.log('💾 File size:', blob.size, 'bytes');
+      console.log('💾 Blob created:', {
+        size: blob.size,
+        type: blob.type
+      });
+
+      if (blob.size === 0) {
+        throw new Error('❌ Generated blob is empty!');
+      }
+
+      // Test storage bucket access first
+      console.log('🪣 Testing storage bucket access...');
+      const { data: buckets, error: bucketError } = await supabase.storage.listBuckets();
+      
+      if (bucketError) {
+        console.error('❌ Cannot access storage:', bucketError);
+        throw new Error(`Storage access failed: ${bucketError.message}`);
+      }
+      
+      console.log('📂 Available buckets:', buckets?.map(b => b.name) || []);
+      const photoBucket = buckets?.find(b => b.name === 'photos');
+      
+      if (!photoBucket) {
+        throw new Error('❌ Photos storage bucket not found!');
+      }
+      
+      console.log('✅ Photos bucket found and accessible');
 
       // Upload to storage
       console.log('⬆️ Uploading to Supabase storage...');
@@ -359,71 +405,127 @@ export default function Photobooth() {
         });
 
       if (uploadError) {
+        console.error('❌ Storage upload error:', uploadError);
         throw new Error(`Storage upload failed: ${uploadError.message}`);
       }
 
-      console.log('✅ Storage upload successful:', uploadData.path);
+      console.log('✅ Storage upload successful:', {
+        path: uploadData.path,
+        id: uploadData.id
+      });
 
       // Get public URL
+      console.log('🔗 Generating public URL...');
       const { data: urlData } = supabase.storage
         .from('photos')
         .getPublicUrl(uploadData.path);
 
       const publicUrl = urlData.publicUrl;
-      console.log('🔗 Public URL generated:', publicUrl);
+      console.log('🌐 Public URL:', publicUrl);
 
-      // Insert into database with explicit values
-      console.log('💾 Inserting into database...');
-      const photoData = {
+      if (!publicUrl) {
+        throw new Error('❌ Failed to generate public URL!');
+      }
+
+      // Test database access
+      console.log('🗄️ Testing database access...');
+      const { count, error: countError } = await supabase
+        .from('photos')
+        .select('*', { count: 'exact', head: true });
+
+      if (countError) {
+        console.error('❌ Database access error:', countError);
+        throw new Error(`Database access failed: ${countError.message}`);
+      }
+
+      console.log('📊 Current photos in database:', count);
+
+      // Insert into database
+      console.log('💾 Inserting photo record...');
+      const photoRecord = {
         original_url: publicUrl,
         processed_url: publicUrl,
         prompt: prompt,
         content_type: contentType,
-        public: true,
-        created_at: new Date().toISOString()
+        public: true
       };
 
-      console.log('📋 Photo data to insert:', photoData);
+      console.log('📋 Photo record to insert:', photoRecord);
 
       const { data: dbResult, error: dbError } = await supabase
         .from('photos')
-        .insert([photoData])
+        .insert([photoRecord])
         .select()
         .single();
 
       if (dbError) {
-        throw new Error(`Database insert failed: ${dbError.message}`);
+        console.error('❌ Database insert error:', dbError);
+        throw new Error(`Database insert failed: ${dbError.message} (Code: ${dbError.code})`);
       }
 
-      console.log('🎉 DATABASE INSERT SUCCESS!', dbResult);
+      console.log('🎉 === DATABASE INSERT SUCCESS ===');
+      console.log('📸 New photo record:', {
+        id: dbResult.id,
+        url: dbResult.processed_url,
+        public: dbResult.public,
+        contentType: dbResult.content_type,
+        createdAt: dbResult.created_at
+      });
       
+      // Verify the insert worked
+      console.log('🔍 Verifying insert...');
+      const { data: verification, error: verifyError } = await supabase
+        .from('photos')
+        .select('*')
+        .eq('id', dbResult.id)
+        .single();
+
+      if (verifyError || !verification) {
+        console.error('❌ Verification failed:', verifyError);
+        throw new Error('Photo was inserted but cannot be retrieved!');
+      }
+
+      console.log('✅ Insert verified successfully!');
+
       // Show success notification
-      alert(`✅ Photo saved to gallery! ID: ${dbResult.id.substring(0, 8)}`);
+      alert(`🎉 SUCCESS! Photo saved to gallery!\nID: ${dbResult.id.substring(0, 8)}\nURL: ${publicUrl}`);
       
-      // Trigger gallery refresh
+      // Trigger all possible gallery refresh methods
+      console.log('🔄 Triggering gallery refresh...');
+      
+      // Method 1: Custom event
       window.dispatchEvent(new CustomEvent('galleryUpdate', {
         detail: { newPhoto: dbResult }
       }));
-
-      // Force refresh the gallery page if it exists
-      if (window.location.pathname.includes('gallery')) {
-        window.location.reload();
-      }
       
+      // Method 2: Storage event  
+      window.dispatchEvent(new StorageEvent('storage', {
+        key: 'galleryRefresh',
+        newValue: dbResult.id
+      }));
+      
+      // Method 3: Force reload if on gallery page
+      if (window.location.pathname.includes('gallery')) {
+        console.log('🔄 Force reloading gallery page...');
+        setTimeout(() => window.location.reload(), 1000);
+      }
+
+      console.log('🎊 === UPLOAD PROCESS COMPLETED ===');
       return dbResult;
       
     } catch (error) {
-      console.error('❌ DIRECT UPLOAD FAILED:', error);
+      console.error('💥 === UPLOAD FAILED ===');
+      console.error('Error:', error);
       
-      // Show detailed error
-      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      alert(`❌ Gallery save failed: ${errorMsg}`);
-      
-      // Log comprehensive error details
-      console.error('Full error details:', {
-        error,
-        stack: error instanceof Error ? error.stack : 'No stack trace'
-      });
+      if (error instanceof Error) {
+        console.error('Error details:', {
+          name: error.name,
+          message: error.message,
+          stack: error.stack
+        });
+        
+        alert(`💥 GALLERY UPLOAD FAILED!\n\nError: ${error.message}\n\nCheck console for full details.`);
+      }
 
       return null;
     }
