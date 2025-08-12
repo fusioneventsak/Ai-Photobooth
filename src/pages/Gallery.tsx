@@ -18,19 +18,30 @@ export default function Gallery() {
       setError(null);
       
       console.log('🔄 Loading gallery photos...');
+      console.log('🔍 Fetching from database...');
+      
       const fetchedPhotos = await getPublicPhotos();
       
       console.log('📸 Gallery photos loaded:', {
         count: fetchedPhotos.length,
         photos: fetchedPhotos.map(p => ({
           id: p.id.substring(0, 8),
-          type: p.content_type,
-          created: p.created_at
+          type: p.content_type || 'image', // Handle missing content_type
+          created: p.created_at,
+          url: p.processed_url || p.original_url,
+          prompt: p.prompt?.substring(0, 30) + '...'
         }))
       });
+
+      // Sort by created_at descending to show newest first
+      const sortedPhotos = fetchedPhotos.sort((a, b) => 
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
       
-      setPhotos(fetchedPhotos);
+      setPhotos(sortedPhotos);
       setLastRefresh(new Date());
+      
+      console.log('✅ Gallery state updated with', sortedPhotos.length, 'photos');
     } catch (err) {
       console.error('❌ Failed to load gallery photos:', err);
       setError(err instanceof Error ? err.message : 'Failed to load photos');
@@ -48,22 +59,58 @@ export default function Gallery() {
   React.useEffect(() => {
     const handleGalleryUpdate = (event: CustomEvent) => {
       console.log('🎉 Gallery update event received:', event.detail);
-      // Refresh gallery when new photo is uploaded
-      loadPhotos(false);
+      
+      // Add the new photo to the state immediately for instant feedback
+      if (event.detail?.newPhoto) {
+        const newPhoto = event.detail.newPhoto;
+        console.log('➕ Adding new photo to gallery state:', newPhoto.id);
+        
+        setPhotos(prevPhotos => {
+          // Check if photo already exists to avoid duplicates
+          const exists = prevPhotos.some(p => p.id === newPhoto.id);
+          if (exists) {
+            console.log('⚠️ Photo already exists in gallery, skipping duplicate');
+            return prevPhotos;
+          }
+          
+          // Add new photo at the beginning (newest first)
+          const updatedPhotos = [newPhoto, ...prevPhotos];
+          console.log('✅ Photo added to gallery state, total:', updatedPhotos.length);
+          return updatedPhotos;
+        });
+      }
+      
+      // Also refresh from database to ensure consistency
+      setTimeout(() => {
+        console.log('🔄 Refreshing gallery from database...');
+        loadPhotos(false);
+      }, 1000);
     };
 
+    const handleStorageUpdate = (event: StorageEvent) => {
+      if (event.key === 'galleryRefresh') {
+        console.log('💾 Storage update event received');
+        loadPhotos(false);
+      }
+    };
+
+    console.log('👂 Setting up gallery event listeners...');
     window.addEventListener('galleryUpdate', handleGalleryUpdate as EventListener);
+    window.addEventListener('storage', handleStorageUpdate);
     
     return () => {
+      console.log('🧹 Cleaning up gallery event listeners...');
       window.removeEventListener('galleryUpdate', handleGalleryUpdate as EventListener);
+      window.removeEventListener('storage', handleStorageUpdate);
     };
   }, []);
 
-  // Auto-refresh every 30 seconds to catch any missed updates
+  // Auto-refresh every 10 seconds to catch any missed updates  
   React.useEffect(() => {
     const interval = setInterval(() => {
+      console.log('⏰ Auto-refresh triggered');
       loadPhotos(false);
-    }, 30000);
+    }, 10000); // Reduced from 30s to 10s for faster updates
 
     return () => clearInterval(interval);
   }, []);
@@ -189,19 +236,19 @@ export default function Gallery() {
           </div>
           <div className="bg-gray-800 rounded-lg p-4 text-center">
             <div className="text-2xl font-bold text-green-400">
-              {photos.filter(p => p.content_type === 'image').length}
+              {photos.filter(p => !p.content_type || p.content_type === 'image').length}
             </div>
             <div className="text-sm text-gray-400">Images</div>
           </div>
           <div className="bg-gray-800 rounded-lg p-4 text-center">
             <div className="text-2xl font-bold text-purple-400">
-              {photos.filter(p => p.content_type === 'video').length}
+              {photos.filter(p => p.content_type === 'video' || p.content_type === 'mp4').length}
             </div>
             <div className="text-sm text-gray-400">Videos</div>
           </div>
           <div className="bg-gray-800 rounded-lg p-4 text-center">
             <div className="text-2xl font-bold text-yellow-400">
-              {photos.filter(p => p.public).length}
+              {photos.filter(p => p.public !== false).length}
             </div>
             <div className="text-sm text-gray-400">Public</div>
           </div>
@@ -227,13 +274,14 @@ export default function Gallery() {
                   ${config?.gallery_layout === 'masonry' ? 'mb-4' : ''}
                 `}
               >
-                {photo.content_type === 'video' ? (
+                {(photo.content_type === 'video' || photo.content_type === 'mp4') ? (
                   <div className="relative">
                     <video
                       src={photo.processed_url || photo.original_url}
                       className="w-full h-auto rounded-lg shadow-lg"
                       controls
                       playsInline
+                      poster={photo.thumbnail_url}
                     />
                     <div className="absolute top-2 left-2 bg-black/70 text-white px-2 py-1 rounded text-xs flex items-center gap-1">
                       <Video className="w-3 h-3" />
@@ -246,6 +294,14 @@ export default function Gallery() {
                       src={photo.processed_url || photo.original_url}
                       alt="Gallery"
                       className="w-full h-auto rounded-lg shadow-lg"
+                      onError={(e) => {
+                        console.warn('❌ Failed to load image:', photo.id, e);
+                        // Fallback to original_url if processed_url fails
+                        const img = e.target as HTMLImageElement;
+                        if (img.src !== photo.original_url && photo.original_url) {
+                          img.src = photo.original_url;
+                        }
+                      }}
                     />
                     <div className="absolute top-2 left-2 bg-black/70 text-white px-2 py-1 rounded text-xs flex items-center gap-1">
                       <ImageIcon className="w-3 h-3" />
