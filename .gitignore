@@ -12,6 +12,13 @@ dist
 dist-ssr
 *.local
 
+# Supabase
+.supabase/
+
+# Environment variables with API keys (use Supabase Edge Functions instead)
+.env.local
+.env.production
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
