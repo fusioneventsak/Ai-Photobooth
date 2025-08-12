@@ -352,11 +352,6 @@ export default function Photobooth() {
         timestamp: new Date().toISOString()
       });
 
-      // Validate inputs
-      if (!aiContent || !aiContent.startsWith('data:')) {
-        throw new Error('❌ Invalid AI content - not a data URL');
-      }
-
       // Import Supabase client
       console.log('🔗 Importing Supabase client...');
       const { createClient } = await import('@supabase/supabase-js');
@@ -364,17 +359,22 @@ export default function Photobooth() {
       const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
       const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
       
-      console.log('🔑 Supabase config:', {
-        url: SUPABASE_URL ? '✅ Present' : '❌ Missing',
-        key: SUPABASE_KEY ? '✅ Present' : '❌ Missing'
+      console.log('🔑 Supabase config check:', {
+        url: SUPABASE_URL ? `✅ ${SUPABASE_URL}` : '❌ Missing',
+        key: SUPABASE_KEY ? `✅ ${SUPABASE_KEY.substring(0, 20)}...` : '❌ Missing'
       });
       
       if (!SUPABASE_URL || !SUPABASE_KEY) {
-        throw new Error('❌ Missing Supabase configuration!');
+        throw new Error('❌ Missing Supabase configuration in environment variables!');
       }
 
       const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
       console.log('✅ Supabase client created');
+
+      // Validate AI content
+      if (!aiContent || !aiContent.startsWith('data:')) {
+        throw new Error('❌ Invalid AI content - not a data URL');
+      }
 
       // Create unique filename
       const timestamp = Date.now();
@@ -386,38 +386,65 @@ export default function Photobooth() {
 
       // Convert data URL to blob
       console.log('🔄 Converting data URL to blob...');
+      console.log('📄 Data URL info:', {
+        starts_with: aiContent.substring(0, 30),
+        length: aiContent.length,
+        has_base64: aiContent.includes('base64'),
+        mime_type: aiContent.split(';')[0]
+      });
+
       const response = await fetch(aiContent);
       const blob = await response.blob();
       
       console.log('💾 Blob created:', {
         size: blob.size,
-        type: blob.type
+        type: blob.type,
+        valid: blob.size > 0
       });
 
       if (blob.size === 0) {
-        throw new Error('❌ Generated blob is empty!');
+        throw new Error('❌ Generated blob is empty - invalid data URL!');
       }
 
-      // Test storage bucket access first
-      console.log('🪣 Testing storage bucket access...');
-      const { data: buckets, error: bucketError } = await supabase.storage.listBuckets();
+      // Test storage bucket access
+      console.log('🪣 === TESTING STORAGE BUCKET ACCESS ===');
       
-      if (bucketError) {
-        console.error('❌ Cannot access storage:', bucketError);
-        throw new Error(`Storage access failed: ${bucketError.message}`);
+      try {
+        const { data: buckets, error: bucketError } = await supabase.storage.listBuckets();
+        
+        if (bucketError) {
+          console.error('❌ Cannot list buckets:', bucketError);
+          throw new Error(`Storage access failed: ${bucketError.message}`);
+        }
+        
+        console.log('📂 All buckets:', buckets?.map(b => ({ name: b.name, public: b.public })) || []);
+        
+        const photoBucket = buckets?.find(b => b.name === 'photos');
+        if (!photoBucket) {
+          console.error('❌ Photos bucket not found!');
+          throw new Error('Photos storage bucket does not exist! Please create it in Supabase dashboard.');
+        }
+        
+        console.log('✅ Photos bucket found:', {
+          name: photoBucket.name,
+          public: photoBucket.public,
+          id: photoBucket.id
+        });
+
+      } catch (storageTestError) {
+        console.error('💥 Storage test failed:', storageTestError);
+        throw new Error(`Storage test failed: ${storageTestError.message}`);
       }
-      
-      console.log('📂 Available buckets:', buckets?.map(b => b.name) || []);
-      const photoBucket = buckets?.find(b => b.name === 'photos');
-      
-      if (!photoBucket) {
-        throw new Error('❌ Photos storage bucket not found!');
-      }
-      
-      console.log('✅ Photos bucket found and accessible');
 
       // Upload to storage
-      console.log('⬆️ Uploading to Supabase storage...');
+      console.log('⬆️ === UPLOADING TO SUPABASE STORAGE ===');
+      console.log('📤 Upload details:', {
+        bucket: 'photos',
+        filename: filename,
+        blob_size: blob.size,
+        content_type: contentType === 'video' ? 'video/mp4' : 'image/png'
+      });
+
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('photos')
         .upload(filename, blob, {
@@ -426,14 +453,38 @@ export default function Photobooth() {
         });
 
       if (uploadError) {
-        console.error('❌ Storage upload error:', uploadError);
+        console.error('❌ STORAGE UPLOAD ERROR:', uploadError);
+        console.error('Upload error details:', {
+          message: uploadError.message,
+          statusCode: uploadError.statusCode,
+          error: uploadError.error
+        });
         throw new Error(`Storage upload failed: ${uploadError.message}`);
       }
 
-      console.log('✅ Storage upload successful:', {
+      console.log('✅ STORAGE UPLOAD SUCCESS!', {
         path: uploadData.path,
-        id: uploadData.id
+        id: uploadData.id,
+        fullPath: uploadData.fullPath
       });
+
+      // Verify the file was actually uploaded
+      console.log('🔍 Verifying file upload...');
+      const { data: fileList, error: listError } = await supabase.storage
+        .from('photos')
+        .list('', { limit: 10 });
+
+      if (listError) {
+        console.warn('⚠️ Could not verify upload:', listError);
+      } else {
+        console.log('📁 Files in storage:', fileList?.map(f => f.name) || []);
+        const uploadedFile = fileList?.find(f => f.name === filename);
+        if (uploadedFile) {
+          console.log('✅ File confirmed in storage!', uploadedFile);
+        } else {
+          console.error('❌ File not found in storage after upload!');
+        }
+      }
 
       // Get public URL
       console.log('🔗 Generating public URL...');
@@ -442,27 +493,27 @@ export default function Photobooth() {
         .getPublicUrl(uploadData.path);
 
       const publicUrl = urlData.publicUrl;
-      console.log('🌐 Public URL:', publicUrl);
+      console.log('🌐 Public URL generated:', publicUrl);
 
       if (!publicUrl) {
         throw new Error('❌ Failed to generate public URL!');
       }
 
-      // Test database access
-      console.log('🗄️ Testing database access...');
-      const { count, error: countError } = await supabase
-        .from('photos')
-        .select('*', { count: 'exact', head: true });
-
-      if (countError) {
-        console.error('❌ Database access error:', countError);
-        throw new Error(`Database access failed: ${countError.message}`);
+      // Test the URL works
+      console.log('🧪 Testing public URL...');
+      try {
+        const urlTest = await fetch(publicUrl, { method: 'HEAD' });
+        console.log('🔗 URL test result:', {
+          status: urlTest.status,
+          ok: urlTest.ok,
+          headers: Object.fromEntries(urlTest.headers.entries())
+        });
+      } catch (urlError) {
+        console.warn('⚠️ Could not test URL:', urlError);
       }
 
-      console.log('📊 Current photos in database:', count);
-
       // Insert into database
-      console.log('💾 Inserting photo record...');
+      console.log('💾 === INSERTING INTO DATABASE ===');
       const photoRecord = {
         original_url: publicUrl,
         processed_url: publicUrl,
@@ -480,72 +531,30 @@ export default function Photobooth() {
         .single();
 
       if (dbError) {
-        console.error('❌ Database insert error:', dbError);
+        console.error('❌ DATABASE INSERT ERROR:', dbError);
         throw new Error(`Database insert failed: ${dbError.message} (Code: ${dbError.code})`);
       }
 
       console.log('🎉 === DATABASE INSERT SUCCESS ===');
-      console.log('📸 New photo record:', {
-        id: dbResult.id,
-        url: dbResult.processed_url,
-        public: dbResult.public,
-        contentType: dbResult.content_type,
-        createdAt: dbResult.created_at
-      });
+      console.log('📸 New photo record created:', dbResult);
       
-      // Verify the insert worked
-      console.log('🔍 Verifying insert...');
-      const { data: verification, error: verifyError } = await supabase
-        .from('photos')
-        .select('*')
-        .eq('id', dbResult.id)
-        .single();
-
-      if (verifyError || !verification) {
-        console.error('❌ Verification failed:', verifyError);
-        throw new Error('Photo was inserted but cannot be retrieved!');
-      }
-
-      console.log('✅ Insert verified successfully!');
-
-      // Show success notification
-      alert(`🎉 SUCCESS! Photo saved to gallery!\nID: ${dbResult.id.substring(0, 8)}\nURL: ${publicUrl}`);
+      // Show success notification with storage confirmation
+      alert(`🎉 SUCCESS!\n\n✅ File uploaded to storage: ${filename}\n✅ Database record created: ${dbResult.id}\n🔗 URL: ${publicUrl}`);
       
-      // Trigger all possible gallery refresh methods
-      console.log('🔄 Triggering gallery refresh...');
-      
-      // Method 1: Custom event
+      // Trigger gallery refresh
       window.dispatchEvent(new CustomEvent('galleryUpdate', {
         detail: { newPhoto: dbResult }
       }));
-      
-      // Method 2: Storage event  
-      window.dispatchEvent(new StorageEvent('storage', {
-        key: 'galleryRefresh',
-        newValue: dbResult.id
-      }));
-      
-      // Method 3: Force reload if on gallery page
-      if (window.location.pathname.includes('gallery')) {
-        console.log('🔄 Force reloading gallery page...');
-        setTimeout(() => window.location.reload(), 1000);
-      }
 
       console.log('🎊 === UPLOAD PROCESS COMPLETED ===');
       return dbResult;
       
     } catch (error) {
-      console.error('💥 === UPLOAD FAILED ===');
+      console.error('💥 === UPLOAD COMPLETELY FAILED ===');
       console.error('Error:', error);
       
       if (error instanceof Error) {
-        console.error('Error details:', {
-          name: error.name,
-          message: error.message,
-          stack: error.stack
-        });
-        
-        alert(`💥 GALLERY UPLOAD FAILED!\n\nError: ${error.message}\n\nCheck console for full details.`);
+        alert(`💥 UPLOAD FAILED!\n\nError: ${error.message}\n\nCheck browser console for full details.`);
       }
 
       return null;
