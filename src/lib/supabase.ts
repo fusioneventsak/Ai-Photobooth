@@ -1,4 +1,4 @@
-// Complete src/lib/supabase.ts file with all functions
+// src/lib/supabase.ts - Complete updated file
 import { createClient } from '@supabase/supabase-js';
 import type { Config, Photo } from '../types/supabase';
 
@@ -11,66 +11,129 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-// Configuration functions
+// Enhanced Configuration functions
 export async function getConfig(): Promise<Config | null> {
   try {
+    console.log('🔍 Fetching configuration from Supabase...');
+    
     const { data, error } = await supabase
       .from('configs')
       .select('*')
-      .single();
+      .maybeSingle(); // Use maybeSingle to handle no rows gracefully
 
     if (error) {
-      console.error('Error fetching config:', error);
-      return null;
+      console.error('❌ Error fetching config:', error);
+      
+      // If no config exists, create a default one
+      if (error.code === 'PGRST116') {
+        console.log('📝 No config found, creating default configuration...');
+        return await createDefaultConfig();
+      }
+      
+      throw new Error(`Failed to fetch configuration: ${error.message}`);
     }
 
+    if (!data) {
+      console.log('📝 No config found, creating default configuration...');
+      return await createDefaultConfig();
+    }
+
+    console.log('✅ Configuration loaded successfully');
     return data;
   } catch (error) {
-    console.error('Error in getConfig:', error);
-    return null;
+    console.error('❌ Error in getConfig:', error);
+    throw error;
   }
+}
+
+async function createDefaultConfig(): Promise<Config> {
+  const defaultConfig = {
+    brand_name: 'Virtual Photobooth',
+    primary_color: '#3B82F6',
+    secondary_color: '#6B7280',
+    global_prompt: 'Create a stunning astronaut portrait with a reflective helmet visor and planets visible in the cosmic background, preserve all facial features and expressions exactly as they are in the original photo',
+    gallery_animation: 'fade' as const,
+    gallery_speed: 3000,
+    gallery_layout: 'grid' as const,
+    gallery_images_per_page: 12,
+    model_type: 'image' as const,
+    video_duration: 5,
+    image_provider: 'stability' as const,
+    video_provider: 'stability' as const,
+    use_provider_fallback: true,
+    face_preservation_mode: 'preserve_face' as const
+  };
+
+  const { data, error } = await supabase
+    .from('configs')
+    .insert([defaultConfig])
+    .select()
+    .single();
+
+  if (error) {
+    console.error('❌ Error creating default config:', error);
+    throw new Error(`Failed to create default configuration: ${error.message}`);
+  }
+
+  console.log('✅ Default configuration created successfully');
+  return data;
 }
 
 export async function updateConfig(updates: Partial<Config>): Promise<Config | null> {
   try {
-    // First, get the existing config to update
+    console.log('🔄 Updating configuration...', updates);
+    
+    // First, get the existing config
     const existingConfig = await getConfig();
     
     if (!existingConfig) {
-      // If no config exists, create one with the updates
-      const { data, error } = await supabase
-        .from('configs')
-        .insert([updates])
-        .select()
-        .single();
+      console.log('📝 No existing config found, creating new one with updates...');
+      return await createDefaultConfig();
+    }
 
-      if (error) {
-        console.error('Error creating config:', error);
-        return null;
+    // Filter out undefined values and only include valid config fields
+    const validUpdates: Partial<Config> = {};
+    
+    const validFields = [
+      'brand_name', 'brand_logo_url', 'primary_color', 'secondary_color',
+      'global_prompt', 'gallery_animation', 'gallery_speed', 'gallery_layout',
+      'stability_api_key', 'gallery_images_per_page', 'model_type', 
+      'video_duration', 'image_provider', 'video_provider', 
+      'use_provider_fallback', 'face_preservation_mode'
+    ];
+
+    Object.entries(updates).forEach(([key, value]) => {
+      if (validFields.includes(key) && value !== undefined) {
+        validUpdates[key as keyof Config] = value;
       }
+    });
 
-      return data;
+    if (Object.keys(validUpdates).length === 0) {
+      console.log('ℹ️ No valid updates provided');
+      return existingConfig;
     }
 
     // Update the existing config
     const { data, error } = await supabase
       .from('configs')
-      .update(updates)
+      .update(validUpdates)
       .eq('id', existingConfig.id)
       .select()
       .single();
 
     if (error) {
-      console.error('Error updating config:', error);
-      return null;
+      console.error('❌ Error updating config:', error);
+      throw new Error(`Failed to update configuration: ${error.message}`);
     }
 
+    console.log('✅ Configuration updated successfully');
     return data;
   } catch (error) {
-    console.error('Error in updateConfig:', error);
-    return null;
+    console.error('❌ Error in updateConfig:', error);
+    throw error;
   }
 }
+
 
 // Enhanced uploadPhoto function with comprehensive error handling
 export async function uploadPhoto(
@@ -348,6 +411,7 @@ export async function uploadPhoto(
     throw new Error('Upload failed due to an unexpected error. Please try again.');
   }
 }
+
 
 // Get public photos function
 export async function getPublicPhotos(): Promise<Photo[]> {
