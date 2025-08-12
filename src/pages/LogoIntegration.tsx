@@ -1,5 +1,5 @@
 import React, { useState, useRef, ChangeEvent } from 'react';
-import { Upload, Wand2, AlertCircle, RefreshCw, Image as ImageIcon, Layers, Settings, Eye, Info, Bug } from 'lucide-react';
+import { Upload, Wand2, AlertCircle, RefreshCw, Image as ImageIcon, Layers, Settings, Eye, Info, Palette, Frame } from 'lucide-react';
 import { useConfigStore } from '../store/configStore';
 import { uploadPhoto } from '../lib/supabase';
 
@@ -15,6 +15,309 @@ interface OverlaySettings {
   offsetY: number;
 }
 
+interface BuiltInBorder {
+  id: string;
+  name: string;
+  description: string;
+  category: 'elegant' | 'modern' | 'decorative' | 'tech';
+  generateCanvas: (width: number, height: number) => string;
+}
+
+const BUILT_IN_BORDERS: BuiltInBorder[] = [
+  {
+    id: 'classic-frame',
+    name: 'Classic Frame',
+    description: 'Elegant golden border with shadow',
+    category: 'elegant',
+    generateCanvas: (width: number, height: number) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d')!;
+      
+      const borderWidth = Math.min(width, height) * 0.08;
+      
+      // Outer shadow
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+      ctx.fillRect(0, 0, width, height);
+      
+      // Main border
+      const gradient = ctx.createLinearGradient(0, 0, width, height);
+      gradient.addColorStop(0, '#DAA520');
+      gradient.addColorStop(0.5, '#FFD700');
+      gradient.addColorStop(1, '#B8860B');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(borderWidth/2, borderWidth/2, width - borderWidth, height - borderWidth);
+      
+      // Inner frame
+      ctx.fillStyle = '#8B4513';
+      ctx.fillRect(borderWidth, borderWidth, width - borderWidth*2, height - borderWidth*2);
+      
+      // Clear center
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.fillRect(borderWidth*1.5, borderWidth*1.5, width - borderWidth*3, height - borderWidth*3);
+      
+      return canvas.toDataURL();
+    }
+  },
+  {
+    id: 'neon-glow',
+    name: 'Neon Glow',
+    description: 'Cyberpunk-style glowing border',
+    category: 'tech',
+    generateCanvas: (width: number, height: number) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d')!;
+      
+      const borderWidth = Math.min(width, height) * 0.03;
+      
+      // Glow effect
+      for (let i = 0; i < 5; i++) {
+        ctx.strokeStyle = `rgba(0, 255, 255, ${0.3 - i * 0.05})`;
+        ctx.lineWidth = borderWidth * (5 - i);
+        ctx.strokeRect(borderWidth * i, borderWidth * i, width - borderWidth * i * 2, height - borderWidth * i * 2);
+      }
+      
+      // Main neon line
+      ctx.strokeStyle = '#00FFFF';
+      ctx.lineWidth = borderWidth;
+      ctx.strokeRect(borderWidth/2, borderWidth/2, width - borderWidth, height - borderWidth);
+      
+      // Inner accent
+      ctx.strokeStyle = '#FF00FF';
+      ctx.lineWidth = borderWidth/3;
+      ctx.strokeRect(borderWidth*2, borderWidth*2, width - borderWidth*4, height - borderWidth*4);
+      
+      return canvas.toDataURL();
+    }
+  },
+  {
+    id: 'film-strip',
+    name: 'Film Strip',
+    description: 'Classic cinema film border',
+    category: 'modern',
+    generateCanvas: (width: number, height: number) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d')!;
+      
+      const stripHeight = height * 0.12;
+      const holeSize = stripHeight * 0.6;
+      const holeSpacing = holeSize * 1.5;
+      
+      // Top and bottom strips
+      ctx.fillStyle = '#1a1a1a';
+      ctx.fillRect(0, 0, width, stripHeight);
+      ctx.fillRect(0, height - stripHeight, width, stripHeight);
+      
+      // Film holes
+      ctx.globalCompositeOperation = 'destination-out';
+      const holes = Math.floor(width / holeSpacing);
+      for (let i = 0; i < holes; i++) {
+        const x = i * holeSpacing + holeSpacing/2 - holeSize/2;
+        // Top holes
+        ctx.fillRect(x, stripHeight * 0.2, holeSize, holeSize);
+        // Bottom holes
+        ctx.fillRect(x, height - stripHeight + stripHeight * 0.2, holeSize, holeSize);
+      }
+      
+      return canvas.toDataURL();
+    }
+  },
+  {
+    id: 'polaroid',
+    name: 'Polaroid',
+    description: 'Instant photo border with shadow',
+    category: 'modern',
+    generateCanvas: (width: number, height: number) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d')!;
+      
+      const borderSize = Math.min(width, height) * 0.06;
+      const bottomBorder = borderSize * 3;
+      
+      // Drop shadow
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+      ctx.fillRect(borderSize/2, borderSize/2, width - borderSize, height - borderSize);
+      
+      // White border
+      ctx.fillStyle = '#f8f8f8';
+      ctx.fillRect(0, 0, width, height);
+      
+      // Clear photo area
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.fillRect(borderSize, borderSize, width - borderSize*2, height - borderSize - bottomBorder);
+      
+      return canvas.toDataURL();
+    }
+  },
+  {
+    id: 'ornate-baroque',
+    name: 'Ornate Baroque',
+    description: 'Decorative vintage-style border',
+    category: 'decorative',
+    generateCanvas: (width: number, height: number) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d')!;
+      
+      const borderWidth = Math.min(width, height) * 0.1;
+      
+      // Base gradient
+      const gradient = ctx.createRadialGradient(width/2, height/2, 0, width/2, height/2, Math.max(width, height)/2);
+      gradient.addColorStop(0, '#8B4513');
+      gradient.addColorStop(0.7, '#CD853F');
+      gradient.addColorStop(1, '#DEB887');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, width, height);
+      
+      // Decorative corners
+      const cornerSize = borderWidth * 1.5;
+      const corners = [
+        { x: 0, y: 0 },
+        { x: width - cornerSize, y: 0 },
+        { x: 0, y: height - cornerSize },
+        { x: width - cornerSize, y: height - cornerSize }
+      ];
+      
+      ctx.fillStyle = '#DAA520';
+      corners.forEach(corner => {
+        ctx.beginPath();
+        ctx.arc(corner.x + cornerSize/2, corner.y + cornerSize/2, cornerSize/3, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      
+      // Clear center
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.fillRect(borderWidth, borderWidth, width - borderWidth*2, height - borderWidth*2);
+      
+      return canvas.toDataURL();
+    }
+  },
+  {
+    id: 'minimal-line',
+    name: 'Minimal Line',
+    description: 'Clean, thin border line',
+    category: 'modern',
+    generateCanvas: (width: number, height: number) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d')!;
+      
+      const lineWidth = Math.min(width, height) * 0.008;
+      const offset = lineWidth * 3;
+      
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = lineWidth;
+      ctx.strokeRect(offset, offset, width - offset*2, height - offset*2);
+      
+      // Double line effect
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+      ctx.lineWidth = lineWidth/2;
+      ctx.strokeRect(offset*2, offset*2, width - offset*4, height - offset*4);
+      
+      return canvas.toDataURL();
+    }
+  },
+  {
+    id: 'grunge-torn',
+    name: 'Grunge Torn',
+    description: 'Rough, distressed edge effect',
+    category: 'decorative',
+    generateCanvas: (width: number, height: number) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d')!;
+      
+      const borderWidth = Math.min(width, height) * 0.05;
+      
+      // Dark vignette
+      const gradient = ctx.createRadialGradient(width/2, height/2, 0, width/2, height/2, Math.max(width, height)/2);
+      gradient.addColorStop(0, 'rgba(0, 0, 0, 0)');
+      gradient.addColorStop(0.8, 'rgba(0, 0, 0, 0.3)');
+      gradient.addColorStop(1, 'rgba(0, 0, 0, 0.8)');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, width, height);
+      
+      // Torn edges effect
+      ctx.globalCompositeOperation = 'destination-out';
+      for (let i = 0; i < 50; i++) {
+        const x = Math.random() * width;
+        const y = Math.random() < 0.5 ? Math.random() * borderWidth : height - Math.random() * borderWidth;
+        const size = Math.random() * borderWidth * 0.5;
+        ctx.beginPath();
+        ctx.arc(x, y, size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      
+      return canvas.toDataURL();
+    }
+  },
+  {
+    id: 'tech-grid',
+    name: 'Tech Grid',
+    description: 'Futuristic grid pattern border',
+    category: 'tech',
+    generateCanvas: (width: number, height: number) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d')!;
+      
+      const gridSize = Math.min(width, height) * 0.02;
+      const borderWidth = gridSize * 4;
+      
+      // Grid pattern
+      ctx.strokeStyle = 'rgba(0, 255, 136, 0.3)';
+      ctx.lineWidth = 1;
+      
+      // Vertical lines
+      for (let x = 0; x < width; x += gridSize) {
+        if (x < borderWidth || x > width - borderWidth) {
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, height);
+          ctx.stroke();
+        }
+      }
+      
+      // Horizontal lines
+      for (let y = 0; y < height; y += gridSize) {
+        if (y < borderWidth || y > height - borderWidth) {
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(width, y);
+          ctx.stroke();
+        }
+      }
+      
+      // Corner accents
+      ctx.strokeStyle = '#00FF88';
+      ctx.lineWidth = 3;
+      const accentSize = borderWidth;
+      
+      // Top-left
+      ctx.strokeRect(0, 0, accentSize, accentSize);
+      // Top-right
+      ctx.strokeRect(width - accentSize, 0, accentSize, accentSize);
+      // Bottom-left
+      ctx.strokeRect(0, height - accentSize, accentSize, accentSize);
+      // Bottom-right
+      ctx.strokeRect(width - accentSize, height - accentSize, accentSize, accentSize);
+      
+      return canvas.toDataURL();
+    }
+  }
+];
+
 export default function OverlayIntegration() {
   const { config } = useConfigStore();
   const [overlayImage, setOverlayImage] = useState<string | null>(null);
@@ -25,6 +328,8 @@ export default function OverlayIntegration() {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
+  const [selectedBorder, setSelectedBorder] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'upload' | 'borders'>('upload');
   
   const overlayFileRef = useRef<HTMLInputElement>(null);
   const testFileRef = useRef<HTMLInputElement>(null);
@@ -39,53 +344,38 @@ export default function OverlayIntegration() {
     offsetY: 20
   });
 
-  // **DEBUG: Calculate button state**
-  const hasOverlayImage = !!overlayImage;
-  const hasOverlayName = overlayName.trim().length > 0;
-  const isNotProcessing = !processing;
-  const canSave = hasOverlayImage && hasOverlayName && isNotProcessing;
-
   // Handle overlay image upload
   const handleOverlayChange = (event: ChangeEvent<HTMLInputElement>) => {
-    console.log('🔄 File input changed');
     setError(null);
     
     if (!event.target.files || event.target.files.length === 0) {
-      console.log('❌ No files selected');
       return;
     }
     
     const file = event.target.files[0];
-    console.log('📁 File selected:', { name: file.name, type: file.type, size: file.size });
     
     if (!file.type.startsWith('image/')) {
-      console.log('❌ Invalid file type:', file.type);
       setError('Please upload an image file for the overlay');
       return;
     }
     
     if (file.size > 10 * 1024 * 1024) {
-      console.log('❌ File too large:', file.size);
       setError('Overlay file is too large (max 10MB)');
       return;
     }
 
-    console.log('📖 Starting file read...');
     const reader = new FileReader();
-    
     reader.onload = (e) => {
       if (e.target?.result && typeof e.target.result === 'string') {
-        console.log('✅ File read successful, data length:', e.target.result.length);
         setOverlayImage(e.target.result);
+        setSelectedBorder(null); // Clear border selection when uploading custom image
         setError(null);
       } else {
-        console.log('❌ File read failed - no result');
         setError('Failed to read overlay image file');
       }
     };
     
-    reader.onerror = (err) => {
-      console.log('❌ File read error:', err);
+    reader.onerror = () => {
       setError('Failed to read overlay image file');
     };
     
@@ -93,7 +383,7 @@ export default function OverlayIntegration() {
   };
 
   // Handle test image upload
-  const handleTestImageChange = (event: ChangeEvent<HTMLInputElement>) => {
+  const handleTestImageChange = (event: ChangeEvent<HTMLInputInput>) => {
     setError(null);
     
     if (!event.target.files || event.target.files.length === 0) {
@@ -127,6 +417,26 @@ export default function OverlayIntegration() {
     };
     
     reader.readAsDataURL(file);
+  };
+
+  // Handle border selection
+  const handleBorderSelect = (borderId: string) => {
+    const border = BUILT_IN_BORDERS.find(b => b.id === borderId);
+    if (border) {
+      // Generate border at standard size
+      const borderImage = border.generateCanvas(512, 512);
+      setOverlayImage(borderImage);
+      setSelectedBorder(borderId);
+      setOverlayName(border.name);
+      setOverlaySettings(prev => ({
+        ...prev,
+        position: 'center',
+        scale: 1.0, // Full size for borders
+        opacity: 0.9,
+        blendMode: 'normal'
+      }));
+      setError(null);
+    }
   };
 
   // Generate preview with overlay
@@ -236,21 +546,10 @@ export default function OverlayIntegration() {
     }
   }, [overlaySettings, overlayImage, testImage]);
 
-  // Save overlay configuration with enhanced debugging
+  // Save overlay configuration
   const saveOverlayConfig = async () => {
-    console.log('💾 Save overlay config clicked');
-    console.log('📊 State check:', {
-      hasOverlayImage: !!overlayImage,
-      overlayImageLength: overlayImage?.length || 0,
-      hasOverlayName: !!overlayName.trim(),
-      overlayName: overlayName,
-      processing: processing
-    });
-
     if (!overlayImage || !overlayName.trim()) {
-      const errorMsg = !overlayImage ? 'Please upload an overlay image' : 'Please enter an overlay name';
-      console.log('❌ Validation failed:', errorMsg);
-      setError(errorMsg);
+      setError('Please provide an overlay image and name');
       return;
     }
 
@@ -258,24 +557,17 @@ export default function OverlayIntegration() {
     setError(null);
     
     try {
-      console.log('💾 Saving overlay configuration...', {
-        name: overlayName,
-        hasImage: !!overlayImage,
-        imageSize: overlayImage.length,
-        settings: overlaySettings
-      });
-
       // Save overlay configuration to localStorage
       const overlayConfig = {
         name: overlayName,
         image: overlayImage,
         settings: overlaySettings,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        type: selectedBorder ? 'border' : 'custom'
       };
 
       // Get existing overlays and add new one
       const existingOverlays = JSON.parse(localStorage.getItem('photoboothOverlays') || '[]');
-      console.log('📦 Existing overlays:', existingOverlays.length);
       
       // Check if overlay with same name exists and ask for confirmation
       const existingIndex = existingOverlays.findIndex((overlay: any) => overlay.name === overlayName);
@@ -283,28 +575,20 @@ export default function OverlayIntegration() {
         const shouldReplace = confirm(`An overlay named "${overlayName}" already exists. Do you want to replace it?`);
         if (shouldReplace) {
           existingOverlays[existingIndex] = overlayConfig;
-          console.log('🔄 Replaced existing overlay');
         } else {
           setProcessing(false);
           return;
         }
       } else {
         existingOverlays.push(overlayConfig);
-        console.log('➕ Added new overlay');
       }
 
       // Save to localStorage
       localStorage.setItem('photoboothOverlays', JSON.stringify(existingOverlays));
-      console.log('✅ Saved to localStorage successfully');
-      
-      // Verify save
-      const saved = localStorage.getItem('photoboothOverlays');
-      console.log('🔍 Verification - saved data length:', saved?.length || 0);
 
       // Also save test result to gallery if available
       if (resultImage) {
         try {
-          console.log('📤 Uploading preview to gallery...');
           const uploadResult = await uploadPhoto(
             resultImage,
             `Overlay Preview: ${overlayName} - ${overlaySettings.position} at ${Math.round(overlaySettings.scale * 100)}% scale`,
@@ -312,26 +596,25 @@ export default function OverlayIntegration() {
           );
 
           if (uploadResult) {
-            console.log('✅ Preview uploaded to gallery');
             // Dispatch gallery update
             window.dispatchEvent(new CustomEvent('galleryUpdate', {
               detail: { newPhoto: uploadResult, source: 'overlay_preview' }
             }));
           }
         } catch (uploadError) {
-          console.warn('⚠️ Failed to upload preview to gallery:', uploadError);
+          console.warn('Failed to upload preview to gallery:', uploadError);
           // Don't fail the whole process if gallery upload fails
         }
       }
 
       // Success message
-      alert(`✅ Overlay "${overlayName}" saved successfully!\n\nThis overlay will now be automatically applied to all AI generated photos.\n\nRecommended overlay size: 200x200 to 512x512 pixels for best quality.`);
+      alert(`✅ Overlay "${overlayName}" saved successfully!\n\nThis overlay will now be automatically applied to all AI generated photos.`);
       
       // Reset form
       resetForm();
       
     } catch (err) {
-      console.error('❌ Error saving overlay:', err);
+      console.error('Error saving overlay:', err);
       const errorMessage = err instanceof Error ? err.message : 'Failed to save overlay';
       setError(`Failed to save overlay: ${errorMessage}`);
     } finally {
@@ -340,13 +623,13 @@ export default function OverlayIntegration() {
   };
 
   const resetForm = () => {
-    console.log('🔄 Resetting form');
     setOverlayImage(null);
     setOverlayName('');
     setTestImage(null);
     setResultImage(null);
     setError(null);
     setShowPreview(false);
+    setSelectedBorder(null);
     
     // Clear file inputs
     if (overlayFileRef.current) overlayFileRef.current.value = '';
@@ -363,6 +646,8 @@ export default function OverlayIntegration() {
     });
   };
 
+  const canSave = !!overlayImage && overlayName.trim().length > 0 && !processing;
+
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="max-w-6xl mx-auto">
@@ -371,34 +656,9 @@ export default function OverlayIntegration() {
           Overlay Integration
         </h1>
         
-        {/* **DEBUG PANEL** */}
-        <div className="mb-6 p-4 bg-yellow-900/30 rounded-lg border border-yellow-500/30">
-          <div className="flex items-center gap-2 mb-2">
-            <Bug className="w-4 h-4 text-yellow-400" />
-            <h3 className="font-semibold text-yellow-400">Debug Info:</h3>
-          </div>
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div>
-              <strong>Overlay Image:</strong> {hasOverlayImage ? '✅ Loaded' : '❌ Missing'} 
-              {overlayImage && <span className="text-gray-400"> ({overlayImage.length} chars)</span>}
-            </div>
-            <div>
-              <strong>Overlay Name:</strong> {hasOverlayName ? '✅ Valid' : '❌ Empty'} 
-              <span className="text-gray-400">"{overlayName}"</span>
-            </div>
-            <div>
-              <strong>Processing:</strong> {isNotProcessing ? '✅ Ready' : '❌ Busy'} 
-              <span className="text-gray-400">({processing.toString()})</span>
-            </div>
-            <div>
-              <strong>Can Save:</strong> {canSave ? '✅ Yes' : '❌ No'}
-            </div>
-          </div>
-        </div>
-
         <div className="mb-6 text-center">
           <p className="text-gray-300">
-            Upload a custom overlay (logo, watermark, frame) that will be automatically applied to all AI generated photos.
+            Upload a custom overlay or choose from built-in borders that will be automatically applied to all AI generated photos.
           </p>
           
           {/* Size recommendations */}
@@ -420,56 +680,112 @@ export default function OverlayIntegration() {
         </div>
         
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Left Column - Upload & Settings */}
+          {/* Left Column - Upload & Borders */}
           <div className="space-y-6">
-            {/* Overlay Upload */}
+            {/* Tab Navigation */}
             <div className="bg-gray-800 rounded-lg p-6">
-              <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-                <Upload className="w-5 h-5" />
-                Upload Overlay
-              </h2>
-              
-              <div 
-                onClick={() => {
-                  console.log('📁 Upload area clicked');
-                  overlayFileRef.current?.click();
-                }}
-                className="border-2 border-dashed border-gray-600 rounded-lg p-6 text-center cursor-pointer hover:border-gray-400 transition"
-              >
-                {overlayImage ? (
-                  <div className="flex flex-col items-center">
-                    <img 
-                      src={overlayImage} 
-                      alt="Overlay Preview" 
-                      className="max-h-32 max-w-full mb-2 rounded"
-                    />
-                    <p className="text-sm text-gray-400">Click to change overlay</p>
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center">
-                    <Layers className="w-12 h-12 mb-2 text-gray-500" />
-                    <p>Upload your overlay image</p>
-                    <p className="text-sm text-gray-500 mt-1">PNG with transparency recommended</p>
-                  </div>
-                )}
+              <div className="flex gap-2 mb-6">
+                <button
+                  onClick={() => setActiveTab('upload')}
+                  className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg transition ${
+                    activeTab === 'upload' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                  }`}
+                >
+                  <Upload className="w-4 h-4" />
+                  Custom Upload
+                </button>
+                <button
+                  onClick={() => setActiveTab('borders')}
+                  className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg transition ${
+                    activeTab === 'borders' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                  }`}
+                >
+                  <Frame className="w-4 h-4" />
+                  Built-in Borders
+                </button>
               </div>
-              <input
-                ref={overlayFileRef}
-                type="file"
-                onChange={handleOverlayChange}
-                accept="image/*"
-                className="hidden"
-              />
-              
-              <div className="mt-4">
+
+              {activeTab === 'upload' ? (
+                /* Custom Upload Tab */
+                <div>
+                  <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+                    <Upload className="w-5 h-5" />
+                    Upload Custom Overlay
+                  </h2>
+                  
+                  <div 
+                    onClick={() => overlayFileRef.current?.click()}
+                    className="border-2 border-dashed border-gray-600 rounded-lg p-6 text-center cursor-pointer hover:border-gray-400 transition"
+                  >
+                    {overlayImage && !selectedBorder ? (
+                      <div className="flex flex-col items-center">
+                        <img 
+                          src={overlayImage} 
+                          alt="Overlay Preview" 
+                          className="max-h-32 max-w-full mb-2 rounded"
+                        />
+                        <p className="text-sm text-gray-400">Click to change overlay</p>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center">
+                        <Layers className="w-12 h-12 mb-2 text-gray-500" />
+                        <p>Upload your overlay image</p>
+                        <p className="text-sm text-gray-500 mt-1">PNG with transparency recommended</p>
+                      </div>
+                    )}
+                  </div>
+                  <input
+                    ref={overlayFileRef}
+                    type="file"
+                    onChange={handleOverlayChange}
+                    accept="image/*"
+                    className="hidden"
+                  />
+                </div>
+              ) : (
+                /* Built-in Borders Tab */
+                <div>
+                  <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+                    <Palette className="w-5 h-5" />
+                    Choose Built-in Border
+                  </h2>
+                  
+                  <div className="grid grid-cols-2 gap-3 max-h-96 overflow-y-auto">
+                    {BUILT_IN_BORDERS.map((border) => (
+                      <div
+                        key={border.id}
+                        onClick={() => handleBorderSelect(border.id)}
+                        className={`p-3 rounded-lg cursor-pointer transition border-2 ${
+                          selectedBorder === border.id
+                            ? 'border-blue-500 bg-blue-900/30'
+                            : 'border-gray-600 bg-gray-700 hover:border-gray-500'
+                        }`}
+                      >
+                        <div className="aspect-square mb-2 bg-gray-600 rounded flex items-center justify-center overflow-hidden">
+                          <img 
+                            src={border.generateCanvas(100, 100)}
+                            alt={border.name}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                        <div className="text-xs">
+                          <div className="font-medium text-white">{border.name}</div>
+                          <div className="text-gray-400 mt-1">{border.description}</div>
+                          <div className="text-blue-400 capitalize mt-1">{border.category}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Overlay Name Input */}
+              <div className="mt-6">
                 <label className="block text-sm font-medium mb-2">Overlay Name *</label>
                 <input
                   type="text"
                   value={overlayName}
-                  onChange={(e) => {
-                    console.log('✏️ Name changed to:', e.target.value);
-                    setOverlayName(e.target.value);
-                  }}
+                  onChange={(e) => setOverlayName(e.target.value)}
                   placeholder="e.g., Company Logo, Watermark, etc."
                   className="w-full bg-gray-700 rounded-lg px-4 py-2 text-white"
                   required
@@ -669,10 +985,7 @@ export default function OverlayIntegration() {
               
               <div className="space-y-3">
                 <button
-                  onClick={() => {
-                    console.log('🖱️ Save button clicked');
-                    saveOverlayConfig();
-                  }}
+                  onClick={saveOverlayConfig}
                   disabled={!canSave}
                   className={`w-full flex items-center justify-center gap-2 px-6 py-3 rounded-lg transition ${
                     canSave ? 'hover:opacity-90' : 'opacity-50 cursor-not-allowed'
@@ -695,7 +1008,7 @@ export default function OverlayIntegration() {
               <div className="mt-6 p-4 bg-blue-900/30 rounded-lg border border-blue-500/30">
                 <h3 className="font-semibold text-blue-400 mb-2">How it works:</h3>
                 <ul className="text-sm text-blue-200 space-y-1">
-                  <li>• Upload your overlay image (logo, watermark, etc.)</li>
+                  <li>• Upload custom overlay or choose a built-in border</li>
                   <li>• Adjust position, size, and opacity settings</li>
                   <li>• Test with a sample image to preview the result</li>
                   <li>• Save configuration - it will apply to ALL future AI photos!</li>
