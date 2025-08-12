@@ -321,11 +321,13 @@ export default function Photobooth() {
   // Dedicated function to upload AI content to gallery
   const uploadToGallery = async (aiContent: string, prompt: string, contentType: 'image' | 'video') => {
     try {
+      console.log('🚀 UPLOAD ATTEMPT STARTED');
       console.log('📤 Starting gallery upload process...', {
         contentType,
         promptLength: prompt.length,
         contentLength: aiContent.length,
-        hasData: !!aiContent
+        hasData: !!aiContent,
+        timestamp: new Date().toISOString()
       });
 
       // Ensure we have valid data
@@ -338,7 +340,14 @@ export default function Photobooth() {
       }
 
       console.log('✅ Data validation passed, calling uploadPhoto...');
-      const uploadResult = await uploadPhoto(aiContent, prompt, contentType);
+      
+      // Add timeout to catch hanging uploads
+      const uploadPromise = uploadPhoto(aiContent, prompt, contentType);
+      const timeoutPromise = new Promise<null>((_, reject) => {
+        setTimeout(() => reject(new Error('Upload timeout after 30 seconds')), 30000);
+      });
+      
+      const uploadResult = await Promise.race([uploadPromise, timeoutPromise]);
       
       if (uploadResult) {
         console.log('🎉 GALLERY UPLOAD SUCCESS!', {
@@ -349,6 +358,9 @@ export default function Photobooth() {
           createdAt: uploadResult.created_at
         });
         
+        // Show success notification to user
+        alert(`✅ Photo saved to gallery! ID: ${uploadResult.id.substring(0, 8)}`);
+        
         // Trigger a gallery refresh by dispatching a custom event
         window.dispatchEvent(new CustomEvent('galleryUpdate', {
           detail: { newPhoto: uploadResult }
@@ -358,11 +370,18 @@ export default function Photobooth() {
         console.error('❌ Upload failed - uploadPhoto returned null');
         console.error('This could indicate:');
         console.error('- Database connection issues');
-        console.error('- Storage permission problems');
+        console.error('- Storage permission problems'); 
         console.error('- Supabase RLS policy blocking inserts');
+        console.error('- Invalid data format');
+        
+        // Show error notification to user
+        alert('❌ Failed to save to gallery - check console for details');
       }
     } catch (error) {
       console.error('❌ GALLERY UPLOAD FAILED:', error);
+      
+      // Show error to user
+      alert(`❌ Gallery upload error: ${error.message}`);
       
       // Detailed error logging
       if (error instanceof Error) {
@@ -376,10 +395,16 @@ export default function Photobooth() {
       // Try to identify common issues
       if (error.message.includes('permission') || error.message.includes('policy')) {
         console.error('🔒 Likely cause: Database RLS policy blocking photo inserts');
+        alert('🔒 Permission error - check database policies');
       } else if (error.message.includes('storage')) {
         console.error('💾 Likely cause: Supabase storage access issues');
+        alert('💾 Storage error - check Supabase configuration');
       } else if (error.message.includes('network') || error.message.includes('fetch')) {
         console.error('🌐 Likely cause: Network connectivity issues');
+        alert('🌐 Network error - check your connection');
+      } else if (error.message.includes('timeout')) {
+        console.error('⏱️ Upload timed out - server may be slow');
+        alert('⏱️ Upload timed out - please try again');
       }
     }
   };
