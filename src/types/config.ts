@@ -18,4 +18,12 @@ export interface Config {
   use_provider_fallback: boolean;
   face_preservation_mode: 'preserve_face' | 'replace_face';
   gallery_images_per_page?: number;
+  
+  // Gallery Settings
+  gallery_allow_downloads?: boolean;
+  gallery_social_sharing?: boolean;
+  gallery_show_metadata?: boolean;
+  gallery_require_admin?: boolean;
+  gallery_watermark_enabled?: boolean;
+  gallery_public_access?: boolean;
 }
