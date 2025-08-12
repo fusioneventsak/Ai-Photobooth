@@ -398,15 +398,45 @@ export function removeOverlay(overlayName: string): boolean {
   }
 }
 
-// Clear all overlays
-export function clearAllOverlays(): boolean {
+// Clear the active overlay (disable overlay application)
+export function clearActiveOverlay(): boolean {
   try {
     localStorage.removeItem('photoboothOverlays');
+    console.log('✅ All overlays cleared from storage');
     return true;
   } catch (error) {
-    console.error('Error clearing overlays:', error);
+    console.error('❌ Error clearing overlays:', error);
     return false;
   }
+}
+
+// Disable overlay temporarily without deleting (for debugging)
+export function disableOverlay(): boolean {
+  try {
+    localStorage.setItem('overlayDisabled', 'true');
+    console.log('✅ Overlay temporarily disabled');
+    return true;
+  } catch (error) {
+    console.error('❌ Error disabling overlay:', error);
+    return false;
+  }
+}
+
+// Enable overlay (remove temporary disable)
+export function enableOverlay(): boolean {
+  try {
+    localStorage.removeItem('overlayDisabled');
+    console.log('✅ Overlay re-enabled');
+    return true;
+  } catch (error) {
+    console.error('❌ Error enabling overlay:', error);
+    return false;
+  }
+}
+
+// Check if overlay is temporarily disabled
+function isOverlayDisabled(): boolean {
+  return localStorage.getItem('overlayDisabled') === 'true';
 }
 
 // Get overlay by name
