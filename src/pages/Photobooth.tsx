@@ -840,6 +840,73 @@ export default function Photobooth() {
               </button>
             </div>
           )}
+          
+          {/* Manual Gallery Test Button */}
+          <button
+            onClick={async () => {
+              console.log('🧪 MANUAL GALLERY TEST STARTING...');
+              try {
+                const { createClient } = await import('@supabase/supabase-js');
+                const supabase = createClient(
+                  import.meta.env.VITE_SUPABASE_URL!,
+                  import.meta.env.VITE_SUPABASE_ANON_KEY!
+                );
+
+                // Create a test image data URL (1x1 red pixel)
+                const testImageData = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==';
+                
+                const response = await fetch(testImageData);
+                const blob = await response.blob();
+                
+                const filename = `test_photo_${Date.now()}.png`;
+                console.log('📤 Testing upload:', filename);
+
+                const { data, error } = await supabase.storage
+                  .from('photos')
+                  .upload(filename, blob, { contentType: 'image/png', upsert: true });
+
+                if (error) {
+                  alert(`❌ Storage test failed: ${error.message}`);
+                  return;
+                }
+
+                const { data: urlData } = supabase.storage
+                  .from('photos')
+                  .getPublicUrl(data.path);
+
+                const { data: dbData, error: dbError } = await supabase
+                  .from('photos')
+                  .insert({
+                    original_url: urlData.publicUrl,
+                    processed_url: urlData.publicUrl,
+                    prompt: 'Manual test photo',
+                    content_type: 'image',
+                    public: true
+                  })
+                  .select()
+                  .single();
+
+                if (dbError) {
+                  alert(`❌ Database test failed: ${dbError.message}`);
+                  return;
+                }
+
+                alert(`✅ Manual test SUCCESS!\nPhoto ID: ${dbData.id}\nCheck gallery now!`);
+                
+                window.dispatchEvent(new CustomEvent('galleryUpdate', {
+                  detail: { newPhoto: dbData }
+                }));
+                
+              } catch (err) {
+                console.error('Test failed:', err);
+                alert(`❌ Test failed: ${err.message}`);
+              }
+            }}
+            className="w-full flex items-center justify-center gap-2 py-3 bg-purple-600 rounded-xl hover:bg-purple-700 transition font-medium"
+          >
+            <Wand2 className="w-5 h-5" />
+            🧪 Test Gallery Upload
+          </button>
         </div>
 
         {/* Removed separate AI result section - now shows in main view */}
