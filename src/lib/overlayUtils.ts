@@ -14,16 +14,138 @@ export interface OverlayConfig {
   createdAt: string;
 }
 
-// Get active overlay configuration
+// Get active overlay configuration with built-in border support
 export function getActiveOverlay(): OverlayConfig | null {
   try {
     const overlays = JSON.parse(localStorage.getItem('photoboothOverlays') || '[]');
-    // Return the most recent overlay (last one in array)
-    return overlays.length > 0 ? overlays[overlays.length - 1] : null;
+    if (overlays.length === 0) return null;
+    
+    const latestOverlay = overlays[overlays.length - 1];
+    
+    // Handle built-in border references
+    if (latestOverlay.type === 'border' && latestOverlay.borderId) {
+      // Regenerate built-in border on-demand
+      const borderDef = getBuiltInBorderById(latestOverlay.borderId);
+      if (borderDef) {
+        return {
+          ...latestOverlay,
+          image: borderDef.generateCanvas(512, 512) // Generate at optimal size
+        };
+      }
+    }
+    
+    // Handle compressed image references
+    if (typeof latestOverlay.image === 'string' && latestOverlay.image.startsWith('{')) {
+      try {
+        const imageRef = JSON.parse(latestOverlay.image);
+        if (imageRef.type === 'built-in' && imageRef.borderId) {
+          const borderDef = getBuiltInBorderById(imageRef.borderId);
+          if (borderDef) {
+            return {
+              ...latestOverlay,
+              image: borderDef.generateCanvas(512, 512)
+            };
+          }
+        }
+      } catch (parseError) {
+        console.warn('Failed to parse image reference:', parseError);
+      }
+    }
+    
+    return latestOverlay;
   } catch (error) {
     console.error('Error loading overlay config:', error);
     return null;
   }
+}
+
+// Built-in border definitions (simplified for utils)
+function getBuiltInBorderById(borderId: string): { generateCanvas: (width: number, height: number) => string } | null {
+  const borders: { [key: string]: (width: number, height: number) => string } = {
+    'chrome-metallic': (width: number, height: number) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d')!;
+      
+      const borderWidth = Math.min(width, height) * 0.06;
+      
+      const chromeGrad = ctx.createLinearGradient(0, 0, 0, height);
+      chromeGrad.addColorStop(0, '#E8E8E8');
+      chromeGrad.addColorStop(0.3, '#F8F8F8');
+      chromeGrad.addColorStop(0.6, '#C8C8C8');
+      chromeGrad.addColorStop(1, '#E8E8E8');
+      
+      ctx.fillStyle = chromeGrad;
+      ctx.fillRect(0, 0, width, height);
+      
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.fillRect(borderWidth, borderWidth, width - borderWidth*2, height - borderWidth*2);
+      
+      return canvas.toDataURL();
+    },
+    'rose-gold-gradient': (width: number, height: number) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d')!;
+      
+      const borderWidth = Math.min(width, height) * 0.05;
+      
+      const roseGrad = ctx.createRadialGradient(width/2, height/2, 0, width/2, height/2, Math.max(width, height)/2);
+      roseGrad.addColorStop(0, '#F7E7CE');
+      roseGrad.addColorStop(0.4, '#E8B4B8');
+      roseGrad.addColorStop(0.8, '#D4A574');
+      roseGrad.addColorStop(1, '#B87333');
+      
+      ctx.fillStyle = roseGrad;
+      ctx.fillRect(0, 0, width, height);
+      
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.fillRect(borderWidth, borderWidth, width - borderWidth*2, height - borderWidth*2);
+      
+      return canvas.toDataURL();
+    },
+    'holographic-prism': (width: number, height: number) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d')!;
+      
+      const borderWidth = Math.min(width, height) * 0.04;
+      
+      ctx.globalCompositeOperation = 'screen';
+      const gradients = [
+        { colors: ['#FF0080', '#00FFFF', '#8000FF'], angle: 0 },
+        { colors: ['#00FF80', '#FF8000', '#0080FF'], angle: 90 }
+      ];
+      
+      gradients.forEach((grad) => {
+        const angle = (grad.angle * Math.PI) / 180;
+        const x1 = width/2 - Math.cos(angle) * width/2;
+        const y1 = height/2 - Math.sin(angle) * height/2;
+        const x2 = width/2 + Math.cos(angle) * width/2;
+        const y2 = height/2 + Math.sin(angle) * height/2;
+        
+        const gradient = ctx.createLinearGradient(x1, y1, x2, y2);
+        grad.colors.forEach((color, i) => {
+          gradient.addColorStop(i / (grad.colors.length - 1), color + '60');
+        });
+        
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, width, height);
+      });
+      
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.fillRect(borderWidth, borderWidth, width - borderWidth*2, height - borderWidth*2);
+      
+      return canvas.toDataURL();
+    },
+    // Add other borders as needed...
+  };
+  
+  const borderFunc = borders[borderId];
+  return borderFunc ? { generateCanvas: borderFunc } : null;
 }
 
 // Apply overlay to an image with smart auto-scaling
