@@ -321,31 +321,65 @@ export default function Photobooth() {
   // Dedicated function to upload AI content to gallery
   const uploadToGallery = async (aiContent: string, prompt: string, contentType: 'image' | 'video') => {
     try {
-      console.log('📤 Uploading AI content to gallery...', {
+      console.log('📤 Starting gallery upload process...', {
         contentType,
         promptLength: prompt.length,
-        contentLength: aiContent.length
+        contentLength: aiContent.length,
+        hasData: !!aiContent
       });
 
+      // Ensure we have valid data
+      if (!aiContent || !aiContent.startsWith('data:')) {
+        throw new Error('Invalid AI content - missing or malformed data URL');
+      }
+
+      if (!prompt || prompt.trim() === '') {
+        throw new Error('Invalid prompt - empty or missing');
+      }
+
+      console.log('✅ Data validation passed, calling uploadPhoto...');
       const uploadResult = await uploadPhoto(aiContent, prompt, contentType);
       
       if (uploadResult) {
-        console.log('✅ Gallery upload successful!', {
+        console.log('🎉 GALLERY UPLOAD SUCCESS!', {
           id: uploadResult.id,
           url: uploadResult.processed_url,
-          public: uploadResult.public
+          public: uploadResult.public,
+          contentType: uploadResult.content_type,
+          createdAt: uploadResult.created_at
         });
+        
+        // Trigger a gallery refresh by dispatching a custom event
+        window.dispatchEvent(new CustomEvent('galleryUpdate', {
+          detail: { newPhoto: uploadResult }
+        }));
+        
       } else {
         console.error('❌ Upload failed - uploadPhoto returned null');
+        console.error('This could indicate:');
+        console.error('- Database connection issues');
+        console.error('- Storage permission problems');
+        console.error('- Supabase RLS policy blocking inserts');
       }
     } catch (error) {
-      console.error('❌ Gallery upload error:', error);
-      // Log the full error for debugging
+      console.error('❌ GALLERY UPLOAD FAILED:', error);
+      
+      // Detailed error logging
       if (error instanceof Error) {
         console.error('Error details:', {
+          name: error.name,
           message: error.message,
           stack: error.stack
         });
+      }
+      
+      // Try to identify common issues
+      if (error.message.includes('permission') || error.message.includes('policy')) {
+        console.error('🔒 Likely cause: Database RLS policy blocking photo inserts');
+      } else if (error.message.includes('storage')) {
+        console.error('💾 Likely cause: Supabase storage access issues');
+      } else if (error.message.includes('network') || error.message.includes('fetch')) {
+        console.error('🌐 Likely cause: Network connectivity issues');
       }
     }
   };
