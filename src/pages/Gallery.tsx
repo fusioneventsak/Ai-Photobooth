@@ -1,48 +1,4 @@
-{(photo.content_type === 'video' || photo.content_type === 'mp4') ? (
-                    <div className="relative">
-                      <video
-                        src={photo.processed_url || photo.original_url}
-                        className="w-full h-auto rounded-lg shadow-lg cursor-pointer"
-                        controls
-                        playsInline
-                        poster={photo.thumbnail_url}
-                        onClick={(e) => {
-                          // Only open modal if not clicking near the top-right corner (delete button area)
-                          const rect = e.currentTarget.getBoundingClientRect();
-                          const clickX = e.clientX - rect.left;
-                          const clickY = e.clientY - rect.top;
-                          
-                          // Check if click is in delete button area (top-right 60x60 pixels)
-                          if (clickX > rect.width - 60 && clickY < 60) {
-                            return; // Don't open modal
-                          }
-                          
-                          setSelectedPhoto(photo);
-                          setShowPhotoModal(true);
-                        }}
-                        onError={(e) => {
-                          console.warn('❌ Failed to load video:', photo.id, e);
-                        }}
-                      />
-                      <div className="absolute top-2 left-2 bg-black/70 text-white px-2 py-1 rounded text-xs flex items-center gap-1">
-                        <Video className="w-3 h-3" />
-                        Video
-                      </div>
-                      
-                      {/* Delete Button */}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          e.preventDefault();
-                          console.log('🗑️ Delete button clicked for video:', photo.id);
-                          setShowDeleteConfirm(photo.id);
-                        }}
-                        className="absolute top-2 right-2 bg-red-600 hover:bg-red-700 text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition-all duration-200 z-10 shadow-lg"
-                        title="Delete video"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>import React from 'react';
+import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useConfigStore } from '../store/configStore';
 import { getPublicPhotos, deletePhoto, deleteAllPhotos } from '../lib/supabase';
@@ -79,46 +35,20 @@ export default function Gallery() {
       setError(null);
       
       console.log(`🔄 === LOADING GALLERY PHOTOS (${source.toUpperCase()}) ===`);
-      console.log('🔍 Calling getPublicPhotos()...');
       
       const fetchedPhotos = await getPublicPhotos();
       
-      console.log('📸 Raw data from database:', fetchedPhotos);
-      console.log('📊 Gallery photos loaded:', {
-        count: fetchedPhotos.length,
-        source: source,
-        timestamp: new Date().toISOString(),
-        photos: fetchedPhotos.slice(0, 3).map(p => ({
-          id: p.id.substring(0, 8),
-          type: p.content_type || 'unknown',
-          created: p.created_at,
-          url: p.processed_url || p.original_url,
-          prompt: p.prompt?.substring(0, 30) + '...',
-          public: p.public
-        }))
-      });
-
-      // Sort by created_at descending to show newest first
       const sortedPhotos = fetchedPhotos.sort((a, b) => 
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       );
       
-      // Check if we have new photos (only if not initial load)
       if (!showLoading && photos.length > 0 && sortedPhotos.length > photos.length) {
-        console.log('🎉 NEW PHOTOS DETECTED!', {
-          oldCount: photos.length,
-          newCount: sortedPhotos.length,
-          difference: sortedPhotos.length - photos.length
-        });
-        
         setNewPhotoAlert(true);
         setTimeout(() => setNewPhotoAlert(false), 3000);
       }
       
       setPhotos(sortedPhotos);
       setLastRefresh(new Date());
-      
-      console.log('✅ Gallery state updated with', sortedPhotos.length, 'photos');
       
     } catch (err) {
       console.error('❌ Failed to load gallery photos:', err);
@@ -139,15 +69,8 @@ export default function Gallery() {
       
       if (success) {
         console.log('✅ Photo deleted successfully');
-        
-        // Remove from local state immediately for instant feedback
         setPhotos(prevPhotos => prevPhotos.filter(photo => photo.id !== photoId));
-        
-        // Refresh from database to ensure consistency
-        setTimeout(() => {
-          loadPhotos(false, 'delete-refresh');
-        }, 500);
-        
+        setTimeout(() => loadPhotos(false, 'delete-refresh'), 500);
         setShowDeleteConfirm(null);
       } else {
         throw new Error('Failed to delete photo');
@@ -172,16 +95,9 @@ export default function Gallery() {
       
       if (success) {
         console.log('✅ All photos deleted successfully');
-        
-        // Clear local state immediately
         setPhotos([]);
         setShowDeleteAllConfirm(false);
-        
-        // Refresh from database to ensure consistency
-        setTimeout(() => {
-          loadPhotos(false, 'delete-all-refresh');
-        }, 500);
-        
+        setTimeout(() => loadPhotos(false, 'delete-all-refresh'), 500);
       } else {
         throw new Error('Failed to delete all photos');
       }
@@ -196,140 +112,45 @@ export default function Gallery() {
 
   // Initial load
   React.useEffect(() => {
-    console.log('🚀 Gallery component mounted, loading initial photos...');
     loadPhotos(true, 'initial');
   }, []);
 
-  // Enhanced event listeners for gallery updates
+  // Event listeners
   React.useEffect(() => {
     const handleGalleryUpdate = (event: CustomEvent) => {
-      console.log('🎉 === GALLERY UPDATE EVENT RECEIVED ===');
-      console.log('📨 Event details:', event.detail);
+      console.log('🎉 Gallery update event received');
       
       if (event.detail?.newPhoto) {
         const newPhoto = event.detail.newPhoto;
-        console.log('➕ Adding new photo to gallery state immediately:', {
-          id: newPhoto.id,
-          type: newPhoto.content_type,
-          created: newPhoto.created_at
-        });
-        
         setPhotos(prevPhotos => {
           const exists = prevPhotos.some(p => p.id === newPhoto.id);
-          if (exists) {
-            console.log('⚠️ Photo already exists in gallery, skipping duplicate');
-            return prevPhotos;
+          if (!exists) {
+            setNewPhotoAlert(true);
+            setTimeout(() => setNewPhotoAlert(false), 3000);
+            return [newPhoto, ...prevPhotos];
           }
-          
-          const updatedPhotos = [newPhoto, ...prevPhotos];
-          console.log('✅ Photo added to gallery state, total:', updatedPhotos.length);
-          
-          setNewPhotoAlert(true);
-          setTimeout(() => setNewPhotoAlert(false), 3000);
-          
-          return updatedPhotos;
+          return prevPhotos;
         });
       }
       
-      setTimeout(() => {
-        console.log('🔄 Refreshing gallery from database after event...');
-        loadPhotos(false, 'event-triggered');
-      }, 1000);
+      setTimeout(() => loadPhotos(false, 'event-triggered'), 1000);
     };
 
-    const handleStorageUpdate = (event: StorageEvent) => {
-      if (event.key === 'galleryRefresh') {
-        console.log('💾 Storage update event received');
-        loadPhotos(false, 'storage');
-      }
-    };
-
-    const handleVisibilityChange = () => {
-      if (!document.hidden) {
-        console.log('👀 Page became visible, refreshing gallery...');
-        loadPhotos(false, 'visibility');
-      }
-    };
-
-    const handleFocus = () => {
-      console.log('🎯 Window focused, refreshing gallery...');
-      loadPhotos(false, 'focus');
-    };
-
-    console.log('👂 Setting up enhanced gallery event listeners...');
-    
     window.addEventListener('galleryUpdate', handleGalleryUpdate as EventListener);
-    window.addEventListener('storage', handleStorageUpdate);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('focus', handleFocus);
     
     return () => {
-      console.log('🧹 Cleaning up enhanced gallery event listeners...');
       window.removeEventListener('galleryUpdate', handleGalleryUpdate as EventListener);
-      window.removeEventListener('storage', handleStorageUpdate);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('focus', handleFocus);
     };
   }, []);
 
-  // Auto-refresh every 5 seconds
+  // Auto-refresh
   React.useEffect(() => {
-    console.log('⏰ Setting up auto-refresh timer...');
-    
     const interval = setInterval(() => {
-      console.log('🔔 Auto-refresh triggered');
       loadPhotos(false, 'auto-refresh');
     }, 5000);
 
-    return () => {
-      console.log('🛑 Clearing auto-refresh timer');
-      clearInterval(interval);
-    };
+    return () => clearInterval(interval);
   }, []);
-
-  const getAnimationProps = () => {
-    switch (config?.gallery_animation) {
-      case 'fade':
-        return {
-          initial: { opacity: 0 },
-          animate: { opacity: 1 },
-          exit: { opacity: 0 },
-          transition: { duration: 0.5 }
-        };
-      case 'slide':
-        return {
-          initial: { x: 100, opacity: 0 },
-          animate: { x: 0, opacity: 1 },
-          exit: { x: -100, opacity: 0 },
-          transition: { duration: 0.5 }
-        };
-      case 'zoom':
-        return {
-          initial: { scale: 0.8, opacity: 0 },
-          animate: { scale: 1, opacity: 1 },
-          exit: { scale: 1.2, opacity: 0 },
-          transition: { duration: 0.5 }
-        };
-      default:
-        return {
-          initial: { opacity: 0 },
-          animate: { opacity: 1 },
-          exit: { opacity: 0 },
-          transition: { duration: 0.5 }
-        };
-    }
-  };
-
-  const getLayoutClass = () => {
-    switch (config?.gallery_layout) {
-      case 'masonry':
-        return 'columns-2 md:columns-3 lg:columns-4 gap-4';
-      case 'carousel':
-        return 'flex overflow-x-auto snap-x snap-mandatory';
-      default: // grid
-        return 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4';
-    }
-  };
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
@@ -340,9 +161,7 @@ export default function Gallery() {
     });
   };
 
-  // Force refresh function
   const forceRefresh = async () => {
-    console.log('🔄 === FORCE REFRESH TRIGGERED ===');
     await loadPhotos(true, 'force-refresh');
   };
 
@@ -405,7 +224,7 @@ export default function Gallery() {
           )}
         </AnimatePresence>
 
-        {/* Header with Moderation Controls */}
+        {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <h1 className="text-4xl font-bold" style={{ color: config?.primary_color }}>
             Gallery
@@ -420,7 +239,6 @@ export default function Gallery() {
               Refresh
             </button>
             
-            {/* Delete All Button */}
             {photos.length > 0 && (
               <button
                 onClick={() => setShowDeleteAllConfirm(true)}
@@ -480,18 +298,16 @@ export default function Gallery() {
             </button>
           </div>
         ) : (
-          <div className={getLayoutClass()}>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             <AnimatePresence>
               {photos.map((photo) => (
                 <motion.div
                   key={photo.id}
-                  {...getAnimationProps()}
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.8 }}
                   layout
-                  className={`
-                    relative group
-                    ${config?.gallery_layout === 'carousel' ? 'flex-none w-80 snap-center' : ''}
-                    ${config?.gallery_layout === 'masonry' ? 'mb-4' : ''}
-                  `}
+                  className="relative group"
                 >
                   {(photo.content_type === 'video' || photo.content_type === 'mp4') ? (
                     <div className="relative">
@@ -501,12 +317,17 @@ export default function Gallery() {
                         controls
                         playsInline
                         poster={photo.thumbnail_url}
-                        onClick={() => {
+                        onClick={(e) => {
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          const clickX = e.clientX - rect.left;
+                          const clickY = e.clientY - rect.top;
+                          
+                          if (clickX > rect.width - 60 && clickY < 60) {
+                            return;
+                          }
+                          
                           setSelectedPhoto(photo);
                           setShowPhotoModal(true);
-                        }}
-                        onError={(e) => {
-                          console.warn('❌ Failed to load video:', photo.id, e);
                         }}
                       />
                       <div className="absolute top-2 left-2 bg-black/70 text-white px-2 py-1 rounded text-xs flex items-center gap-1">
@@ -514,16 +335,15 @@ export default function Gallery() {
                         Video
                       </div>
                       
-                      {/* Delete Button */}
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           e.preventDefault();
-                          console.log('🗑️ Delete button clicked for photo:', photo.id);
+                          console.log('🗑️ Delete button clicked for video:', photo.id);
                           setShowDeleteConfirm(photo.id);
                         }}
                         className="absolute top-2 right-2 bg-red-600 hover:bg-red-700 text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition-all duration-200 z-10 shadow-lg"
-                        title="Delete photo"
+                        title="Delete video"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -535,27 +355,20 @@ export default function Gallery() {
                         alt="Gallery"
                         className="w-full h-auto rounded-lg shadow-lg cursor-pointer"
                         onClick={(e) => {
-                          // Only open modal if not clicking near the top-right corner (delete button area)
                           const rect = e.currentTarget.getBoundingClientRect();
                           const clickX = e.clientX - rect.left;
                           const clickY = e.clientY - rect.top;
                           
-                          // Check if click is in delete button area (top-right 60x60 pixels)
                           if (clickX > rect.width - 60 && clickY < 60) {
-                            return; // Don't open modal
+                            return;
                           }
                           
                           setSelectedPhoto(photo);
                           setShowPhotoModal(true);
                         }}
-                        onLoad={() => {
-                          console.log('✅ Gallery image loaded successfully:', photo.id);
-                        }}
                         onError={(e) => {
-                          console.warn('❌ Failed to load image:', photo.id, e);
                           const img = e.target as HTMLImageElement;
                           if (img.src !== photo.original_url && photo.original_url) {
-                            console.log('🔄 Trying fallback URL for:', photo.id);
                             img.src = photo.original_url;
                           }
                         }}
@@ -565,7 +378,6 @@ export default function Gallery() {
                         Image
                       </div>
                       
-                      {/* Delete Button */}
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -581,7 +393,7 @@ export default function Gallery() {
                     </div>
                   )}
                   
-                  {/* Enhanced overlay with photo info */}
+                  {/* Photo info overlay */}
                   <div className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex flex-col justify-end p-4">
                     <div className="text-white">
                       <p className="text-sm font-medium mb-1">
@@ -604,7 +416,7 @@ export default function Gallery() {
           </div>
         )}
 
-        {/* Delete Single Photo Confirmation Modal */}
+        {/* Delete Single Photo Modal */}
         <AnimatePresence>
           {showDeleteConfirm && (
             <motion.div
@@ -659,7 +471,7 @@ export default function Gallery() {
           )}
         </AnimatePresence>
 
-        {/* Delete All Photos Confirmation Modal */}
+        {/* Delete All Photos Modal */}
         <AnimatePresence>
           {showDeleteAllConfirm && (
             <motion.div
