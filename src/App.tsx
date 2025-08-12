@@ -4,7 +4,7 @@ import { Settings, Image as ImageIcon, Camera, Layers } from 'lucide-react';
 import Photobooth from './pages/Photobooth';
 import Gallery from './pages/Gallery';
 import Admin from './pages/Admin';
-import LogoIntegration from './pages/LogoIntegration';
+import OverlayIntegration from './pages/OverlayIntegration'; // FIXED: Import the new fixed component
 import { useConfigStore } from './store/configStore';
 
 function Navigation() {
@@ -36,11 +36,11 @@ function Navigation() {
             </Link>
             
             <Link
-              to="/logo-integration"
+              to="/overlay-integration"
               className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-gray-700 transition"
             >
               <Layers className="w-5 h-5" />
-              <span>Logo Integration</span>
+              <span>Overlay Integration</span> {/* FIXED: Updated name to be more descriptive */}
             </Link>
             
             <Link
@@ -72,7 +72,9 @@ function App() {
           <Route path="/" element={<Photobooth />} />
           <Route path="/gallery" element={<Gallery />} />
           <Route path="/admin" element={<Admin />} />
-          <Route path="/logo-integration" element={<LogoIntegration />} />
+          <Route path="/overlay-integration" element={<OverlayIntegration />} /> {/* FIXED: Updated route */}
+          {/* Keep backwards compatibility */}
+          <Route path="/logo-integration" element={<OverlayIntegration />} /> {/* Redirect old route */}
         </Routes>
       </div>
     </BrowserRouter>
