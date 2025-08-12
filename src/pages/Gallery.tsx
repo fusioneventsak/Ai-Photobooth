@@ -1,9 +1,20 @@
 import React from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useConfigStore } from '../store/configStore';
-import { getPublicPhotos } from '../lib/supabase';
+import { getPublicPhotos, deletePhoto, deleteAllPhotos } from '../lib/supabase';
 import type { Photo } from '../types/supabase';
-import { RefreshCw, ImageIcon, Video, Calendar, Bell } from 'lucide-react';
+import { 
+  RefreshCw, 
+  ImageIcon, 
+  Video, 
+  Calendar, 
+  Bell, 
+  Trash2, 
+  AlertTriangle,
+  X,
+  Eye,
+  MoreVertical
+} from 'lucide-react';
 
 export default function Gallery() {
   const { config } = useConfigStore();
@@ -12,6 +23,11 @@ export default function Gallery() {
   const [error, setError] = React.useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = React.useState<Date>(new Date());
   const [newPhotoAlert, setNewPhotoAlert] = React.useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = React.useState<string | null>(null);
+  const [showDeleteAllConfirm, setShowDeleteAllConfirm] = React.useState(false);
+  const [deleting, setDeleting] = React.useState(false);
+  const [selectedPhoto, setSelectedPhoto] = React.useState<Photo | null>(null);
+  const [showPhotoModal, setShowPhotoModal] = React.useState(false);
 
   const loadPhotos = async (showLoading = true, source = 'manual') => {
     try {
@@ -52,7 +68,7 @@ export default function Gallery() {
         });
         
         setNewPhotoAlert(true);
-        setTimeout(() => setNewPhotoAlert(false), 3000); // Hide alert after 3 seconds
+        setTimeout(() => setNewPhotoAlert(false), 3000);
       }
       
       setPhotos(sortedPhotos);
@@ -60,29 +76,77 @@ export default function Gallery() {
       
       console.log('✅ Gallery state updated with', sortedPhotos.length, 'photos');
       
-      // Show alert if no photos found
-      if (sortedPhotos.length === 0) {
-        console.warn('⚠️ No photos found in database!');
-      } else {
-        console.log('🎉 Found photos! Latest:', {
-          id: sortedPhotos[0].id.substring(0, 8),
-          created: sortedPhotos[0].created_at,
-          prompt: sortedPhotos[0].prompt?.substring(0, 50)
-        });
-      }
-      
     } catch (err) {
       console.error('❌ Failed to load gallery photos:', err);
       setError(err instanceof Error ? err.message : 'Failed to load photos');
-      
-      // Show detailed error
-      console.error('📊 Gallery loading error details:', {
-        error: err,
-        timestamp: new Date().toISOString(),
-        source: source
-      });
     } finally {
       if (showLoading) setLoading(false);
+    }
+  };
+
+  // Delete individual photo
+  const handleDeletePhoto = async (photoId: string) => {
+    setDeleting(true);
+    
+    try {
+      console.log('🗑️ Deleting photo:', photoId);
+      
+      const success = await deletePhoto(photoId);
+      
+      if (success) {
+        console.log('✅ Photo deleted successfully');
+        
+        // Remove from local state immediately for instant feedback
+        setPhotos(prevPhotos => prevPhotos.filter(photo => photo.id !== photoId));
+        
+        // Refresh from database to ensure consistency
+        setTimeout(() => {
+          loadPhotos(false, 'delete-refresh');
+        }, 500);
+        
+        setShowDeleteConfirm(null);
+      } else {
+        throw new Error('Failed to delete photo');
+      }
+      
+    } catch (error) {
+      console.error('❌ Failed to delete photo:', error);
+      setError(error instanceof Error ? error.message : 'Failed to delete photo');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  // Delete all photos
+  const handleDeleteAllPhotos = async () => {
+    setDeleting(true);
+    
+    try {
+      console.log('🗑️ Deleting all photos...');
+      
+      const success = await deleteAllPhotos();
+      
+      if (success) {
+        console.log('✅ All photos deleted successfully');
+        
+        // Clear local state immediately
+        setPhotos([]);
+        setShowDeleteAllConfirm(false);
+        
+        // Refresh from database to ensure consistency
+        setTimeout(() => {
+          loadPhotos(false, 'delete-all-refresh');
+        }, 500);
+        
+      } else {
+        throw new Error('Failed to delete all photos');
+      }
+      
+    } catch (error) {
+      console.error('❌ Failed to delete all photos:', error);
+      setError(error instanceof Error ? error.message : 'Failed to delete all photos');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -98,7 +162,6 @@ export default function Gallery() {
       console.log('🎉 === GALLERY UPDATE EVENT RECEIVED ===');
       console.log('📨 Event details:', event.detail);
       
-      // Add the new photo to the state immediately for instant feedback
       if (event.detail?.newPhoto) {
         const newPhoto = event.detail.newPhoto;
         console.log('➕ Adding new photo to gallery state immediately:', {
@@ -108,18 +171,15 @@ export default function Gallery() {
         });
         
         setPhotos(prevPhotos => {
-          // Check if photo already exists to avoid duplicates
           const exists = prevPhotos.some(p => p.id === newPhoto.id);
           if (exists) {
             console.log('⚠️ Photo already exists in gallery, skipping duplicate');
             return prevPhotos;
           }
           
-          // Add new photo at the beginning (newest first)
           const updatedPhotos = [newPhoto, ...prevPhotos];
           console.log('✅ Photo added to gallery state, total:', updatedPhotos.length);
           
-          // Show new photo alert
           setNewPhotoAlert(true);
           setTimeout(() => setNewPhotoAlert(false), 3000);
           
@@ -127,7 +187,6 @@ export default function Gallery() {
         });
       }
       
-      // Also refresh from database to ensure consistency
       setTimeout(() => {
         console.log('🔄 Refreshing gallery from database after event...');
         loadPhotos(false, 'event-triggered');
@@ -155,16 +214,9 @@ export default function Gallery() {
 
     console.log('👂 Setting up enhanced gallery event listeners...');
     
-    // Main gallery update event
     window.addEventListener('galleryUpdate', handleGalleryUpdate as EventListener);
-    
-    // Storage events
     window.addEventListener('storage', handleStorageUpdate);
-    
-    // Page visibility events (when user switches tabs)
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    
-    // Window focus events
     window.addEventListener('focus', handleFocus);
     
     return () => {
@@ -176,14 +228,14 @@ export default function Gallery() {
     };
   }, []);
 
-  // More frequent auto-refresh for better responsiveness
+  // Auto-refresh every 5 seconds
   React.useEffect(() => {
     console.log('⏰ Setting up auto-refresh timer...');
     
     const interval = setInterval(() => {
       console.log('🔔 Auto-refresh triggered');
       loadPhotos(false, 'auto-refresh');
-    }, 5000); // Refresh every 5 seconds
+    }, 5000);
 
     return () => {
       console.log('🛑 Clearing auto-refresh timer');
@@ -244,7 +296,7 @@ export default function Gallery() {
     });
   };
 
-  // Force refresh function for manual testing
+  // Force refresh function
   const forceRefresh = async () => {
     console.log('🔄 === FORCE REFRESH TRIGGERED ===');
     await loadPhotos(true, 'force-refresh');
@@ -276,23 +328,15 @@ export default function Gallery() {
           <div className="text-center py-12">
             <div className="text-red-500 mb-4">❌ Failed to load gallery</div>
             <p className="text-gray-400 mb-4">{error}</p>
-            <div className="space-x-4">
-              <button
-                onClick={() => loadPhotos(true, 'retry')}
-                className="px-4 py-2 bg-blue-600 rounded-lg hover:bg-blue-700 transition"
-              >
-                Try Again
-              </button>
-              <button
-                onClick={() => {
-                  console.log('🔧 Opening browser console for debugging...');
-                  console.log('📊 Current gallery state:', { photos, error, lastRefresh });
-                }}
-                className="px-4 py-2 bg-purple-600 rounded-lg hover:bg-purple-700 transition"
-              >
-                Debug Info
-              </button>
-            </div>
+            <button
+              onClick={() => {
+                setError(null);
+                loadPhotos(true, 'retry');
+              }}
+              className="px-4 py-2 bg-blue-600 rounded-lg hover:bg-blue-700 transition"
+            >
+              Try Again
+            </button>
           </div>
         </div>
       </div>
@@ -303,18 +347,21 @@ export default function Gallery() {
     <div className="min-h-screen bg-gray-900 text-white p-8">
       <div className="container mx-auto">
         {/* New Photo Alert */}
-        {newPhotoAlert && (
-          <motion.div
-            initial={{ opacity: 0, y: -50 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -50 }}
-            className="fixed top-4 right-4 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 flex items-center gap-2"
-          >
-            <Bell className="w-5 h-5" />
-            <span>New photo added!</span>
-          </motion.div>
-        )}
+        <AnimatePresence>
+          {newPhotoAlert && (
+            <motion.div
+              initial={{ opacity: 0, y: -50 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -50 }}
+              className="fixed top-4 right-4 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 flex items-center gap-2"
+            >
+              <Bell className="w-5 h-5" />
+              <span>New photo added!</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
+        {/* Header with Moderation Controls */}
         <div className="flex items-center justify-between mb-8">
           <h1 className="text-4xl font-bold" style={{ color: config?.primary_color }}>
             Gallery
@@ -322,11 +369,25 @@ export default function Gallery() {
           <div className="flex items-center gap-4">
             <button
               onClick={forceRefresh}
-              className="flex items-center gap-2 px-3 py-2 bg-gray-700 rounded-lg hover:bg-gray-600 transition text-sm"
+              disabled={deleting}
+              className="flex items-center gap-2 px-3 py-2 bg-gray-700 rounded-lg hover:bg-gray-600 transition text-sm disabled:opacity-50"
             >
-              <RefreshCw className="w-4 h-4" />
-              Force Refresh
+              <RefreshCw className={`w-4 h-4 ${deleting ? 'animate-spin' : ''}`} />
+              Refresh
             </button>
+            
+            {/* Delete All Button */}
+            {photos.length > 0 && (
+              <button
+                onClick={() => setShowDeleteAllConfirm(true)}
+                disabled={deleting}
+                className="flex items-center gap-2 px-3 py-2 bg-red-600 rounded-lg hover:bg-red-700 transition text-sm disabled:opacity-50"
+              >
+                <Trash2 className="w-4 h-4" />
+                Delete All
+              </button>
+            )}
+            
             <div className="text-sm text-gray-400 flex items-center gap-1">
               <Calendar className="w-4 h-4" />
               Updated {formatDate(lastRefresh.toISOString())}
@@ -334,7 +395,7 @@ export default function Gallery() {
           </div>
         </div>
 
-        {/* Enhanced Stats with Real-time Updates */}
+        {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
           <div className="bg-gray-800 rounded-lg p-4 text-center">
             <div className="text-2xl font-bold text-blue-400">{photos.length}</div>
@@ -359,39 +420,6 @@ export default function Gallery() {
             <div className="text-sm text-gray-400">Public</div>
           </div>
         </div>
-
-        {/* Debug Panel (only visible in development) */}
-        {import.meta.env.DEV && (
-          <div className="bg-gray-800 rounded-lg p-4 mb-6 border border-gray-600">
-            <h3 className="text-lg font-semibold mb-2 text-purple-400">🔧 Debug Panel</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-              <div>
-                <strong>Last Refresh:</strong><br />
-                {lastRefresh.toLocaleTimeString()}
-              </div>
-              <div>
-                <strong>Photos in State:</strong><br />
-                {photos.length} items
-              </div>
-              <div>
-                <strong>Auto-refresh:</strong><br />
-                <span className="text-green-400">Every 5 seconds</span>
-              </div>
-            </div>
-            <button
-              onClick={() => {
-                console.log('🔍 === GALLERY DEBUG INFO ===');
-                console.log('📊 Current photos state:', photos);
-                console.log('⏰ Last refresh:', lastRefresh);
-                console.log('❌ Current error:', error);
-                console.log('🔄 Loading status:', loading);
-              }}
-              className="mt-2 px-3 py-1 bg-purple-600 rounded text-xs hover:bg-purple-700 transition"
-            >
-              Log Debug Info
-            </button>
-          </div>
-        )}
         
         {photos.length === 0 ? (
           <div className="text-center py-12">
@@ -409,80 +437,280 @@ export default function Gallery() {
           </div>
         ) : (
           <div className={getLayoutClass()}>
-            {photos.map((photo) => (
-              <motion.div
-                key={photo.id}
-                {...getAnimationProps()}
-                className={`
-                  relative group
-                  ${config?.gallery_layout === 'carousel' ? 'flex-none w-80 snap-center' : ''}
-                  ${config?.gallery_layout === 'masonry' ? 'mb-4' : ''}
-                `}
-              >
-                {(photo.content_type === 'video' || photo.content_type === 'mp4') ? (
-                  <div className="relative">
-                    <video
-                      src={photo.processed_url || photo.original_url}
-                      className="w-full h-auto rounded-lg shadow-lg"
-                      controls
-                      playsInline
-                      poster={photo.thumbnail_url}
-                      onError={(e) => {
-                        console.warn('❌ Failed to load video:', photo.id, e);
-                      }}
-                    />
-                    <div className="absolute top-2 left-2 bg-black/70 text-white px-2 py-1 rounded text-xs flex items-center gap-1">
-                      <Video className="w-3 h-3" />
-                      Video
+            <AnimatePresence>
+              {photos.map((photo) => (
+                <motion.div
+                  key={photo.id}
+                  {...getAnimationProps()}
+                  layout
+                  className={`
+                    relative group
+                    ${config?.gallery_layout === 'carousel' ? 'flex-none w-80 snap-center' : ''}
+                    ${config?.gallery_layout === 'masonry' ? 'mb-4' : ''}
+                  `}
+                >
+                  {(photo.content_type === 'video' || photo.content_type === 'mp4') ? (
+                    <div className="relative">
+                      <video
+                        src={photo.processed_url || photo.original_url}
+                        className="w-full h-auto rounded-lg shadow-lg cursor-pointer"
+                        controls
+                        playsInline
+                        poster={photo.thumbnail_url}
+                        onClick={() => {
+                          setSelectedPhoto(photo);
+                          setShowPhotoModal(true);
+                        }}
+                        onError={(e) => {
+                          console.warn('❌ Failed to load video:', photo.id, e);
+                        }}
+                      />
+                      <div className="absolute top-2 left-2 bg-black/70 text-white px-2 py-1 rounded text-xs flex items-center gap-1">
+                        <Video className="w-3 h-3" />
+                        Video
+                      </div>
+                      
+                      {/* Delete Button */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowDeleteConfirm(photo.id);
+                        }}
+                        className="absolute top-2 right-2 bg-red-600/90 hover:bg-red-700 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="Delete photo"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
                     </div>
-                  </div>
-                ) : (
-                  <div className="relative">
-                    <img
-                      src={photo.processed_url || photo.original_url}
-                      alt="Gallery"
-                      className="w-full h-auto rounded-lg shadow-lg"
-                      onLoad={() => {
-                        console.log('✅ Gallery image loaded successfully:', photo.id);
-                      }}
-                      onError={(e) => {
-                        console.warn('❌ Failed to load image:', photo.id, e);
-                        // Fallback to original_url if processed_url fails
-                        const img = e.target as HTMLImageElement;
-                        if (img.src !== photo.original_url && photo.original_url) {
-                          console.log('🔄 Trying fallback URL for:', photo.id);
-                          img.src = photo.original_url;
+                  ) : (
+                    <div className="relative">
+                      <img
+                        src={photo.processed_url || photo.original_url}
+                        alt="Gallery"
+                        className="w-full h-auto rounded-lg shadow-lg cursor-pointer"
+                        onClick={() => {
+                          setSelectedPhoto(photo);
+                          setShowPhotoModal(true);
+                        }}
+                        onLoad={() => {
+                          console.log('✅ Gallery image loaded successfully:', photo.id);
+                        }}
+                        onError={(e) => {
+                          console.warn('❌ Failed to load image:', photo.id, e);
+                          const img = e.target as HTMLImageElement;
+                          if (img.src !== photo.original_url && photo.original_url) {
+                            console.log('🔄 Trying fallback URL for:', photo.id);
+                            img.src = photo.original_url;
+                          }
+                        }}
+                      />
+                      <div className="absolute top-2 left-2 bg-black/70 text-white px-2 py-1 rounded text-xs flex items-center gap-1">
+                        <ImageIcon className="w-3 h-3" />
+                        Image
+                      </div>
+                      
+                      {/* Delete Button */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowDeleteConfirm(photo.id);
+                        }}
+                        className="absolute top-2 right-2 bg-red-600/90 hover:bg-red-700 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="Delete photo"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  )}
+                  
+                  {/* Enhanced overlay with photo info */}
+                  <div className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex flex-col justify-end p-4">
+                    <div className="text-white">
+                      <p className="text-sm font-medium mb-1">
+                        {photo.prompt && photo.prompt.length > 50 
+                          ? photo.prompt.substring(0, 50) + '...' 
+                          : photo.prompt || 'No prompt'
                         }
-                      }}
-                    />
-                    <div className="absolute top-2 left-2 bg-black/70 text-white px-2 py-1 rounded text-xs flex items-center gap-1">
-                      <ImageIcon className="w-3 h-3" />
-                      Image
+                      </p>
+                      <p className="text-xs text-gray-300 mb-1">
+                        {formatDate(photo.created_at)}
+                      </p>
+                      <p className="text-xs text-blue-300">
+                        ID: {photo.id.substring(0, 8)}...
+                      </p>
                     </div>
                   </div>
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          </div>
+        )}
+
+        {/* Delete Single Photo Confirmation Modal */}
+        <AnimatePresence>
+          {showDeleteConfirm && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+              onClick={() => setShowDeleteConfirm(null)}
+            >
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.9, opacity: 0 }}
+                className="bg-gray-800 rounded-xl p-6 max-w-md w-full"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center gap-3 mb-4">
+                  <AlertTriangle className="w-6 h-6 text-red-500" />
+                  <h3 className="text-lg font-semibold">Delete Photo</h3>
+                </div>
+                <p className="text-gray-300 mb-6">
+                  Are you sure you want to delete this photo? This action cannot be undone.
+                </p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setShowDeleteConfirm(null)}
+                    disabled={deleting}
+                    className="flex-1 px-4 py-2 bg-gray-600 rounded-lg hover:bg-gray-700 transition disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => handleDeletePhoto(showDeleteConfirm)}
+                    disabled={deleting}
+                    className="flex-1 px-4 py-2 bg-red-600 rounded-lg hover:bg-red-700 transition disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {deleting ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        Deleting...
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 className="w-4 h-4" />
+                        Delete
+                      </>
+                    )}
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Delete All Photos Confirmation Modal */}
+        <AnimatePresence>
+          {showDeleteAllConfirm && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+              onClick={() => setShowDeleteAllConfirm(false)}
+            >
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.9, opacity: 0 }}
+                className="bg-gray-800 rounded-xl p-6 max-w-md w-full"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center gap-3 mb-4">
+                  <AlertTriangle className="w-6 h-6 text-red-500" />
+                  <h3 className="text-lg font-semibold">Delete All Photos</h3>
+                </div>
+                <p className="text-gray-300 mb-4">
+                  Are you sure you want to delete <strong>all {photos.length} photos</strong>? 
+                </p>
+                <p className="text-red-400 text-sm mb-6">
+                  This action cannot be undone and will permanently remove all photos from your gallery.
+                </p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setShowDeleteAllConfirm(false)}
+                    disabled={deleting}
+                    className="flex-1 px-4 py-2 bg-gray-600 rounded-lg hover:bg-gray-700 transition disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleDeleteAllPhotos}
+                    disabled={deleting}
+                    className="flex-1 px-4 py-2 bg-red-600 rounded-lg hover:bg-red-700 transition disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {deleting ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        Deleting All...
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 className="w-4 h-4" />
+                        Delete All
+                      </>
+                    )}
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Photo Detail Modal */}
+        <AnimatePresence>
+          {showPhotoModal && selectedPhoto && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4"
+              onClick={() => setShowPhotoModal(false)}
+            >
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.9, opacity: 0 }}
+                className="relative max-w-4xl max-h-[90vh] w-full"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  onClick={() => setShowPhotoModal(false)}
+                  className="absolute -top-12 right-0 text-white hover:text-gray-300 transition"
+                >
+                  <X className="w-8 h-8" />
+                </button>
+                
+                {selectedPhoto.content_type === 'video' ? (
+                  <video
+                    src={selectedPhoto.processed_url || selectedPhoto.original_url}
+                    className="w-full h-auto rounded-lg max-h-[80vh] object-contain"
+                    controls
+                    autoPlay
+                  />
+                ) : (
+                  <img
+                    src={selectedPhoto.processed_url || selectedPhoto.original_url}
+                    alt="Selected"
+                    className="w-full h-auto rounded-lg max-h-[80vh] object-contain"
+                  />
                 )}
                 
-                {/* Enhanced overlay with photo info */}
-                <div className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex flex-col justify-end p-4">
-                  <div className="text-white">
-                    <p className="text-sm font-medium mb-1">
-                      {photo.prompt && photo.prompt.length > 50 
-                        ? photo.prompt.substring(0, 50) + '...' 
-                        : photo.prompt || 'No prompt'
-                      }
-                    </p>
-                    <p className="text-xs text-gray-300 mb-1">
-                      {formatDate(photo.created_at)}
-                    </p>
-                    <p className="text-xs text-blue-300">
-                      ID: {photo.id.substring(0, 8)}...
-                    </p>
+                <div className="bg-gray-800/90 rounded-b-lg p-4 mt-2">
+                  <p className="text-white font-medium mb-2">
+                    {selectedPhoto.prompt || 'No prompt'}
+                  </p>
+                  <div className="flex justify-between items-center text-sm text-gray-300">
+                    <span>{formatDate(selectedPhoto.created_at)}</span>
+                    <span>ID: {selectedPhoto.id.substring(0, 8)}</span>
                   </div>
                 </div>
               </motion.div>
-            ))}
-          </div>
-        )}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );
