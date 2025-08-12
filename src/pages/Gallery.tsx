@@ -1,4 +1,4 @@
-// src/pages/Gallery.tsx - Updated with social sharing and improved deletion
+// src/pages/Gallery.tsx - Fixed with working social sharing and delete functions
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useConfigStore } from '../store/configStore';
@@ -17,10 +17,8 @@ import {
   Share2,
   Facebook,
   Twitter,
-  Instagram,
   Copy,
   Eye,
-  EyeOff,
   Settings,
   MoreHorizontal
 } from 'lucide-react';
@@ -41,6 +39,18 @@ export default function Gallery() {
   const [adminMode, setAdminMode] = React.useState(false);
   const [copySuccess, setCopySuccess] = React.useState(false);
 
+  // Debug log for config
+  React.useEffect(() => {
+    console.log('Gallery Config:', {
+      gallery_allow_downloads: config?.gallery_allow_downloads,
+      gallery_social_sharing: config?.gallery_social_sharing,
+      gallery_show_metadata: config?.gallery_show_metadata,
+      gallery_require_admin: config?.gallery_require_admin,
+      gallery_public_access: config?.gallery_public_access,
+      config: config
+    });
+  }, [config]);
+
   // Load photos function
   const loadPhotos = async (showLoading = true, source = 'manual') => {
     try {
@@ -51,7 +61,11 @@ export default function Gallery() {
       
       const fetchedPhotos = await getPublicPhotos();
       
-      const sortedPhotos = fetchedPhotos.sort((a, b) => 
+      // Apply pagination from config
+      const perPage = config?.gallery_images_per_page || 12;
+      const paginatedPhotos = fetchedPhotos.slice(0, perPage);
+      
+      const sortedPhotos = paginatedPhotos.sort((a, b) => 
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       );
       
@@ -63,7 +77,7 @@ export default function Gallery() {
       setPhotos(sortedPhotos);
       setLastRefresh(new Date());
       
-      console.log(`Gallery loaded: ${sortedPhotos.length} photos`);
+      console.log(`Gallery loaded: ${sortedPhotos.length} photos (limited to ${perPage} per page)`);
       
     } catch (err) {
       console.error('Failed to load gallery photos:', err);
@@ -86,9 +100,7 @@ export default function Gallery() {
         console.log('Photo deleted successfully');
         setPhotos(prevPhotos => prevPhotos.filter(photo => photo.id !== photoId));
         setShowDeleteConfirm(null);
-        setShowPhotoModal(false); // Close modal if open
-        
-        // Show success message
+        setShowPhotoModal(false);
         setError(null);
       } else {
         throw new Error('Failed to delete photo');
@@ -132,13 +144,13 @@ export default function Gallery() {
   const shareToFacebook = (photo: Photo) => {
     const url = encodeURIComponent(photo.processed_url || photo.original_url);
     const text = encodeURIComponent(`Check out this amazing ${photo.content_type} from ${config?.brand_name || 'Virtual Photobooth'}!`);
-    window.open(`https://www.facebook.com/sharer/sharer.php?u=${url}&quote=${text}`, '_blank');
+    window.open(`https://www.facebook.com/sharer/sharer.php?u=${url}&quote=${text}`, '_blank', 'width=600,height=400');
   };
 
   const shareToTwitter = (photo: Photo) => {
     const url = encodeURIComponent(photo.processed_url || photo.original_url);
     const text = encodeURIComponent(`Amazing ${photo.content_type} from ${config?.brand_name || 'Virtual Photobooth'}! 📸✨`);
-    window.open(`https://twitter.com/intent/tweet?text=${text}&url=${url}`, '_blank');
+    window.open(`https://twitter.com/intent/tweet?text=${text}&url=${url}`, '_blank', 'width=600,height=400');
   };
 
   const copyToClipboard = async (photo: Photo) => {
@@ -197,24 +209,17 @@ export default function Gallery() {
     loadPhotos(true, 'initial');
   }, []);
 
+  // Reload when config changes (for pagination)
+  React.useEffect(() => {
+    if (config) {
+      loadPhotos(false, 'config-change');
+    }
+  }, [config?.gallery_images_per_page]);
+
   // Gallery update events
   React.useEffect(() => {
     const handleGalleryUpdate = (event: CustomEvent) => {
       console.log('Gallery update event received');
-      
-      if (event.detail?.newPhoto) {
-        const newPhoto = event.detail.newPhoto;
-        setPhotos(prevPhotos => {
-          const exists = prevPhotos.some(p => p.id === newPhoto.id);
-          if (!exists) {
-            setNewPhotoAlert(true);
-            setTimeout(() => setNewPhotoAlert(false), 3000);
-            return [newPhoto, ...prevPhotos];
-          }
-          return prevPhotos;
-        });
-      }
-      
       setTimeout(() => loadPhotos(false, 'event-triggered'), 1000);
     };
 
@@ -242,6 +247,16 @@ export default function Gallery() {
     loadPhotos(true, 'force-refresh');
   };
 
+  // Check if features are enabled (default to true if config not loaded yet)
+  const allowDownloads = config?.gallery_allow_downloads !== false;
+  const allowSharing = config?.gallery_social_sharing !== false;
+  const showMetadata = config?.gallery_show_metadata === true;
+  const requireAdmin = config?.gallery_require_admin === true;
+  const publicAccess = config?.gallery_public_access !== false;
+
+  // Show admin controls if admin mode is on OR if admin is not required
+  const showAdminControls = adminMode || !requireAdmin;
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-900 text-white p-8">
@@ -249,6 +264,24 @@ export default function Gallery() {
           <div className="flex items-center justify-center py-12">
             <RefreshCw className="w-8 h-8 animate-spin text-blue-500 mr-3" />
             <span>Loading gallery...</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Check public access
+  if (!publicAccess && !adminMode) {
+    return (
+      <div className="min-h-screen bg-gray-900 text-white p-8">
+        <div className="container mx-auto">
+          <div className="flex items-center justify-center py-12">
+            <div className="text-center">
+              <Eye className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+              <h2 className="text-2xl font-bold mb-2">Gallery Access Restricted</h2>
+              <p className="text-gray-400 mb-4">This gallery is currently private.</p>
+              <p className="text-sm text-gray-500">Press Ctrl+Shift+A if you are an admin</p>
+            </div>
           </div>
         </div>
       </div>
@@ -275,8 +308,19 @@ export default function Gallery() {
           </div>
         </motion.div>
 
-        {/* Admin Controls */}
+        {/* Debug Info (remove in production) */}
         {adminMode && (
+          <div className="mb-4 p-3 bg-purple-900/20 border border-purple-600/30 rounded-lg text-xs">
+            <strong>Debug Info:</strong> Downloads: {allowDownloads ? 'ON' : 'OFF'}, 
+            Sharing: {allowSharing ? 'ON' : 'OFF'}, 
+            Metadata: {showMetadata ? 'ON' : 'OFF'}, 
+            Admin Required: {requireAdmin ? 'YES' : 'NO'}, 
+            Public Access: {publicAccess ? 'YES' : 'NO'}
+          </div>
+        )}
+
+        {/* Admin Controls */}
+        {showAdminControls && (
           <motion.div
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -285,7 +329,9 @@ export default function Gallery() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <Settings className="w-5 h-5 text-yellow-400" />
-                <span className="font-medium text-yellow-200">Admin Mode Active</span>
+                <span className="font-medium text-yellow-200">
+                  {adminMode ? 'Admin Mode Active' : 'Gallery Controls'}
+                </span>
               </div>
               <div className="flex items-center gap-3">
                 <button
@@ -335,6 +381,12 @@ export default function Gallery() {
             <div className="flex items-center gap-3">
               <AlertTriangle className="w-5 h-5 text-red-400" />
               <span>{error}</span>
+              <button 
+                onClick={() => setError(null)}
+                className="ml-auto text-red-400 hover:text-red-300"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
           </motion.div>
         )}
@@ -355,13 +407,28 @@ export default function Gallery() {
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-            {photos.map((photo) => (
+          <div className={`grid gap-6 ${
+            config?.gallery_layout === 'masonry' 
+              ? 'columns-1 sm:columns-2 md:columns-3 lg:columns-4' 
+              : config?.gallery_layout === 'carousel'
+              ? 'grid-cols-1 max-w-2xl mx-auto'
+              : 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4'
+          }`}>
+            {photos.map((photo, index) => (
               <motion.div
                 key={photo.id}
                 initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="relative group bg-gray-800 rounded-xl overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-300"
+                animate={{ 
+                  opacity: 1, 
+                  scale: 1,
+                  transition: {
+                    delay: config?.gallery_animation === 'fade' ? index * 0.1 : 0,
+                    duration: (config?.gallery_speed || 3000) / 1000
+                  }
+                }}
+                className={`relative group bg-gray-800 rounded-xl overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-300 ${
+                  config?.gallery_layout === 'masonry' ? 'break-inside-avoid mb-6' : ''
+                }`}
               >
                 {/* Media Display */}
                 {(photo.content_type === 'video' || photo.content_type === 'mp4') ? (
@@ -407,47 +474,51 @@ export default function Gallery() {
                   </div>
                 )}
 
-                {/* Overlay Controls */}
+                {/* Always Visible Controls */}
                 <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-between p-4">
-                  {/* Top Controls */}
+                  {/* Top Controls - Always show if enabled */}
                   <div className="flex justify-between">
                     <div className="flex gap-2">
-                      {config?.gallery_allow_downloads && (
+                      {/* Download Button */}
+                      {allowDownloads && (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             downloadPhoto(photo);
                           }}
-                          className="p-2 bg-blue-600 hover:bg-blue-700 rounded-full transition-colors"
+                          className="p-2 bg-blue-600 hover:bg-blue-700 rounded-full transition-colors shadow-lg"
                           title="Download"
                         >
-                          <Download className="w-4 h-4" />
+                          <Download className="w-4 h-4 text-white" />
                         </button>
                       )}
-                      {config?.gallery_social_sharing && (
+                      
+                      {/* Share Button */}
+                      {allowSharing && (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             setShowShareModal(photo);
                           }}
-                          className="p-2 bg-green-600 hover:bg-green-700 rounded-full transition-colors"
+                          className="p-2 bg-green-600 hover:bg-green-700 rounded-full transition-colors shadow-lg"
                           title="Share"
                         >
-                          <Share2 className="w-4 h-4" />
+                          <Share2 className="w-4 h-4 text-white" />
                         </button>
                       )}
                     </div>
                     
-                    {adminMode && (
+                    {/* Delete Button - Only show for admins */}
+                    {showAdminControls && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           setShowDeleteConfirm(photo.id);
                         }}
-                        className="p-2 bg-red-600 hover:bg-red-700 rounded-full transition-colors"
+                        className="p-2 bg-red-600 hover:bg-red-700 rounded-full transition-colors shadow-lg"
                         title="Delete"
                       >
-                        <Trash2 className="w-4 h-4" />
+                        <Trash2 className="w-4 h-4 text-white" />
                       </button>
                     )}
                   </div>
@@ -463,7 +534,7 @@ export default function Gallery() {
                     <p className="text-xs text-gray-300 mb-1">
                       {formatDate(photo.created_at)}
                     </p>
-                    {config?.gallery_show_metadata && (
+                    {showMetadata && (
                       <p className="text-xs text-blue-300">
                         ID: {photo.id.substring(0, 8)}...
                       </p>
@@ -586,7 +657,10 @@ export default function Gallery() {
               
               <div className="grid grid-cols-2 gap-3 mb-6">
                 <button
-                  onClick={() => shareToFacebook(showShareModal)}
+                  onClick={() => {
+                    shareToFacebook(showShareModal);
+                    setShowShareModal(null);
+                  }}
                   className="flex items-center gap-2 p-3 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
                 >
                   <Facebook className="w-5 h-5" />
@@ -594,7 +668,10 @@ export default function Gallery() {
                 </button>
                 
                 <button
-                  onClick={() => shareToTwitter(showShareModal)}
+                  onClick={() => {
+                    shareToTwitter(showShareModal);
+                    setShowShareModal(null);
+                  }}
                   className="flex items-center gap-2 p-3 bg-blue-400 hover:bg-blue-500 rounded-lg transition-colors"
                 >
                   <Twitter className="w-5 h-5" />
@@ -660,7 +737,7 @@ export default function Gallery() {
                   </div>
                   
                   <div className="flex gap-2">
-                    {config?.gallery_allow_downloads && (
+                    {allowDownloads && (
                       <button
                         onClick={() => downloadPhoto(selectedPhoto)}
                         className="p-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
@@ -669,7 +746,7 @@ export default function Gallery() {
                         <Download className="w-4 h-4" />
                       </button>
                     )}
-                    {config?.gallery_social_sharing && (
+                    {allowSharing && (
                       <button
                         onClick={() => setShowShareModal(selectedPhoto)}
                         className="p-2 bg-green-600 hover:bg-green-700 rounded-lg transition-colors"
@@ -678,7 +755,7 @@ export default function Gallery() {
                         <Share2 className="w-4 h-4" />
                       </button>
                     )}
-                    {adminMode && (
+                    {showAdminControls && (
                       <button
                         onClick={() => setShowDeleteConfirm(selectedPhoto.id)}
                         className="p-2 bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
@@ -695,8 +772,8 @@ export default function Gallery() {
         )}
 
         {/* Admin Mode Hint */}
-        {!adminMode && (
-          <div className="fixed bottom-4 right-4 text-xs text-gray-500">
+        {!adminMode && requireAdmin && (
+          <div className="fixed bottom-4 right-4 text-xs text-gray-500 bg-gray-800 px-3 py-2 rounded-lg">
             Press Ctrl+Shift+A for admin controls
           </div>
         )}
