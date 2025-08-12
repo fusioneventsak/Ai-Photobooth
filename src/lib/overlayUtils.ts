@@ -93,34 +93,294 @@ const BUILT_IN_BORDERS: { [key: string]: (width: number, height: number) => stri
     return canvas.toDataURL();
   },
 
-  'neon-cyber': (width: number, height: number) => {
+  'holographic-prism': (width: number, height: number) => {
     const canvas = document.createElement('canvas');
     canvas.width = width;
     canvas.height = height;
     const ctx = canvas.getContext('2d')!;
     
-    const borderWidth = Math.min(width, height) * 0.03;
+    const borderWidth = Math.min(width, height) * 0.04;
     
-    // Dark background
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+    // Create multiple overlapping gradients for holographic effect
+    const gradients = [
+      { colors: ['#FF0080', '#00FFFF', '#8000FF'], angle: 0 },
+      { colors: ['#00FF80', '#FF8000', '#0080FF'], angle: 45 },
+      { colors: ['#FF8080', '#80FF00', '#8080FF'], angle: 90 },
+      { colors: ['#FFFF00', '#FF00FF', '#00FFFF'], angle: 135 }
+    ];
+    
+    ctx.globalCompositeOperation = 'screen';
+    
+    gradients.forEach((grad, index) => {
+      const angle = (grad.angle * Math.PI) / 180;
+      const x1 = width/2 - Math.cos(angle) * width/2;
+      const y1 = height/2 - Math.sin(angle) * height/2;
+      const x2 = width/2 + Math.cos(angle) * width/2;
+      const y2 = height/2 + Math.sin(angle) * height/2;
+      
+      const gradient = ctx.createLinearGradient(x1, y1, x2, y2);
+      grad.colors.forEach((color, i) => {
+        gradient.addColorStop(i / (grad.colors.length - 1), color + '40');
+      });
+      
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, width, height);
+    });
+    
+    ctx.globalCompositeOperation = 'source-over';
+    
+    // Clear center
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.fillRect(borderWidth, borderWidth, width - borderWidth*2, height - borderWidth*2);
+    
+    return canvas.toDataURL();
+  },
+
+  'copper-oxidized': (width: number, height: number) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d')!;
+    
+    const borderWidth = Math.min(width, height) * 0.07;
+    
+    // Base copper color
+    const copperGrad = ctx.createRadialGradient(width/3, height/3, 0, width/2, height/2, Math.max(width, height));
+    copperGrad.addColorStop(0, '#B87333');
+    copperGrad.addColorStop(0.3, '#CD853F');
+    copperGrad.addColorStop(0.6, '#8B4513');
+    copperGrad.addColorStop(0.8, '#A0522D');
+    copperGrad.addColorStop(1, '#654321');
+    
+    ctx.fillStyle = copperGrad;
     ctx.fillRect(0, 0, width, height);
     
-    // Glow effect
-    for (let i = 0; i < 5; i++) {
-      ctx.strokeStyle = `rgba(0, 255, 255, ${0.3 - i * 0.05})`;
-      ctx.lineWidth = borderWidth * (5 - i);
-      ctx.strokeRect(borderWidth * i, borderWidth * i, width - borderWidth * i * 2, height - borderWidth * i * 2);
+    // Patina/verdigris effect
+    const patinaGrad = ctx.createRadialGradient(width*0.7, height*0.2, 0, width/2, height/2, Math.max(width, height)*0.8);
+    patinaGrad.addColorStop(0, 'rgba(72, 201, 176, 0.6)');
+    patinaGrad.addColorStop(0.4, 'rgba(64, 224, 208, 0.3)');
+    patinaGrad.addColorStop(0.7, 'rgba(32, 178, 170, 0.4)');
+    patinaGrad.addColorStop(1, 'rgba(0, 128, 128, 0.2)');
+    
+    ctx.fillStyle = patinaGrad;
+    ctx.fillRect(0, 0, width, height);
+    
+    // Add some texture spots
+    for (let i = 0; i < 20; i++) {
+      const x = Math.random() * width;
+      const y = Math.random() * height;
+      const radius = Math.random() * borderWidth * 0.3;
+      const opacity = Math.random() * 0.3 + 0.1;
+      
+      ctx.fillStyle = `rgba(72, 201, 176, ${opacity})`;
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.fill();
     }
     
-    // Main neon line
-    ctx.strokeStyle = '#00FFFF';
-    ctx.lineWidth = borderWidth;
-    ctx.strokeRect(borderWidth/2, borderWidth/2, width - borderWidth, height - borderWidth);
+    // Clear center
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.fillRect(borderWidth, borderWidth, width - borderWidth*2, height - borderWidth*2);
     
-    // Inner accent
-    ctx.strokeStyle = '#FF00FF';
-    ctx.lineWidth = borderWidth/3;
-    ctx.strokeRect(borderWidth*2, borderWidth*2, width - borderWidth*4, height - borderWidth*4);
+    return canvas.toDataURL();
+  },
+
+  'titanium-brushed': (width: number, height: number) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d')!;
+    
+    const borderWidth = Math.min(width, height) * 0.055;
+    
+    // Base titanium color
+    const titaniumGrad = ctx.createLinearGradient(0, 0, 0, height);
+    titaniumGrad.addColorStop(0, '#C0C0C0');
+    titaniumGrad.addColorStop(0.25, '#D3D3D3');
+    titaniumGrad.addColorStop(0.5, '#A9A9A9');
+    titaniumGrad.addColorStop(0.75, '#DCDCDC');
+    titaniumGrad.addColorStop(1, '#B0B0B0');
+    
+    ctx.fillStyle = titaniumGrad;
+    ctx.fillRect(0, 0, width, height);
+    
+    // Brushed texture lines
+    ctx.globalAlpha = 0.3;
+    for (let i = 0; i < height; i += 2) {
+      const opacity = Math.sin(i * 0.1) * 0.5 + 0.5;
+      ctx.strokeStyle = `rgba(255, 255, 255, ${opacity * 0.4})`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, i);
+      ctx.lineTo(width, i);
+      ctx.stroke();
+      
+      ctx.strokeStyle = `rgba(0, 0, 0, ${opacity * 0.2})`;
+      ctx.beginPath();
+      ctx.moveTo(0, i + 1);
+      ctx.lineTo(width, i + 1);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    
+    // Clear center
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.fillRect(borderWidth, borderWidth, width - borderWidth*2, height - borderWidth*2);
+    
+    return canvas.toDataURL();
+  },
+
+  'aurora-gradient': (width: number, height: number) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d')!;
+    
+    const borderWidth = Math.min(width, height) * 0.045;
+    
+    // Create flowing aurora effect
+    const centerX = width / 2;
+    const centerY = height / 2;
+    
+    // Multiple flowing gradients
+    const flows = [
+      { start: [0, height*0.3], end: [width, height*0.7], colors: ['#001122', '#003366', '#006699', '#0099CC'] },
+      { start: [width*0.2, 0], end: [width*0.8, height], colors: ['#1a0033', '#330066', '#6600CC', '#9933FF'] },
+      { start: [width, height*0.2], end: [0, height*0.8], colors: ['#001a00', '#003300', '#006600', '#00CC33'] }
+    ];
+    
+    flows.forEach((flow, index) => {
+      const gradient = ctx.createLinearGradient(flow.start[0], flow.start[1], flow.end[0], flow.end[1]);
+      flow.colors.forEach((color, i) => {
+        gradient.addColorStop(i / (flow.colors.length - 1), color + (index === 0 ? '80' : '60'));
+      });
+      
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, width, height);
+    });
+    
+    // Add shimmer highlights
+    const shimmer = ctx.createRadialGradient(centerX, centerY*0.3, 0, centerX, centerY, Math.max(width, height)*0.6);
+    shimmer.addColorStop(0, 'rgba(255, 255, 255, 0.3)');
+    shimmer.addColorStop(0.5, 'rgba(180, 255, 255, 0.2)');
+    shimmer.addColorStop(1, 'rgba(255, 180, 255, 0.1)');
+    
+    ctx.fillStyle = shimmer;
+    ctx.fillRect(0, 0, width, height);
+    
+    // Clear center
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.fillRect(borderWidth, borderWidth, width - borderWidth*2, height - borderWidth*2);
+    
+    return canvas.toDataURL();
+  },
+
+  'carbon-fiber': (width: number, height: number) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d')!;
+    
+    const borderWidth = Math.min(width, height) * 0.06;
+    const weaveSize = borderWidth * 0.3;
+    
+    // Base dark color
+    ctx.fillStyle = '#1a1a1a';
+    ctx.fillRect(0, 0, width, height);
+    
+    // Create carbon fiber weave pattern
+    for (let x = 0; x < width; x += weaveSize * 2) {
+      for (let y = 0; y < height; y += weaveSize * 2) {
+        // Horizontal weave
+        ctx.fillStyle = '#333333';
+        ctx.fillRect(x, y, weaveSize * 2, weaveSize);
+        
+        // Vertical weave
+        ctx.fillStyle = '#2a2a2a';
+        ctx.fillRect(x + weaveSize, y, weaveSize, weaveSize * 2);
+        
+        // Highlight threads
+        ctx.fillStyle = '#404040';
+        ctx.fillRect(x + weaveSize * 0.1, y + weaveSize * 0.1, weaveSize * 1.8, weaveSize * 0.1);
+        ctx.fillRect(x + weaveSize + weaveSize * 0.1, y + weaveSize * 0.1, weaveSize * 0.1, weaveSize * 1.8);
+      }
+    }
+    
+    // Add glossy overlay
+    const glossy = ctx.createLinearGradient(0, 0, width, height);
+    glossy.addColorStop(0, 'rgba(255, 255, 255, 0.1)');
+    glossy.addColorStop(0.5, 'rgba(255, 255, 255, 0.05)');
+    glossy.addColorStop(1, 'rgba(255, 255, 255, 0.15)');
+    
+    ctx.fillStyle = glossy;
+    ctx.fillRect(0, 0, width, height);
+    
+    // Clear center
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.fillRect(borderWidth, borderWidth, width - borderWidth*2, height - borderWidth*2);
+    
+    return canvas.toDataURL();
+  },
+
+  'neon-circuit': (width: number, height: number) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d')!;
+    
+    const borderWidth = Math.min(width, height) * 0.08;
+    
+    // Dark background
+    ctx.fillStyle = '#0a0a0a';
+    ctx.fillRect(0, 0, width, height);
+    
+    // Circuit traces
+    const traceWidth = 3;
+    const glowColor = '#00FFAA';
+    
+    // Create circuit pattern
+    ctx.strokeStyle = glowColor;
+    ctx.lineWidth = traceWidth;
+    ctx.shadowBlur = 10;
+    ctx.shadowColor = glowColor;
+    
+    // Horizontal traces
+    for (let y = borderWidth; y < height - borderWidth; y += borderWidth / 3) {
+      if (y < borderWidth * 2 || y > height - borderWidth * 2) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(width, y);
+        ctx.stroke();
+      }
+    }
+    
+    // Vertical traces
+    for (let x = borderWidth; x < width - borderWidth; x += borderWidth / 3) {
+      if (x < borderWidth * 2 || x > width - borderWidth * 2) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, height);
+        ctx.stroke();
+      }
+    }
+    
+    // Circuit nodes
+    ctx.shadowBlur = 5;
+    for (let i = 0; i < 8; i++) {
+      const x = (i < 4) ? borderWidth/2 : width - borderWidth/2;
+      const y = borderWidth + (i % 4) * (height - borderWidth*2) / 3;
+      
+      ctx.fillStyle = glowColor;
+      ctx.beginPath();
+      ctx.arc(x, y, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    
+    ctx.shadowBlur = 0;
+    
+    // Clear center
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.fillRect(borderWidth, borderWidth, width - borderWidth*2, height - borderWidth*2);
     
     return canvas.toDataURL();
   },
