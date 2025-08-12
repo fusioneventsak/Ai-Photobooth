@@ -22,29 +22,30 @@ export function getActiveOverlay(): OverlayConfig | null {
     const overlays = JSON.parse(localStorage.getItem('photoboothOverlays') || '[]');
     if (overlays.length === 0) return null;
     
-    const latestOverlay = overlays[overlays.length - 1];
+    // FIXED: Always get the first (and should be only) overlay since we now replace all
+    const activeOverlay = overlays[0];
     
     // Handle built-in border references
-    if (latestOverlay.type === 'border' && latestOverlay.borderId) {
-      // Regenerate built-in border on-demand
-      const borderDef = getBuiltInBorderById(latestOverlay.borderId);
+    if (activeOverlay.type === 'border' && activeOverlay.borderId) {
+      // Regenerate built-in border on-demand at the target canvas size
+      const borderDef = getBuiltInBorderById(activeOverlay.borderId);
       if (borderDef) {
         return {
-          ...latestOverlay,
-          image: borderDef.generateCanvas(512, 512) // Generate at optimal size
+          ...activeOverlay,
+          image: borderDef.generateCanvas(512, 512) // Generate at standard size
         };
       }
     }
     
     // Handle compressed image references
-    if (typeof latestOverlay.image === 'string' && latestOverlay.image.startsWith('{')) {
+    if (typeof activeOverlay.image === 'string' && activeOverlay.image.startsWith('{')) {
       try {
-        const imageRef = JSON.parse(latestOverlay.image);
+        const imageRef = JSON.parse(activeOverlay.image);
         if (imageRef.type === 'built-in' && imageRef.borderId) {
           const borderDef = getBuiltInBorderById(imageRef.borderId);
           if (borderDef) {
             return {
-              ...latestOverlay,
+              ...activeOverlay,
               image: borderDef.generateCanvas(512, 512)
             };
           }
@@ -54,14 +55,14 @@ export function getActiveOverlay(): OverlayConfig | null {
       }
     }
     
-    return latestOverlay;
+    return activeOverlay;
   } catch (error) {
     console.error('Error loading overlay config:', error);
     return null;
   }
 }
 
-// Built-in border definitions (simplified for utils)
+// FIXED: Enhanced built-in border definitions with all borders
 function getBuiltInBorderById(borderId: string): { generateCanvas: (width: number, height: number) => string } | null {
   const borders: { [key: string]: (width: number, height: number) => string } = {
     'chrome-metallic': (width: number, height: number) => {
@@ -143,14 +144,14 @@ function getBuiltInBorderById(borderId: string): { generateCanvas: (width: numbe
       
       return canvas.toDataURL();
     },
-    // Add other borders as needed...
+    // Add more borders as needed...
   };
   
   const borderFunc = borders[borderId];
   return borderFunc ? { generateCanvas: borderFunc } : null;
 }
 
-// Apply overlay to an image with smart auto-scaling for ALL overlay types
+// FIXED: Apply overlay to image with consistent scaling logic that matches preview
 export async function applyOverlayToImage(
   backgroundImageData: string, 
   overlayConfig: OverlayConfig
@@ -178,67 +179,59 @@ export async function applyOverlayToImage(
         // Load and draw overlay
         overlayImg.onload = () => {
           try {
-            console.log('🎨 Applying overlay with smart scaling:', {
+            console.log('🎨 Applying overlay with consistent scaling logic:', {
               canvasSize: `${canvas.width}x${canvas.height}`,
               overlaySize: `${overlayImg.width}x${overlayImg.height}`,
               overlayType: overlayConfig.type || 'unknown',
-              overlayName: overlayConfig.name
+              overlayName: overlayConfig.name,
+              borderId: overlayConfig.borderId
             });
 
-            // **ENHANCED: Smart auto-scaling for ALL overlay types**
-            let finalScale = overlayConfig.settings.scale;
-            let overlayWidth = overlayImg.width * finalScale;
-            let overlayHeight = overlayImg.height * finalScale;
-
-            // Detect overlay type using multiple criteria
-            const isBorder = 
-              overlayConfig.type === 'border' ||
-              overlayConfig.borderId ||
-              // Size-based detection for custom uploads
-              (overlayImg.width >= Math.min(canvas.width * 0.8, 600) && 
-               overlayImg.height >= Math.min(canvas.height * 0.8, 600)) ||
-              // Position-based detection
+            // FIXED: Use the same detection logic as the preview
+            const isBorderType = overlayConfig.type === 'border' || 
+              overlayConfig.borderId || 
               (overlayConfig.settings.position === 'center' && overlayConfig.settings.scale >= 0.9);
             
-            console.log('🔍 Overlay detection result:', {
-              isBorder,
+            console.log('🔍 Overlay type detection:', {
+              isBorderType,
               type: overlayConfig.type,
               borderId: overlayConfig.borderId,
-              overlayDimensions: `${overlayImg.width}x${overlayImg.height}`,
-              canvasDimensions: `${canvas.width}x${canvas.height}`,
               position: overlayConfig.settings.position,
               userScale: overlayConfig.settings.scale
             });
 
-            if (isBorder) {
+            let finalScale = overlayConfig.settings.scale;
+            let overlayWidth = overlayImg.width * finalScale;
+            let overlayHeight = overlayImg.height * finalScale;
+
+            if (isBorderType) {
               // **BORDERS/FRAMES: Scale to exactly match canvas dimensions**
               console.log('🖼️ Applying as border/frame - scaling to fit canvas exactly');
-              finalScale = Math.min(canvas.width / overlayImg.width, canvas.height / overlayImg.height);
               overlayWidth = canvas.width;
               overlayHeight = canvas.height;
+              finalScale = Math.min(canvas.width / overlayImg.width, canvas.height / overlayImg.height);
+              
+              console.log('📏 Border scaling:', {
+                canvasSize: `${canvas.width}x${canvas.height}`,
+                overlayOriginalSize: `${overlayImg.width}x${overlayImg.height}`,
+                finalSize: `${overlayWidth}x${overlayHeight}`,
+                scaleUsed: finalScale.toFixed(3)
+              });
             } else {
-              // **LOGOS/WATERMARKS: Intelligent proportional scaling**
+              // **LOGOS/WATERMARKS: Intelligent proportional scaling (same as preview)**
               console.log('🏷️ Applying as logo/watermark - calculating smart proportional scale');
               
               const canvasSize = Math.min(canvas.width, canvas.height);
               const overlaySize = Math.max(overlayImg.width, overlayImg.height);
               
-              // Calculate smart base scale - don't let overlay dominate the image
-              const maxRatio = 0.25; // Maximum 25% of canvas size
-              const minRatio = 0.08;  // Minimum 8% of canvas size (readable)
-              
-              // Base scale to fit within max ratio
-              const baseScale = Math.min(
+              // Use the same logic as generatePreview
+              const maxRatio = 0.3; // Maximum 30% of canvas size
+              const smartScale = Math.min(
                 (canvasSize * maxRatio) / overlaySize,
-                1.0 // Never upscale beyond original quality
+                1.0 // Don't upscale beyond original
               );
               
-              // Ensure it's not too small to be visible
-              const minScale = (canvasSize * minRatio) / overlaySize;
-              const constrainedBaseScale = Math.max(baseScale, minScale);
-              
-              // Apply user's scale preference on top of the constrained base scale
-              finalScale = constrainedBaseScale * overlayConfig.settings.scale;
+              finalScale = smartScale * overlayConfig.settings.scale;
               overlayWidth = overlayImg.width * finalScale;
               overlayHeight = overlayImg.height * finalScale;
               
@@ -246,46 +239,40 @@ export async function applyOverlayToImage(
                 canvasSize,
                 overlaySize,
                 maxRatio,
-                minRatio,
-                baseScale: baseScale.toFixed(3),
-                minScale: minScale.toFixed(3),
-                constrainedBaseScale: constrainedBaseScale.toFixed(3),
+                smartScale: smartScale.toFixed(3),
                 userScale: overlayConfig.settings.scale,
                 finalScale: finalScale.toFixed(3),
                 finalSize: `${Math.round(overlayWidth)}x${Math.round(overlayHeight)}`
               });
             }
 
-            // Calculate position
+            // Calculate position (same logic as preview)
             let overlayX = 0;
             let overlayY = 0;
 
-            if (isBorder) {
-              // **BORDERS: Always center and fill**
+            if (isBorderType) {
+              // **BORDERS: Always center**
               overlayX = (canvas.width - overlayWidth) / 2;
               overlayY = (canvas.height - overlayHeight) / 2;
-              console.log('🎯 Border positioning: center fill');
+              console.log('🎯 Border positioning: center');
             } else {
-              // **LOGOS: Position according to settings with bounds checking**
-              const maxOffsetX = Math.min(overlayConfig.settings.offsetX, canvas.width * 0.2);
-              const maxOffsetY = Math.min(overlayConfig.settings.offsetY, canvas.height * 0.2);
-              
+              // **LOGOS: Position according to settings**
               switch (overlayConfig.settings.position) {
                 case 'top-left':
-                  overlayX = maxOffsetX;
-                  overlayY = maxOffsetY;
+                  overlayX = overlayConfig.settings.offsetX;
+                  overlayY = overlayConfig.settings.offsetY;
                   break;
                 case 'top-right':
-                  overlayX = Math.max(0, canvas.width - overlayWidth - maxOffsetX);
-                  overlayY = maxOffsetY;
+                  overlayX = canvas.width - overlayWidth - overlayConfig.settings.offsetX;
+                  overlayY = overlayConfig.settings.offsetY;
                   break;
                 case 'bottom-left':
-                  overlayX = maxOffsetX;
-                  overlayY = Math.max(0, canvas.height - overlayHeight - maxOffsetY);
+                  overlayX = overlayConfig.settings.offsetX;
+                  overlayY = canvas.height - overlayHeight - overlayConfig.settings.offsetY;
                   break;
                 case 'bottom-right':
-                  overlayX = Math.max(0, canvas.width - overlayWidth - maxOffsetX);
-                  overlayY = Math.max(0, canvas.height - overlayHeight - maxOffsetY);
+                  overlayX = canvas.width - overlayWidth - overlayConfig.settings.offsetX;
+                  overlayY = canvas.height - overlayHeight - overlayConfig.settings.offsetY;
                   break;
                 case 'center':
                   overlayX = (canvas.width - overlayWidth) / 2;
@@ -293,19 +280,18 @@ export async function applyOverlayToImage(
                   break;
                 case 'top-center':
                   overlayX = (canvas.width - overlayWidth) / 2;
-                  overlayY = maxOffsetY;
+                  overlayY = overlayConfig.settings.offsetY;
                   break;
                 case 'bottom-center':
                   overlayX = (canvas.width - overlayWidth) / 2;
-                  overlayY = Math.max(0, canvas.height - overlayHeight - maxOffsetY);
+                  overlayY = canvas.height - overlayHeight - overlayConfig.settings.offsetY;
                   break;
               }
               
               console.log('🎯 Logo positioning:', {
                 position: overlayConfig.settings.position,
                 finalPosition: `${Math.round(overlayX)}, ${Math.round(overlayY)}`,
-                offsets: `${maxOffsetX}, ${maxOffsetY}`,
-                bounds: `${canvas.width}x${canvas.height}`
+                offsets: `${overlayConfig.settings.offsetX}, ${overlayConfig.settings.offsetY}`
               });
             }
 
@@ -318,10 +304,10 @@ export async function applyOverlayToImage(
               size: `${Math.round(overlayWidth)}x${Math.round(overlayHeight)}`,
               opacity: overlayConfig.settings.opacity,
               blendMode: overlayConfig.settings.blendMode,
-              detectedAs: isBorder ? 'border' : 'logo'
+              detectedAs: isBorderType ? 'border' : 'logo'
             });
 
-            // Draw overlay with smart scaling
+            // Draw overlay with calculated scaling
             ctx.drawImage(overlayImg, overlayX, overlayY, overlayWidth, overlayHeight);
 
             // Reset canvas state
@@ -369,7 +355,8 @@ export function shouldApplyOverlay(): boolean {
   console.log('🔍 Checking if overlay should be applied:', {
     hasOverlay: shouldApply,
     overlayName: overlay?.name || 'none',
-    overlayType: overlay?.type || 'unknown'
+    overlayType: overlay?.type || 'unknown',
+    borderId: overlay?.borderId || 'none'
   });
   
   return shouldApply;
@@ -398,7 +385,7 @@ export function removeOverlay(overlayName: string): boolean {
   }
 }
 
-// Clear the active overlay (disable overlay application)
+// FIXED: Clear the active overlay (disable overlay application)
 export function clearActiveOverlay(): boolean {
   try {
     localStorage.removeItem('photoboothOverlays');
@@ -450,7 +437,7 @@ export function getOverlayByName(name: string): OverlayConfig | null {
   }
 }
 
-// Set active overlay (make a specific overlay the active one)
+// FIXED: Set active overlay (now clears all and sets single overlay)
 export function setActiveOverlay(overlayName: string): boolean {
   try {
     const overlays = getAllOverlays();
@@ -461,13 +448,9 @@ export function setActiveOverlay(overlayName: string): boolean {
       return false;
     }
 
-    // Remove the target overlay from its current position
-    const otherOverlays = overlays.filter(overlay => overlay.name !== overlayName);
-    
-    // Add it to the end (making it the "active" one since getActiveOverlay() returns the last one)
-    const reorderedOverlays = [...otherOverlays, targetOverlay];
-    
-    localStorage.setItem('photoboothOverlays', JSON.stringify(reorderedOverlays));
+    // Clear all overlays and set this one as the only active overlay
+    localStorage.setItem('photoboothOverlays', JSON.stringify([targetOverlay]));
+    console.log('✅ Set active overlay:', overlayName);
     return true;
   } catch (error) {
     console.error('Error setting active overlay:', error);
