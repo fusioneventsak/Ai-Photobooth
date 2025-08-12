@@ -318,6 +318,38 @@ export default function Photobooth() {
     }
   };
 
+  // Dedicated function to upload AI content to gallery
+  const uploadToGallery = async (aiContent: string, prompt: string, contentType: 'image' | 'video') => {
+    try {
+      console.log('📤 Uploading AI content to gallery...', {
+        contentType,
+        promptLength: prompt.length,
+        contentLength: aiContent.length
+      });
+
+      const uploadResult = await uploadPhoto(aiContent, prompt, contentType);
+      
+      if (uploadResult) {
+        console.log('✅ Gallery upload successful!', {
+          id: uploadResult.id,
+          url: uploadResult.processed_url,
+          public: uploadResult.public
+        });
+      } else {
+        console.error('❌ Upload failed - uploadPhoto returned null');
+      }
+    } catch (error) {
+      console.error('❌ Gallery upload error:', error);
+      // Log the full error for debugging
+      if (error instanceof Error) {
+        console.error('Error details:', {
+          message: error.message,
+          stack: error.stack
+        });
+      }
+    }
+  };
+
   const reset = () => {
     setMediaData(null);
     setProcessedMedia(null);
