@@ -1,3 +1,4 @@
+// src/pages/Gallery.tsx - Updated with social sharing and improved deletion
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useConfigStore } from '../store/configStore';
@@ -13,21 +14,16 @@ import {
   AlertTriangle,
   X,
   Download,
-  Maximize2,
-  Minimize2,
-  Settings,
+  Share2,
+  Facebook,
+  Twitter,
+  Instagram,
+  Copy,
   Eye,
-  ChevronLeft,
-  ChevronRight,
-  Grid3X3,
-  Columns,
-  RotateCcw,
-  Heart,
-  Share2
+  EyeOff,
+  Settings,
+  MoreHorizontal
 } from 'lucide-react';
-
-type ViewMode = 'grid' | 'masonry' | 'slideshow';
-type GridSize = 'small' | 'medium' | 'large';
 
 export default function Gallery() {
   const { config } = useConfigStore();
@@ -41,19 +37,11 @@ export default function Gallery() {
   const [deleting, setDeleting] = React.useState(false);
   const [selectedPhoto, setSelectedPhoto] = React.useState<Photo | null>(null);
   const [showPhotoModal, setShowPhotoModal] = React.useState(false);
-  const [currentIndex, setCurrentIndex] = React.useState(0);
-  const [isFullscreen, setIsFullscreen] = React.useState(false);
-  const [showAdminControls, setShowAdminControls] = React.useState(false);
-  const [viewMode, setViewMode] = React.useState<ViewMode>('grid');
-  const [gridSize, setGridSize] = React.useState<GridSize>('medium');
-  const [hoveredPhoto, setHoveredPhoto] = React.useState<string | null>(null);
+  const [showShareModal, setShowShareModal] = React.useState<Photo | null>(null);
+  const [adminMode, setAdminMode] = React.useState(false);
+  const [copySuccess, setCopySuccess] = React.useState(false);
 
-  // Check if user is admin (you can implement your own logic here)
-  const isAdmin = React.useMemo(() => {
-    // For now, show admin controls if user presses a key combination or config allows
-    return showAdminControls;
-  }, [showAdminControls]);
-
+  // Load photos function
   const loadPhotos = async (showLoading = true, source = 'manual') => {
     try {
       if (showLoading) setLoading(true);
@@ -63,10 +51,7 @@ export default function Gallery() {
       
       const fetchedPhotos = await getPublicPhotos();
       
-      // Filter for public photos only in public mode
-      const publicPhotos = isAdmin ? fetchedPhotos : fetchedPhotos.filter(photo => photo.public !== false);
-      
-      const sortedPhotos = publicPhotos.sort((a, b) => 
+      const sortedPhotos = fetchedPhotos.sort((a, b) => 
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       );
       
@@ -88,9 +73,8 @@ export default function Gallery() {
     }
   };
 
+  // Handle photo deletion
   const handleDeletePhoto = async (photoId: string) => {
-    if (!isAdmin) return;
-    
     setDeleting(true);
     
     try {
@@ -101,8 +85,11 @@ export default function Gallery() {
       if (success) {
         console.log('Photo deleted successfully');
         setPhotos(prevPhotos => prevPhotos.filter(photo => photo.id !== photoId));
-        setTimeout(() => loadPhotos(false, 'delete-refresh'), 500);
         setShowDeleteConfirm(null);
+        setShowPhotoModal(false); // Close modal if open
+        
+        // Show success message
+        setError(null);
       } else {
         throw new Error('Failed to delete photo');
       }
@@ -115,9 +102,8 @@ export default function Gallery() {
     }
   };
 
+  // Handle delete all photos
   const handleDeleteAllPhotos = async () => {
-    if (!isAdmin) return;
-    
     setDeleting(true);
     
     try {
@@ -129,7 +115,7 @@ export default function Gallery() {
         console.log('All photos deleted successfully');
         setPhotos([]);
         setShowDeleteAllConfirm(false);
-        setTimeout(() => loadPhotos(false, 'delete-all-refresh'), 500);
+        setError(null);
       } else {
         throw new Error('Failed to delete all photos');
       }
@@ -142,77 +128,76 @@ export default function Gallery() {
     }
   };
 
-  const downloadImage = async (photo: Photo) => {
+  // Social sharing functions
+  const shareToFacebook = (photo: Photo) => {
+    const url = encodeURIComponent(photo.processed_url || photo.original_url);
+    const text = encodeURIComponent(`Check out this amazing ${photo.content_type} from ${config?.brand_name || 'Virtual Photobooth'}!`);
+    window.open(`https://www.facebook.com/sharer/sharer.php?u=${url}&quote=${text}`, '_blank');
+  };
+
+  const shareToTwitter = (photo: Photo) => {
+    const url = encodeURIComponent(photo.processed_url || photo.original_url);
+    const text = encodeURIComponent(`Amazing ${photo.content_type} from ${config?.brand_name || 'Virtual Photobooth'}! 📸✨`);
+    window.open(`https://twitter.com/intent/tweet?text=${text}&url=${url}`, '_blank');
+  };
+
+  const copyToClipboard = async (photo: Photo) => {
     try {
-      const imageUrl = photo.processed_url || photo.original_url;
-      const response = await fetch(imageUrl);
+      await navigator.clipboard.writeText(photo.processed_url || photo.original_url);
+      setCopySuccess(true);
+      setTimeout(() => setCopySuccess(false), 2000);
+    } catch (error) {
+      console.error('Failed to copy to clipboard:', error);
+      // Fallback for older browsers
+      const textArea = document.createElement('textarea');
+      textArea.value = photo.processed_url || photo.original_url;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+      setCopySuccess(true);
+      setTimeout(() => setCopySuccess(false), 2000);
+    }
+  };
+
+  const downloadPhoto = async (photo: Photo) => {
+    try {
+      const response = await fetch(photo.processed_url || photo.original_url);
       const blob = await response.blob();
-      
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `${config?.brand_name || 'Gallery'}_${photo.id.substring(0, 8)}.${photo.content_type === 'video' ? 'mp4' : 'png'}`;
+      link.download = `${config?.brand_name || 'photobooth'}_${photo.id.substring(0, 8)}.${photo.content_type === 'video' ? 'mp4' : 'png'}`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
     } catch (error) {
-      console.error('Failed to download image:', error);
+      console.error('Failed to download photo:', error);
+      setError('Failed to download photo');
     }
   };
 
-  const shareImage = async (photo: Photo) => {
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: photo.prompt || 'AI Generated Image',
-          text: photo.prompt || 'Check out this AI generated image!',
-          url: photo.processed_url || photo.original_url
-        });
-      } catch (error) {
-        console.error('Error sharing:', error);
+  // Admin mode keyboard shortcut
+  React.useEffect(() => {
+    const handleKeyPress = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && e.key === 'A') {
+        e.preventDefault();
+        setAdminMode(prev => !prev);
+        console.log('Admin mode toggled:', !adminMode);
       }
-    } else {
-      // Fallback: copy to clipboard
-      try {
-        await navigator.clipboard.writeText(photo.processed_url || photo.original_url);
-        alert('Image URL copied to clipboard!');
-      } catch (error) {
-        console.error('Failed to copy URL:', error);
-      }
-    }
-  };
+    };
 
-  const toggleFullscreen = () => {
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen();
-      setIsFullscreen(true);
-    } else {
-      document.exitFullscreen();
-      setIsFullscreen(false);
-    }
-  };
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, [adminMode]);
 
-  const navigatePhoto = (direction: 'prev' | 'next') => {
-    if (!selectedPhoto) return;
-    
-    const currentIdx = photos.findIndex(p => p.id === selectedPhoto.id);
-    let newIndex = currentIdx;
-    
-    if (direction === 'prev') {
-      newIndex = currentIdx > 0 ? currentIdx - 1 : photos.length - 1;
-    } else {
-      newIndex = currentIdx < photos.length - 1 ? currentIdx + 1 : 0;
-    }
-    
-    setSelectedPhoto(photos[newIndex]);
-    setCurrentIndex(newIndex);
-  };
-
+  // Load photos on mount
   React.useEffect(() => {
     loadPhotos(true, 'initial');
   }, []);
 
+  // Gallery update events
   React.useEffect(() => {
     const handleGalleryUpdate = (event: CustomEvent) => {
       console.log('Gallery update event received');
@@ -240,94 +225,30 @@ export default function Gallery() {
     };
   }, []);
 
-  // Auto-refresh every 30 seconds instead of 5 for public gallery
+  // Auto-refresh
   React.useEffect(() => {
     const interval = setInterval(() => {
       loadPhotos(false, 'auto-refresh');
-    }, 30000);
+    }, 15000); // Refresh every 15 seconds
 
     return () => clearInterval(interval);
   }, []);
 
-  // Keyboard shortcuts
-  React.useEffect(() => {
-    const handleKeyPress = (e: KeyboardEvent) => {
-      // Admin toggle (Ctrl/Cmd + Shift + A)
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'A') {
-        setShowAdminControls(!showAdminControls);
-        return;
-      }
-      
-      if (showPhotoModal && selectedPhoto) {
-        if (e.key === 'Escape') {
-          setShowPhotoModal(false);
-        } else if (e.key === 'ArrowLeft') {
-          navigatePhoto('prev');
-        } else if (e.key === 'ArrowRight') {
-          navigatePhoto('next');
-        } else if (e.key === 'f' || e.key === 'F') {
-          toggleFullscreen();
-        } else if (e.key === 'd' || e.key === 'D') {
-          downloadImage(selectedPhoto);
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyPress);
-    return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [showPhotoModal, selectedPhoto, showAdminControls]);
-
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    return new Date(dateString).toLocaleString();
   };
 
-  const getGridCols = () => {
-    switch (gridSize) {
-      case 'small': return 'grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8';
-      case 'medium': return 'grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5';
-      case 'large': return 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3';
-      default: return 'grid-cols-2 md:grid-cols-3 lg:grid-cols-4';
-    }
+  const forceRefresh = () => {
+    loadPhotos(true, 'force-refresh');
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white">
-        <div className="container mx-auto px-4 py-8">
-          <div className="flex items-center justify-center py-20">
-            <div className="text-center">
-              <RefreshCw className="w-12 h-12 animate-spin text-blue-500 mx-auto mb-4" />
-              <h2 className="text-2xl font-light mb-2">Loading Gallery</h2>
-              <p className="text-gray-400">Discovering beautiful moments...</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white">
-        <div className="container mx-auto px-4 py-8">
-          <div className="text-center py-20">
-            <div className="text-red-500 mb-4 text-6xl">⚠️</div>
-            <h2 className="text-2xl font-light mb-4">Unable to Load Gallery</h2>
-            <p className="text-gray-400 mb-8">{error}</p>
-            <button
-              onClick={() => {
-                setError(null);
-                loadPhotos(true, 'retry');
-              }}
-              className="px-6 py-3 bg-blue-600 rounded-full hover:bg-blue-700 transition-all duration-200 font-medium"
-            >
-              Try Again
-            </button>
+      <div className="min-h-screen bg-gray-900 text-white p-8">
+        <div className="container mx-auto">
+          <div className="flex items-center justify-center py-12">
+            <RefreshCw className="w-8 h-8 animate-spin text-blue-500 mr-3" />
+            <span>Loading gallery...</span>
           </div>
         </div>
       </div>
@@ -335,395 +256,232 @@ export default function Gallery() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white">
+    <div className="min-h-screen bg-gray-900 text-white">
       <div className="container mx-auto px-4 py-8">
-        {newPhotoAlert && (
-          <motion.div
-            initial={{ opacity: 0, y: -50 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -50 }}
-            className="fixed top-4 right-4 bg-gradient-to-r from-green-500 to-emerald-600 text-white px-6 py-3 rounded-full shadow-lg z-50 flex items-center gap-2"
-          >
-            <Bell className="w-5 h-5" />
-            <span>New artwork added!</span>
-          </motion.div>
-        )}
-
         {/* Header */}
-        <div className="text-center mb-12">
-          <motion.h1 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="text-5xl md:text-7xl font-light mb-4 bg-gradient-to-r from-blue-400 via-purple-500 to-pink-500 bg-clip-text text-transparent"
-          >
-            {config?.brand_name || 'AI'} Gallery
-          </motion.h1>
-          <motion.p 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-            className="text-xl text-gray-300 font-light"
-          >
-            Discover the magic of AI-generated art
-          </motion.p>
-        </div>
-
-        {/* Controls */}
-        <div className="flex flex-wrap items-center justify-between mb-8 gap-4">
-          <div className="flex items-center gap-2">
-            {/* View Mode Controls */}
-            <div className="flex bg-gray-800/50 rounded-full p-1">
-              <button
-                onClick={() => setViewMode('grid')}
-                className={`p-2 rounded-full transition-all ${viewMode === 'grid' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'}`}
-                title="Grid View"
-              >
-                <Grid3X3 className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => setViewMode('masonry')}
-                className={`p-2 rounded-full transition-all ${viewMode === 'masonry' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'}`}
-                title="Masonry View"
-              >
-                <Columns className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Grid Size Controls */}
-            {viewMode === 'grid' && (
-              <div className="flex bg-gray-800/50 rounded-full p-1">
-                {(['small', 'medium', 'large'] as GridSize[]).map((size) => (
-                  <button
-                    key={size}
-                    onClick={() => setGridSize(size)}
-                    className={`px-3 py-1 rounded-full text-sm transition-all capitalize ${gridSize === size ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}
-                  >
-                    {size}
-                  </button>
-                ))}
-              </div>
-            )}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="text-center mb-12"
+        >
+          <h1 className="text-4xl md:text-6xl font-light mb-4 bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
+            Photo Gallery
+          </h1>
+          <p className="text-xl text-gray-300 font-light">
+            Captured moments from {config?.brand_name || 'Virtual Photobooth'}
+          </p>
+          <div className="mt-4 text-sm text-gray-400">
+            Last updated: {formatDate(lastRefresh.toISOString())}
           </div>
+        </motion.div>
 
-          <div className="flex items-center gap-4">
-            {/* Stats */}
-            <div className="hidden md:flex items-center gap-6 text-sm text-gray-400">
-              <div className="flex items-center gap-2">
-                <ImageIcon className="w-4 h-4" />
-                <span>{photos.filter(p => !p.content_type || p.content_type === 'image').length} Images</span>
+        {/* Admin Controls */}
+        {adminMode && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-8 p-4 bg-yellow-900/20 border border-yellow-600/30 rounded-xl"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Settings className="w-5 h-5 text-yellow-400" />
+                <span className="font-medium text-yellow-200">Admin Mode Active</span>
               </div>
-              <div className="flex items-center gap-2">
-                <Video className="w-4 h-4" />
-                <span>{photos.filter(p => p.content_type === 'video' || p.content_type === 'mp4').length} Videos</span>
-              </div>
-            </div>
-
-            {/* Admin Controls */}
-            {isAdmin && (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-3">
                 <button
-                  onClick={() => loadPhotos(true, 'force-refresh')}
-                  disabled={deleting}
-                  className="flex items-center gap-2 px-3 py-2 bg-gray-700/50 rounded-full hover:bg-gray-600/50 transition text-sm disabled:opacity-50"
+                  onClick={forceRefresh}
+                  disabled={loading}
+                  className="px-4 py-2 bg-blue-600 rounded-lg hover:bg-blue-700 transition disabled:opacity-50 flex items-center gap-2"
                 >
-                  <RefreshCw className={`w-4 h-4 ${deleting ? 'animate-spin' : ''}`} />
+                  <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
                   Refresh
                 </button>
-                
                 {photos.length > 0 && (
                   <button
                     onClick={() => setShowDeleteAllConfirm(true)}
-                    disabled={deleting}
-                    className="flex items-center gap-2 px-3 py-2 bg-red-600/20 border border-red-600/30 rounded-full hover:bg-red-600/30 transition text-sm disabled:opacity-50"
+                    className="px-4 py-2 bg-red-600 rounded-lg hover:bg-red-700 transition flex items-center gap-2"
                   >
                     <Trash2 className="w-4 h-4" />
-                    Delete All
+                    Delete All ({photos.length})
                   </button>
                 )}
               </div>
-            )}
-
-            {/* Fullscreen Toggle */}
-            <button
-              onClick={toggleFullscreen}
-              className="p-2 bg-gray-700/50 rounded-full hover:bg-gray-600/50 transition"
-              title="Toggle Fullscreen"
-            >
-              {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-            </button>
-          </div>
-        </div>
-
-        {/* Gallery Content */}
-        {photos.length === 0 ? (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="text-center py-20"
-          >
-            <div className="w-32 h-32 mx-auto mb-8 bg-gradient-to-br from-blue-500/20 to-purple-600/20 rounded-full flex items-center justify-center">
-              <ImageIcon className="w-16 h-16 text-gray-500" />
             </div>
-            <h2 className="text-3xl font-light mb-4 text-gray-300">No Artwork Yet</h2>
-            <p className="text-gray-500 mb-8 max-w-md mx-auto">
-              The gallery is waiting for its first masterpiece. Visit the photobooth to create some AI magic!
-            </p>
-            <button
-              onClick={() => loadPhotos(true, 'force-refresh')}
-              className="px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 rounded-full hover:from-blue-700 hover:to-purple-700 transition-all duration-200 font-medium"
-            >
-              Check for New Art
-            </button>
-          </motion.div>
-        ) : (
-          <motion.div 
-            layout
-            className={`${viewMode === 'grid' ? `grid ${getGridCols()} gap-4` : 'columns-2 md:columns-3 lg:columns-4 gap-4'}`}
-          >
-            <AnimatePresence>
-              {photos.map((photo, index) => (
-                <motion.div
-                  key={photo.id}
-                  layout
-                  initial={{ opacity: 0, scale: 0.8 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.8 }}
-                  transition={{ duration: 0.3, delay: index * 0.05 }}
-                  className={`relative group cursor-pointer ${viewMode === 'masonry' ? 'break-inside-avoid mb-4' : ''}`}
-                  onMouseEnter={() => setHoveredPhoto(photo.id)}
-                  onMouseLeave={() => setHoveredPhoto(null)}
-                  onClick={() => {
-                    setSelectedPhoto(photo);
-                    setCurrentIndex(index);
-                    setShowPhotoModal(true);
-                  }}
-                >
-                  {(photo.content_type === 'video' || photo.content_type === 'mp4') ? (
-                    <div className="relative overflow-hidden rounded-2xl">
-                      <video
-                        src={photo.processed_url || photo.original_url}
-                        className="w-full h-auto transition-transform duration-300 group-hover:scale-105"
-                        poster={photo.thumbnail_url}
-                        muted
-                        onMouseEnter={(e) => e.currentTarget.play()}
-                        onMouseLeave={(e) => e.currentTarget.pause()}
-                      />
-                      
-                      {/* Video Badge */}
-                      <div className="absolute top-3 left-3 bg-black/70 backdrop-blur-sm text-white px-3 py-1 rounded-full text-xs flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Video className="w-3 h-3" />
-                        Video
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="relative overflow-hidden rounded-2xl">
-                      <img
-                        src={photo.processed_url || photo.original_url}
-                        alt={photo.prompt || 'AI Generated Art'}
-                        className="w-full h-auto transition-transform duration-300 group-hover:scale-105"
-                        onError={(e) => {
-                          const img = e.target as HTMLImageElement;
-                          if (img.src !== photo.original_url && photo.original_url) {
-                            img.src = photo.original_url;
-                          }
-                        }}
-                      />
-                    </div>
-                  )}
-
-                  {/* Hover Overlay */}
-                  <AnimatePresence>
-                    {hoveredPhoto === photo.id && (
-                      <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent rounded-2xl"
-                      >
-                        {/* Action Buttons */}
-                        <div className="absolute top-3 right-3 flex gap-2">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              downloadImage(photo);
-                            }}
-                            className="p-2 bg-white/20 backdrop-blur-sm rounded-full hover:bg-white/30 transition-all"
-                            title="Download"
-                          >
-                            <Download className="w-4 h-4 text-white" />
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              shareImage(photo);
-                            }}
-                            className="p-2 bg-white/20 backdrop-blur-sm rounded-full hover:bg-white/30 transition-all"
-                            title="Share"
-                          >
-                            <Share2 className="w-4 h-4 text-white" />
-                          </button>
-                          {isAdmin && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setShowDeleteConfirm(photo.id);
-                              }}
-                              className="p-2 bg-red-500/20 backdrop-blur-sm rounded-full hover:bg-red-500/30 transition-all"
-                              title="Delete"
-                            >
-                              <Trash2 className="w-4 h-4 text-white" />
-                            </button>
-                          )}
-                        </div>
-
-                        {/* Content Info */}
-                        <div className="absolute bottom-0 left-0 right-0 p-4">
-                          {photo.prompt && (
-                            <p className="text-white text-sm font-medium mb-2 line-clamp-2">
-                              {photo.prompt}
-                            </p>
-                          )}
-                          <div className="flex justify-between items-center text-xs text-gray-300">
-                            <span>{formatDate(photo.created_at)}</span>
-                            <div className="flex items-center gap-2">
-                              <Eye className="w-3 h-3" />
-                              <span>Click to view</span>
-                            </div>
-                          </div>
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </motion.div>
-              ))}
-            </AnimatePresence>
           </motion.div>
         )}
 
-        {/* Photo Modal */}
+        {/* New Photo Alert */}
         <AnimatePresence>
-          {showPhotoModal && selectedPhoto && (
+          {newPhotoAlert && (
             <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/95 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-              onClick={() => setShowPhotoModal(false)}
+              initial={{ opacity: 0, y: -50 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -50 }}
+              className="fixed top-4 right-4 z-50 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-3"
             >
-              <div className="relative max-w-7xl max-h-[90vh] w-full" onClick={(e) => e.stopPropagation()}>
-                {/* Close Button */}
-                <button
-                  onClick={() => setShowPhotoModal(false)}
-                  className="absolute -top-12 right-0 text-white/70 hover:text-white transition z-10"
-                >
-                  <X className="w-8 h-8" />
-                </button>
-
-                {/* Navigation Buttons */}
-                {photos.length > 1 && (
-                  <>
-                    <button
-                      onClick={() => navigatePhoto('prev')}
-                      className="absolute left-4 top-1/2 -translate-y-1/2 p-3 bg-black/50 backdrop-blur-sm rounded-full hover:bg-black/70 transition z-10"
-                    >
-                      <ChevronLeft className="w-6 h-6 text-white" />
-                    </button>
-                    <button
-                      onClick={() => navigatePhoto('next')}
-                      className="absolute right-4 top-1/2 -translate-y-1/2 p-3 bg-black/50 backdrop-blur-sm rounded-full hover:bg-black/70 transition z-10"
-                    >
-                      <ChevronRight className="w-6 h-6 text-white" />
-                    </button>
-                  </>
-                )}
-
-                {/* Action Buttons */}
-                <div className="absolute top-4 right-4 flex gap-2 z-10">
-                  <button
-                    onClick={() => downloadImage(selectedPhoto)}
-                    className="p-3 bg-black/50 backdrop-blur-sm rounded-full hover:bg-black/70 transition"
-                    title="Download (D)"
-                  >
-                    <Download className="w-5 h-5 text-white" />
-                  </button>
-                  <button
-                    onClick={() => shareImage(selectedPhoto)}
-                    className="p-3 bg-black/50 backdrop-blur-sm rounded-full hover:bg-black/70 transition"
-                    title="Share"
-                  >
-                    <Share2 className="w-5 h-5 text-white" />
-                  </button>
-                  <button
-                    onClick={toggleFullscreen}
-                    className="p-3 bg-black/50 backdrop-blur-sm rounded-full hover:bg-black/70 transition"
-                    title="Fullscreen (F)"
-                  >
-                    {isFullscreen ? <Minimize2 className="w-5 h-5 text-white" /> : <Maximize2 className="w-5 h-5 text-white" />}
-                  </button>
-                </div>
-
-                {/* Media Content */}
-                <motion.div
-                  key={selectedPhoto.id}
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="flex flex-col items-center"
-                >
-                  {selectedPhoto.content_type === 'video' ? (
-                    <video
-                      src={selectedPhoto.processed_url || selectedPhoto.original_url}
-                      className="max-w-full max-h-[70vh] rounded-lg shadow-2xl"
-                      controls
-                      autoPlay
-                    />
-                  ) : (
-                    <img
-                      src={selectedPhoto.processed_url || selectedPhoto.original_url}
-                      alt={selectedPhoto.prompt || 'AI Generated Art'}
-                      className="max-w-full max-h-[70vh] rounded-lg shadow-2xl object-contain"
-                    />
-                  )}
-
-                  {/* Photo Info */}
-                  <div className="mt-6 max-w-2xl text-center">
-                    {selectedPhoto.prompt && (
-                      <h3 className="text-xl font-light text-white mb-3">
-                        {selectedPhoto.prompt}
-                      </h3>
-                    )}
-                    <div className="flex flex-wrap justify-center gap-4 text-sm text-gray-400">
-                      <span>{formatDate(selectedPhoto.created_at)}</span>
-                      <span>•</span>
-                      <span>{currentIndex + 1} of {photos.length}</span>
-                      {isAdmin && (
-                        <>
-                          <span>•</span>
-                          <span>ID: {selectedPhoto.id.substring(0, 8)}</span>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </motion.div>
-
-                {/* Keyboard Shortcuts Hint */}
-                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-xs text-gray-500 flex gap-4">
-                  <span>← → Navigate</span>
-                  <span>F Fullscreen</span>
-                  <span>D Download</span>
-                  <span>ESC Close</span>
-                </div>
-              </div>
+              <Bell className="w-5 h-5" />
+              <span>New photo added!</span>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* Delete Confirmation Modals */}
-        {showDeleteConfirm && isAdmin && (
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setShowDeleteConfirm(null)}>
+        {/* Error Message */}
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6 p-4 bg-red-900/20 border border-red-600/30 rounded-xl text-red-200"
+          >
+            <div className="flex items-center gap-3">
+              <AlertTriangle className="w-5 h-5 text-red-400" />
+              <span>{error}</span>
+            </div>
+          </motion.div>
+        )}
+
+        {/* Gallery Grid */}
+        {photos.length === 0 ? (
+          <div className="text-center py-12">
+            <ImageIcon className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-xl font-medium text-gray-300 mb-2">No photos yet</h3>
+            <p className="text-gray-400 mb-6">
+              Photos will appear here when they're captured with the photobooth.
+            </p>
+            <button
+              onClick={forceRefresh}
+              className="px-4 py-2 bg-blue-600 rounded-lg hover:bg-blue-700 transition"
+            >
+              Check Again
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+            {photos.map((photo) => (
+              <motion.div
+                key={photo.id}
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="relative group bg-gray-800 rounded-xl overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-300"
+              >
+                {/* Media Display */}
+                {(photo.content_type === 'video' || photo.content_type === 'mp4') ? (
+                  <div className="relative aspect-square">
+                    <video
+                      src={photo.processed_url || photo.original_url}
+                      className="w-full h-full object-cover cursor-pointer"
+                      controls={false}
+                      playsInline
+                      muted
+                      poster={photo.thumbnail_url}
+                      onClick={() => {
+                        setSelectedPhoto(photo);
+                        setShowPhotoModal(true);
+                      }}
+                    />
+                    <div className="absolute top-3 left-3 bg-black/70 text-white px-2 py-1 rounded text-xs flex items-center gap-1">
+                      <Video className="w-3 h-3" />
+                      Video
+                    </div>
+                  </div>
+                ) : (
+                  <div className="relative aspect-square">
+                    <img
+                      src={photo.processed_url || photo.original_url}
+                      alt="Gallery"
+                      className="w-full h-full object-cover cursor-pointer"
+                      onClick={() => {
+                        setSelectedPhoto(photo);
+                        setShowPhotoModal(true);
+                      }}
+                      onError={(e) => {
+                        const img = e.target as HTMLImageElement;
+                        if (img.src !== photo.original_url && photo.original_url) {
+                          img.src = photo.original_url;
+                        }
+                      }}
+                    />
+                    <div className="absolute top-3 left-3 bg-black/70 text-white px-2 py-1 rounded text-xs flex items-center gap-1">
+                      <ImageIcon className="w-3 h-3" />
+                      Image
+                    </div>
+                  </div>
+                )}
+
+                {/* Overlay Controls */}
+                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-between p-4">
+                  {/* Top Controls */}
+                  <div className="flex justify-between">
+                    <div className="flex gap-2">
+                      {config?.gallery_allow_downloads && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            downloadPhoto(photo);
+                          }}
+                          className="p-2 bg-blue-600 hover:bg-blue-700 rounded-full transition-colors"
+                          title="Download"
+                        >
+                          <Download className="w-4 h-4" />
+                        </button>
+                      )}
+                      {config?.gallery_social_sharing && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShowShareModal(photo);
+                          }}
+                          className="p-2 bg-green-600 hover:bg-green-700 rounded-full transition-colors"
+                          title="Share"
+                        >
+                          <Share2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                    
+                    {adminMode && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowDeleteConfirm(photo.id);
+                        }}
+                        className="p-2 bg-red-600 hover:bg-red-700 rounded-full transition-colors"
+                        title="Delete"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Bottom Info */}
+                  <div className="text-white">
+                    <p className="text-sm font-medium mb-1 line-clamp-2">
+                      {photo.prompt && photo.prompt.length > 60 
+                        ? photo.prompt.substring(0, 60) + '...' 
+                        : photo.prompt || 'No prompt'
+                      }
+                    </p>
+                    <p className="text-xs text-gray-300 mb-1">
+                      {formatDate(photo.created_at)}
+                    </p>
+                    {config?.gallery_show_metadata && (
+                      <p className="text-xs text-blue-300">
+                        ID: {photo.id.substring(0, 8)}...
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        )}
+
+        {/* Delete Confirmation Modal */}
+        {showDeleteConfirm && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowDeleteConfirm(null)}>
             <motion.div
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
-              className="bg-gray-800 rounded-2xl p-6 max-w-md w-full"
+              className="bg-gray-800 rounded-xl p-6 max-w-md w-full"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center gap-3 mb-4">
@@ -763,12 +521,13 @@ export default function Gallery() {
           </div>
         )}
 
-        {showDeleteAllConfirm && isAdmin && (
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setShowDeleteAllConfirm(false)}>
+        {/* Delete All Confirmation Modal */}
+        {showDeleteAllConfirm && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowDeleteAllConfirm(false)}>
             <motion.div
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
-              className="bg-gray-800 rounded-2xl p-6 max-w-md w-full"
+              className="bg-gray-800 rounded-xl p-6 max-w-md w-full"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center gap-3 mb-4">
@@ -776,7 +535,7 @@ export default function Gallery() {
                 <h3 className="text-lg font-semibold">Delete All Photos</h3>
               </div>
               <p className="text-gray-300 mb-4">
-                Are you sure you want to delete <strong>all {photos.length} photos</strong>? 
+                Are you sure you want to delete <strong>all {photos.length} photos</strong>?
               </p>
               <p className="text-red-400 text-sm mb-6">
                 This action cannot be undone and will permanently remove all photos from your gallery.
@@ -811,9 +570,133 @@ export default function Gallery() {
           </div>
         )}
 
-        {/* Admin Controls Toggle Hint */}
-        {!isAdmin && (
-          <div className="fixed bottom-4 left-4 text-xs text-gray-600">
+        {/* Share Modal */}
+        {showShareModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowShareModal(null)}>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="bg-gray-800 rounded-xl p-6 max-w-md w-full"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center gap-3 mb-6">
+                <Share2 className="w-6 h-6 text-blue-500" />
+                <h3 className="text-lg font-semibold">Share Photo</h3>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-3 mb-6">
+                <button
+                  onClick={() => shareToFacebook(showShareModal)}
+                  className="flex items-center gap-2 p-3 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+                >
+                  <Facebook className="w-5 h-5" />
+                  <span>Facebook</span>
+                </button>
+                
+                <button
+                  onClick={() => shareToTwitter(showShareModal)}
+                  className="flex items-center gap-2 p-3 bg-blue-400 hover:bg-blue-500 rounded-lg transition-colors"
+                >
+                  <Twitter className="w-5 h-5" />
+                  <span>Twitter</span>
+                </button>
+                
+                <button
+                  onClick={() => copyToClipboard(showShareModal)}
+                  className="flex items-center gap-2 p-3 bg-gray-600 hover:bg-gray-700 rounded-lg transition-colors col-span-2"
+                >
+                  <Copy className="w-5 h-5" />
+                  <span>{copySuccess ? 'Copied!' : 'Copy Link'}</span>
+                </button>
+              </div>
+              
+              <button
+                onClick={() => setShowShareModal(null)}
+                className="w-full px-4 py-2 bg-gray-600 rounded-lg hover:bg-gray-700 transition"
+              >
+                Close
+              </button>
+            </motion.div>
+          </div>
+        )}
+
+        {/* Photo Modal */}
+        {showPhotoModal && selectedPhoto && (
+          <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4" onClick={() => setShowPhotoModal(false)}>
+            <div className="relative max-w-4xl max-h-[90vh] w-full" onClick={(e) => e.stopPropagation()}>
+              <button
+                onClick={() => setShowPhotoModal(false)}
+                className="absolute -top-12 right-0 text-white hover:text-gray-300 transition"
+              >
+                <X className="w-8 h-8" />
+              </button>
+              
+              {selectedPhoto.content_type === 'video' ? (
+                <video
+                  src={selectedPhoto.processed_url || selectedPhoto.original_url}
+                  className="w-full h-auto max-h-[80vh] rounded-lg"
+                  controls
+                  autoPlay
+                  playsInline
+                />
+              ) : (
+                <img
+                  src={selectedPhoto.processed_url || selectedPhoto.original_url}
+                  alt="Gallery"
+                  className="w-full h-auto max-h-[80vh] rounded-lg object-contain"
+                />
+              )}
+              
+              {/* Modal Controls */}
+              <div className="absolute bottom-4 left-4 right-4 bg-black/70 rounded-lg p-4">
+                <div className="flex items-center justify-between">
+                  <div className="text-white">
+                    <p className="font-medium mb-1">
+                      {selectedPhoto.prompt || 'No prompt'}
+                    </p>
+                    <p className="text-sm text-gray-300">
+                      {formatDate(selectedPhoto.created_at)}
+                    </p>
+                  </div>
+                  
+                  <div className="flex gap-2">
+                    {config?.gallery_allow_downloads && (
+                      <button
+                        onClick={() => downloadPhoto(selectedPhoto)}
+                        className="p-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+                        title="Download"
+                      >
+                        <Download className="w-4 h-4" />
+                      </button>
+                    )}
+                    {config?.gallery_social_sharing && (
+                      <button
+                        onClick={() => setShowShareModal(selectedPhoto)}
+                        className="p-2 bg-green-600 hover:bg-green-700 rounded-lg transition-colors"
+                        title="Share"
+                      >
+                        <Share2 className="w-4 h-4" />
+                      </button>
+                    )}
+                    {adminMode && (
+                      <button
+                        onClick={() => setShowDeleteConfirm(selectedPhoto.id)}
+                        className="p-2 bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
+                        title="Delete"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Admin Mode Hint */}
+        {!adminMode && (
+          <div className="fixed bottom-4 right-4 text-xs text-gray-500">
             Press Ctrl+Shift+A for admin controls
           </div>
         )}
