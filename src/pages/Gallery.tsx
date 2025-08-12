@@ -20,7 +20,13 @@ import {
   Copy,
   Eye,
   Settings,
-  MoreHorizontal
+  MoreHorizontal,
+  ChevronLeft,
+  ChevronRight,
+  Play,
+  Pause,
+  Circle,
+  Dot
 } from 'lucide-react';
 
 export default function Gallery() {
@@ -38,6 +44,8 @@ export default function Gallery() {
   const [showShareModal, setShowShareModal] = React.useState<Photo | null>(null);
   const [adminMode, setAdminMode] = React.useState(false);
   const [copySuccess, setCopySuccess] = React.useState(false);
+  const [currentSlide, setCurrentSlide] = React.useState(0);
+  const [isCarouselAutoplay, setIsCarouselAutoplay] = React.useState(true);
 
   // Debug log for config
   React.useEffect(() => {
@@ -172,23 +180,36 @@ export default function Gallery() {
     }
   };
 
-  const downloadPhoto = async (photo: Photo) => {
-    try {
-      const response = await fetch(photo.processed_url || photo.original_url);
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${config?.brand_name || 'photobooth'}_${photo.id.substring(0, 8)}.${photo.content_type === 'video' ? 'mp4' : 'png'}`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error('Failed to download photo:', error);
-      setError('Failed to download photo');
-    }
+  // Carousel controls
+  const nextSlide = () => {
+    setCurrentSlide((prev) => (prev + 1) % photos.length);
   };
+
+  const prevSlide = () => {
+    setCurrentSlide((prev) => (prev - 1 + photos.length) % photos.length);
+  };
+
+  const goToSlide = (index: number) => {
+    setCurrentSlide(index);
+  };
+
+  // Auto-play carousel
+  React.useEffect(() => {
+    if (config?.gallery_layout === 'carousel' && isCarouselAutoplay && photos.length > 1) {
+      const interval = setInterval(() => {
+        nextSlide();
+      }, config.gallery_speed || 3000);
+
+      return () => clearInterval(interval);
+    }
+  }, [config?.gallery_layout, config?.gallery_speed, isCarouselAutoplay, photos.length, currentSlide]);
+
+  // Reset carousel when photos change
+  React.useEffect(() => {
+    if (photos.length > 0 && currentSlide >= photos.length) {
+      setCurrentSlide(0);
+    }
+  }, [photos.length, currentSlide]);
 
   // Admin mode keyboard shortcut
   React.useEffect(() => {
@@ -406,12 +427,211 @@ export default function Gallery() {
               Check Again
             </button>
           </div>
+        ) : config?.gallery_layout === 'carousel' ? (
+          /* Animated Carousel */
+          <div className="max-w-4xl mx-auto">
+            <div className="relative bg-gray-800 rounded-2xl overflow-hidden shadow-2xl">
+              {/* Carousel Container */}
+              <div className="relative h-[60vh] min-h-[400px] overflow-hidden">
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={currentSlide}
+                    initial={{ 
+                      opacity: 0, 
+                      x: config.gallery_animation === 'slide' ? 300 : 0,
+                      scale: config.gallery_animation === 'zoom' ? 0.8 : 1
+                    }}
+                    animate={{ 
+                      opacity: 1, 
+                      x: 0,
+                      scale: 1
+                    }}
+                    exit={{ 
+                      opacity: 0, 
+                      x: config.gallery_animation === 'slide' ? -300 : 0,
+                      scale: config.gallery_animation === 'zoom' ? 1.2 : 1
+                    }}
+                    transition={{ 
+                      duration: config.gallery_animation === 'fade' ? 0.5 : 0.3,
+                      ease: "easeInOut"
+                    }}
+                    className="absolute inset-0 flex items-center justify-center"
+                  >
+                    {photos[currentSlide] && (
+                      <div className="relative w-full h-full">
+                        {(photos[currentSlide].content_type === 'video' || photos[currentSlide].content_type === 'mp4') ? (
+                          <video
+                            src={photos[currentSlide].processed_url || photos[currentSlide].original_url}
+                            className="w-full h-full object-contain"
+                            controls
+                            playsInline
+                            poster={photos[currentSlide].thumbnail_url}
+                          />
+                        ) : (
+                          <img
+                            src={photos[currentSlide].processed_url || photos[currentSlide].original_url}
+                            alt="Gallery"
+                            className="w-full h-full object-contain cursor-pointer"
+                            onClick={() => {
+                              setSelectedPhoto(photos[currentSlide]);
+                              setShowPhotoModal(true);
+                            }}
+                            onError={(e) => {
+                              const img = e.target as HTMLImageElement;
+                              if (img.src !== photos[currentSlide].original_url && photos[currentSlide].original_url) {
+                                img.src = photos[currentSlide].original_url;
+                              }
+                            }}
+                          />
+                        )}
+
+                        {/* Slide Controls Overlay */}
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/30 opacity-0 hover:opacity-100 transition-opacity duration-300">
+                          {/* Top Controls */}
+                          <div className="absolute top-4 right-4 flex gap-2">
+                            {allowDownloads && (
+                              <button
+                                onClick={() => downloadPhoto(photos[currentSlide])}
+                                className="p-3 bg-blue-600 hover:bg-blue-700 rounded-full transition-colors shadow-lg"
+                                title="Download"
+                              >
+                                <Download className="w-5 h-5 text-white" />
+                              </button>
+                            )}
+                            
+                            {allowSharing && (
+                              <button
+                                onClick={() => setShowShareModal(photos[currentSlide])}
+                                className="p-3 bg-green-600 hover:bg-green-700 rounded-full transition-colors shadow-lg"
+                                title="Share"
+                              >
+                                <Share2 className="w-5 h-5 text-white" />
+                              </button>
+                            )}
+
+                            {showAdminControls && (
+                              <button
+                                onClick={() => setShowDeleteConfirm(photos[currentSlide].id)}
+                                className="p-3 bg-red-600 hover:bg-red-700 rounded-full transition-colors shadow-lg"
+                                title="Delete"
+                              >
+                                <Trash2 className="w-5 h-5 text-white" />
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Autoplay Control */}
+                          <div className="absolute top-4 left-4">
+                            <button
+                              onClick={() => setIsCarouselAutoplay(!isCarouselAutoplay)}
+                              className="p-3 bg-gray-700 hover:bg-gray-600 rounded-full transition-colors shadow-lg"
+                              title={isCarouselAutoplay ? 'Pause Slideshow' : 'Start Slideshow'}
+                            >
+                              {isCarouselAutoplay ? (
+                                <Pause className="w-5 h-5 text-white" />
+                              ) : (
+                                <Play className="w-5 h-5 text-white" />
+                              )}
+                            </button>
+                          </div>
+
+                          {/* Bottom Info */}
+                          <div className="absolute bottom-4 left-4 right-4 text-white">
+                            <div className="bg-black/50 rounded-lg p-4 backdrop-blur-sm">
+                              <p className="text-lg font-medium mb-2">
+                                {photos[currentSlide].prompt || 'No prompt'}
+                              </p>
+                              <div className="flex justify-between items-center text-sm text-gray-300">
+                                <span>{formatDate(photos[currentSlide].created_at)}</span>
+                                {showMetadata && (
+                                  <span>ID: {photos[currentSlide].id.substring(0, 8)}...</span>
+                                )}
+                                <span>{currentSlide + 1} of {photos.length}</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </motion.div>
+                </AnimatePresence>
+
+                {/* Navigation Arrows */}
+                {photos.length > 1 && (
+                  <>
+                    <button
+                      onClick={prevSlide}
+                      className="absolute left-4 top-1/2 -translate-y-1/2 p-3 bg-black/50 hover:bg-black/70 rounded-full transition-all duration-200 backdrop-blur-sm"
+                      title="Previous"
+                    >
+                      <ChevronLeft className="w-6 h-6 text-white" />
+                    </button>
+                    
+                    <button
+                      onClick={nextSlide}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 p-3 bg-black/50 hover:bg-black/70 rounded-full transition-all duration-200 backdrop-blur-sm"
+                      title="Next"
+                    >
+                      <ChevronRight className="w-6 h-6 text-white" />
+                    </button>
+                  </>
+                )}
+              </div>
+
+              {/* Thumbnail Navigation */}
+              {photos.length > 1 && (
+                <div className="p-4 bg-gray-900">
+                  <div className="flex gap-2 overflow-x-auto scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800">
+                    {photos.map((photo, index) => (
+                      <button
+                        key={photo.id}
+                        onClick={() => goToSlide(index)}
+                        className={`flex-shrink-0 relative w-20 h-20 rounded-lg overflow-hidden transition-all duration-200 ${
+                          index === currentSlide 
+                            ? 'ring-2 ring-blue-500 ring-offset-2 ring-offset-gray-900' 
+                            : 'opacity-60 hover:opacity-80'
+                        }`}
+                      >
+                        {(photo.content_type === 'video' || photo.content_type === 'mp4') ? (
+                          <div className="w-full h-full bg-gray-700 flex items-center justify-center">
+                            <Video className="w-6 h-6 text-white" />
+                          </div>
+                        ) : (
+                          <img
+                            src={photo.processed_url || photo.original_url}
+                            alt="Thumbnail"
+                            className="w-full h-full object-cover"
+                          />
+                        )}
+                        {index === currentSlide && (
+                          <div className="absolute inset-0 bg-blue-500/20" />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Dot Indicators */}
+                  <div className="flex justify-center gap-2 mt-4">
+                    {photos.map((_, index) => (
+                      <button
+                        key={index}
+                        onClick={() => goToSlide(index)}
+                        className={`w-2 h-2 rounded-full transition-all duration-200 ${
+                          index === currentSlide ? 'bg-blue-500' : 'bg-gray-600 hover:bg-gray-500'
+                        }`}
+                        title={`Go to slide ${index + 1}`}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         ) : (
+          /* Grid and Masonry Layouts */
           <div className={`grid gap-6 ${
             config?.gallery_layout === 'masonry' 
               ? 'columns-1 sm:columns-2 md:columns-3 lg:columns-4' 
-              : config?.gallery_layout === 'carousel'
-              ? 'grid-cols-1 max-w-2xl mx-auto'
               : 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4'
           }`}>
             {photos.map((photo, index) => (
