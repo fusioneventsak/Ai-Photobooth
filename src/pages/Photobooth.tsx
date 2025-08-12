@@ -811,44 +811,7 @@ export default function Photobooth() {
             </div>
           )}
           
-          {/* Add to Gallery Button - Only show when there's a processed image */}
-          {processedMedia && !processing && (
-            <button
-              onClick={async () => {
-                if (!processedMedia || !config) return;
-                
-                try {
-                  console.log('📤 Manual gallery upload triggered...');
-                  
-                  const uploadResult = await uploadPhoto(
-                    processedMedia,
-                    config.global_prompt || 'AI Generated Image',
-                    currentModelType
-                  );
-                  
-                  if (uploadResult) {
-                    console.log('✅ Manual upload successful:', uploadResult.id);
-                    
-                    // Dispatch gallery update event
-                    window.dispatchEvent(new CustomEvent('galleryUpdate', {
-                      detail: { newPhoto: uploadResult }
-                    }));
-                    
-                    alert('✅ Photo added to gallery successfully!');
-                  } else {
-                    alert('❌ Failed to add photo to gallery');
-                  }
-                } catch (error) {
-                  console.error('❌ Manual upload failed:', error);
-                  alert(`❌ Upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-                }
-              }}
-              className="w-full flex items-center justify-center gap-2 py-3 bg-green-600 rounded-xl hover:bg-green-700 transition font-medium"
-            >
-              <ImageIcon className="w-5 h-5" />
-              Add to Gallery
-            </button>
-          )}
+
         </div>
       </div>
     </div>
