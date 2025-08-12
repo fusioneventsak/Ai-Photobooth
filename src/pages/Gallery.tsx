@@ -17,19 +17,22 @@ export default function Gallery() {
       if (showLoading) setLoading(true);
       setError(null);
       
-      console.log('🔄 Loading gallery photos...');
-      console.log('🔍 Fetching from database...');
+      console.log('🔄 === LOADING GALLERY PHOTOS ===');
+      console.log('🔍 Calling getPublicPhotos()...');
       
       const fetchedPhotos = await getPublicPhotos();
       
-      console.log('📸 Gallery photos loaded:', {
+      console.log('📸 Raw data from database:', fetchedPhotos);
+      console.log('📊 Gallery photos loaded:', {
         count: fetchedPhotos.length,
+        totalRecords: fetchedPhotos.length,
         photos: fetchedPhotos.map(p => ({
           id: p.id.substring(0, 8),
-          type: p.content_type || 'image', // Handle missing content_type
+          type: p.content_type || 'unknown',
           created: p.created_at,
           url: p.processed_url || p.original_url,
-          prompt: p.prompt?.substring(0, 30) + '...'
+          prompt: p.prompt?.substring(0, 50) + '...',
+          public: p.public
         }))
       });
 
@@ -42,9 +45,24 @@ export default function Gallery() {
       setLastRefresh(new Date());
       
       console.log('✅ Gallery state updated with', sortedPhotos.length, 'photos');
+      
+      // Show alert if no photos found
+      if (sortedPhotos.length === 0) {
+        console.warn('⚠️ No photos found in database!');
+      } else {
+        console.log('🎉 Found photos! Latest:', {
+          id: sortedPhotos[0].id.substring(0, 8),
+          created: sortedPhotos[0].created_at,
+          prompt: sortedPhotos[0].prompt
+        });
+      }
+      
     } catch (err) {
       console.error('❌ Failed to load gallery photos:', err);
       setError(err instanceof Error ? err.message : 'Failed to load photos');
+      
+      // Show detailed error
+      alert(`❌ Gallery loading failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       if (showLoading) setLoading(false);
     }
