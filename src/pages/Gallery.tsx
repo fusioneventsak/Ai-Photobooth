@@ -1,4 +1,48 @@
-import React from 'react';
+{(photo.content_type === 'video' || photo.content_type === 'mp4') ? (
+                    <div className="relative">
+                      <video
+                        src={photo.processed_url || photo.original_url}
+                        className="w-full h-auto rounded-lg shadow-lg cursor-pointer"
+                        controls
+                        playsInline
+                        poster={photo.thumbnail_url}
+                        onClick={(e) => {
+                          // Only open modal if not clicking near the top-right corner (delete button area)
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          const clickX = e.clientX - rect.left;
+                          const clickY = e.clientY - rect.top;
+                          
+                          // Check if click is in delete button area (top-right 60x60 pixels)
+                          if (clickX > rect.width - 60 && clickY < 60) {
+                            return; // Don't open modal
+                          }
+                          
+                          setSelectedPhoto(photo);
+                          setShowPhotoModal(true);
+                        }}
+                        onError={(e) => {
+                          console.warn('❌ Failed to load video:', photo.id, e);
+                        }}
+                      />
+                      <div className="absolute top-2 left-2 bg-black/70 text-white px-2 py-1 rounded text-xs flex items-center gap-1">
+                        <Video className="w-3 h-3" />
+                        Video
+                      </div>
+                      
+                      {/* Delete Button */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          console.log('🗑️ Delete button clicked for video:', photo.id);
+                          setShowDeleteConfirm(photo.id);
+                        }}
+                        className="absolute top-2 right-2 bg-red-600 hover:bg-red-700 text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition-all duration-200 z-10 shadow-lg"
+                        title="Delete video"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useConfigStore } from '../store/configStore';
 import { getPublicPhotos, deletePhoto, deleteAllPhotos } from '../lib/supabase';
@@ -474,12 +518,14 @@ export default function Gallery() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
+                          e.preventDefault();
+                          console.log('🗑️ Delete button clicked for photo:', photo.id);
                           setShowDeleteConfirm(photo.id);
                         }}
-                        className="absolute top-2 right-2 bg-red-600/90 hover:bg-red-700 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                        className="absolute top-2 right-2 bg-red-600 hover:bg-red-700 text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition-all duration-200 z-10 shadow-lg"
                         title="Delete photo"
                       >
-                        <Trash2 className="w-3 h-3" />
+                        <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
                   ) : (
@@ -488,7 +534,17 @@ export default function Gallery() {
                         src={photo.processed_url || photo.original_url}
                         alt="Gallery"
                         className="w-full h-auto rounded-lg shadow-lg cursor-pointer"
-                        onClick={() => {
+                        onClick={(e) => {
+                          // Only open modal if not clicking near the top-right corner (delete button area)
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          const clickX = e.clientX - rect.left;
+                          const clickY = e.clientY - rect.top;
+                          
+                          // Check if click is in delete button area (top-right 60x60 pixels)
+                          if (clickX > rect.width - 60 && clickY < 60) {
+                            return; // Don't open modal
+                          }
+                          
                           setSelectedPhoto(photo);
                           setShowPhotoModal(true);
                         }}
@@ -513,12 +569,14 @@ export default function Gallery() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
+                          e.preventDefault();
+                          console.log('🗑️ Delete button clicked for photo:', photo.id);
                           setShowDeleteConfirm(photo.id);
                         }}
-                        className="absolute top-2 right-2 bg-red-600/90 hover:bg-red-700 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                        className="absolute top-2 right-2 bg-red-600 hover:bg-red-700 text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition-all duration-200 z-10 shadow-lg"
                         title="Delete photo"
                       >
-                        <Trash2 className="w-3 h-3" />
+                        <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
                   )}
