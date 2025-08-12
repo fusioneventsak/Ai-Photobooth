@@ -1,5 +1,5 @@
 import React, { useState, useRef, ChangeEvent } from 'react';
-import { Upload, Wand2, AlertCircle, RefreshCw, Image as ImageIcon, Layers, Settings, Eye, Info } from 'lucide-react';
+import { Upload, Wand2, AlertCircle, RefreshCw, Image as ImageIcon, Layers, Settings, Eye, Info, Bug } from 'lucide-react';
 import { useConfigStore } from '../store/configStore';
 import { uploadPhoto } from '../lib/supabase';
 
@@ -39,43 +39,53 @@ export default function OverlayIntegration() {
     offsetY: 20
   });
 
-  // **FIXED: Handle overlay image upload with proper file reading**
+  // **DEBUG: Calculate button state**
+  const hasOverlayImage = !!overlayImage;
+  const hasOverlayName = overlayName.trim().length > 0;
+  const isNotProcessing = !processing;
+  const canSave = hasOverlayImage && hasOverlayName && isNotProcessing;
+
+  // Handle overlay image upload
   const handleOverlayChange = (event: ChangeEvent<HTMLInputElement>) => {
+    console.log('🔄 File input changed');
     setError(null);
     
     if (!event.target.files || event.target.files.length === 0) {
+      console.log('❌ No files selected');
       return;
     }
     
     const file = event.target.files[0];
+    console.log('📁 File selected:', { name: file.name, type: file.type, size: file.size });
     
     if (!file.type.startsWith('image/')) {
+      console.log('❌ Invalid file type:', file.type);
       setError('Please upload an image file for the overlay');
       return;
     }
     
     if (file.size > 10 * 1024 * 1024) {
+      console.log('❌ File too large:', file.size);
       setError('Overlay file is too large (max 10MB)');
       return;
     }
 
-    // **FIXED: Actually read the file and convert to base64**
+    console.log('📖 Starting file read...');
     const reader = new FileReader();
+    
     reader.onload = (e) => {
       if (e.target?.result && typeof e.target.result === 'string') {
-        console.log('✅ Overlay image loaded successfully:', {
-          size: file.size,
-          type: file.type,
-          name: file.name
-        });
+        console.log('✅ File read successful, data length:', e.target.result.length);
         setOverlayImage(e.target.result);
         setError(null);
       } else {
+        console.log('❌ File read failed - no result');
         setError('Failed to read overlay image file');
       }
     };
     
-    reader.onerror = () => {
+    reader.onerror = (err) => {
+      console.log('❌ File read error:', err);
       setError('Failed to read overlay image file');
     };
     
@@ -226,10 +236,21 @@ export default function OverlayIntegration() {
     }
   }, [overlaySettings, overlayImage, testImage]);
 
-  // **ENHANCED: Save overlay configuration with better error handling**
+  // Save overlay configuration with enhanced debugging
   const saveOverlayConfig = async () => {
+    console.log('💾 Save overlay config clicked');
+    console.log('📊 State check:', {
+      hasOverlayImage: !!overlayImage,
+      overlayImageLength: overlayImage?.length || 0,
+      hasOverlayName: !!overlayName.trim(),
+      overlayName: overlayName,
+      processing: processing
+    });
+
     if (!overlayImage || !overlayName.trim()) {
-      setError('Please provide an overlay image and name');
+      const errorMsg = !overlayImage ? 'Please upload an overlay image' : 'Please enter an overlay name';
+      console.log('❌ Validation failed:', errorMsg);
+      setError(errorMsg);
       return;
     }
 
@@ -254,6 +275,7 @@ export default function OverlayIntegration() {
 
       // Get existing overlays and add new one
       const existingOverlays = JSON.parse(localStorage.getItem('photoboothOverlays') || '[]');
+      console.log('📦 Existing overlays:', existingOverlays.length);
       
       // Check if overlay with same name exists and ask for confirmation
       const existingIndex = existingOverlays.findIndex((overlay: any) => overlay.name === overlayName);
@@ -261,22 +283,28 @@ export default function OverlayIntegration() {
         const shouldReplace = confirm(`An overlay named "${overlayName}" already exists. Do you want to replace it?`);
         if (shouldReplace) {
           existingOverlays[existingIndex] = overlayConfig;
+          console.log('🔄 Replaced existing overlay');
         } else {
           setProcessing(false);
           return;
         }
       } else {
         existingOverlays.push(overlayConfig);
+        console.log('➕ Added new overlay');
       }
 
       // Save to localStorage
       localStorage.setItem('photoboothOverlays', JSON.stringify(existingOverlays));
+      console.log('✅ Saved to localStorage successfully');
       
-      console.log('✅ Overlay saved to localStorage successfully');
+      // Verify save
+      const saved = localStorage.getItem('photoboothOverlays');
+      console.log('🔍 Verification - saved data length:', saved?.length || 0);
 
       // Also save test result to gallery if available
       if (resultImage) {
         try {
+          console.log('📤 Uploading preview to gallery...');
           const uploadResult = await uploadPhoto(
             resultImage,
             `Overlay Preview: ${overlayName} - ${overlaySettings.position} at ${Math.round(overlaySettings.scale * 100)}% scale`,
@@ -312,6 +340,7 @@ export default function OverlayIntegration() {
   };
 
   const resetForm = () => {
+    console.log('🔄 Resetting form');
     setOverlayImage(null);
     setOverlayName('');
     setTestImage(null);
@@ -342,12 +371,37 @@ export default function OverlayIntegration() {
           Overlay Integration
         </h1>
         
+        {/* **DEBUG PANEL** */}
+        <div className="mb-6 p-4 bg-yellow-900/30 rounded-lg border border-yellow-500/30">
+          <div className="flex items-center gap-2 mb-2">
+            <Bug className="w-4 h-4 text-yellow-400" />
+            <h3 className="font-semibold text-yellow-400">Debug Info:</h3>
+          </div>
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            <div>
+              <strong>Overlay Image:</strong> {hasOverlayImage ? '✅ Loaded' : '❌ Missing'} 
+              {overlayImage && <span className="text-gray-400"> ({overlayImage.length} chars)</span>}
+            </div>
+            <div>
+              <strong>Overlay Name:</strong> {hasOverlayName ? '✅ Valid' : '❌ Empty'} 
+              <span className="text-gray-400">"{overlayName}"</span>
+            </div>
+            <div>
+              <strong>Processing:</strong> {isNotProcessing ? '✅ Ready' : '❌ Busy'} 
+              <span className="text-gray-400">({processing.toString()})</span>
+            </div>
+            <div>
+              <strong>Can Save:</strong> {canSave ? '✅ Yes' : '❌ No'}
+            </div>
+          </div>
+        </div>
+
         <div className="mb-6 text-center">
           <p className="text-gray-300">
             Upload a custom overlay (logo, watermark, frame) that will be automatically applied to all AI generated photos.
           </p>
           
-          {/* **NEW: Size recommendations** */}
+          {/* Size recommendations */}
           <div className="mt-4 p-4 bg-blue-900/30 rounded-lg border border-blue-500/30 max-w-2xl mx-auto">
             <div className="flex items-start gap-3">
               <Info className="w-5 h-5 text-blue-400 mt-0.5 flex-shrink-0" />
@@ -376,7 +430,10 @@ export default function OverlayIntegration() {
               </h2>
               
               <div 
-                onClick={() => overlayFileRef.current?.click()}
+                onClick={() => {
+                  console.log('📁 Upload area clicked');
+                  overlayFileRef.current?.click();
+                }}
                 className="border-2 border-dashed border-gray-600 rounded-lg p-6 text-center cursor-pointer hover:border-gray-400 transition"
               >
                 {overlayImage ? (
@@ -409,7 +466,10 @@ export default function OverlayIntegration() {
                 <input
                   type="text"
                   value={overlayName}
-                  onChange={(e) => setOverlayName(e.target.value)}
+                  onChange={(e) => {
+                    console.log('✏️ Name changed to:', e.target.value);
+                    setOverlayName(e.target.value);
+                  }}
                   placeholder="e.g., Company Logo, Watermark, etc."
                   className="w-full bg-gray-700 rounded-lg px-4 py-2 text-white"
                   required
@@ -609,10 +669,15 @@ export default function OverlayIntegration() {
               
               <div className="space-y-3">
                 <button
-                  onClick={saveOverlayConfig}
-                  disabled={!overlayImage || !overlayName.trim() || processing}
-                  className="w-full flex items-center justify-center gap-2 px-6 py-3 rounded-lg transition disabled:opacity-50"
-                  style={{ backgroundColor: config?.primary_color }}
+                  onClick={() => {
+                    console.log('🖱️ Save button clicked');
+                    saveOverlayConfig();
+                  }}
+                  disabled={!canSave}
+                  className={`w-full flex items-center justify-center gap-2 px-6 py-3 rounded-lg transition ${
+                    canSave ? 'hover:opacity-90' : 'opacity-50 cursor-not-allowed'
+                  }`}
+                  style={{ backgroundColor: config?.primary_color || '#3B82F6' }}
                 >
                   <Wand2 className="w-5 h-5" />
                   {processing ? 'Saving...' : 'Save Overlay Configuration'}
