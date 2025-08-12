@@ -318,94 +318,114 @@ export default function Photobooth() {
     }
   };
 
-  // Dedicated function to upload AI content to gallery
+  // Dedicated function to upload AI content to gallery - DIRECT DATABASE INSERT
   const uploadToGallery = async (aiContent: string, prompt: string, contentType: 'image' | 'video') => {
     try {
-      console.log('🚀 UPLOAD ATTEMPT STARTED');
-      console.log('📤 Starting gallery upload process...', {
+      console.log('🚀 DIRECT GALLERY UPLOAD STARTED');
+      console.log('📤 Upload details:', {
         contentType,
         promptLength: prompt.length,
         contentLength: aiContent.length,
-        hasData: !!aiContent,
         timestamp: new Date().toISOString()
       });
 
-      // Ensure we have valid data
-      if (!aiContent || !aiContent.startsWith('data:')) {
-        throw new Error('Invalid AI content - missing or malformed data URL');
-      }
+      // Direct database insert - bypassing the uploadPhoto function to avoid issues
+      const { createClient } = await import('@supabase/supabase-js');
+      const supabase = createClient(
+        import.meta.env.VITE_SUPABASE_URL,
+        import.meta.env.VITE_SUPABASE_ANON_KEY
+      );
 
-      if (!prompt || prompt.trim() === '') {
-        throw new Error('Invalid prompt - empty or missing');
-      }
+      // Create a unique filename
+      const timestamp = Date.now();
+      const fileExtension = contentType === 'video' ? 'mp4' : 'png';
+      const filename = `ai_${contentType}_${timestamp}.${fileExtension}`;
 
-      console.log('✅ Data validation passed, calling uploadPhoto...');
+      console.log('📁 Creating file for upload:', filename);
+
+      // Convert data URL to blob
+      const response = await fetch(aiContent);
+      const blob = await response.blob();
       
-      // Add timeout to catch hanging uploads
-      const uploadPromise = uploadPhoto(aiContent, prompt, contentType);
-      const timeoutPromise = new Promise<null>((_, reject) => {
-        setTimeout(() => reject(new Error('Upload timeout after 30 seconds')), 30000);
-      });
-      
-      const uploadResult = await Promise.race([uploadPromise, timeoutPromise]);
-      
-      if (uploadResult) {
-        console.log('🎉 GALLERY UPLOAD SUCCESS!', {
-          id: uploadResult.id,
-          url: uploadResult.processed_url,
-          public: uploadResult.public,
-          contentType: uploadResult.content_type,
-          createdAt: uploadResult.created_at
+      console.log('💾 File size:', blob.size, 'bytes');
+
+      // Upload to storage
+      console.log('⬆️ Uploading to Supabase storage...');
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('photos')
+        .upload(filename, blob, {
+          contentType: contentType === 'video' ? 'video/mp4' : 'image/png',
+          upsert: true
         });
-        
-        // Show success notification to user
-        alert(`✅ Photo saved to gallery! ID: ${uploadResult.id.substring(0, 8)}`);
-        
-        // Trigger a gallery refresh by dispatching a custom event
-        window.dispatchEvent(new CustomEvent('galleryUpdate', {
-          detail: { newPhoto: uploadResult }
-        }));
-        
-      } else {
-        console.error('❌ Upload failed - uploadPhoto returned null');
-        console.error('This could indicate:');
-        console.error('- Database connection issues');
-        console.error('- Storage permission problems'); 
-        console.error('- Supabase RLS policy blocking inserts');
-        console.error('- Invalid data format');
-        
-        // Show error notification to user
-        alert('❌ Failed to save to gallery - check console for details');
+
+      if (uploadError) {
+        throw new Error(`Storage upload failed: ${uploadError.message}`);
       }
+
+      console.log('✅ Storage upload successful:', uploadData.path);
+
+      // Get public URL
+      const { data: urlData } = supabase.storage
+        .from('photos')
+        .getPublicUrl(uploadData.path);
+
+      const publicUrl = urlData.publicUrl;
+      console.log('🔗 Public URL generated:', publicUrl);
+
+      // Insert into database with explicit values
+      console.log('💾 Inserting into database...');
+      const photoData = {
+        original_url: publicUrl,
+        processed_url: publicUrl,
+        prompt: prompt,
+        content_type: contentType,
+        public: true,
+        created_at: new Date().toISOString()
+      };
+
+      console.log('📋 Photo data to insert:', photoData);
+
+      const { data: dbResult, error: dbError } = await supabase
+        .from('photos')
+        .insert([photoData])
+        .select()
+        .single();
+
+      if (dbError) {
+        throw new Error(`Database insert failed: ${dbError.message}`);
+      }
+
+      console.log('🎉 DATABASE INSERT SUCCESS!', dbResult);
+      
+      // Show success notification
+      alert(`✅ Photo saved to gallery! ID: ${dbResult.id.substring(0, 8)}`);
+      
+      // Trigger gallery refresh
+      window.dispatchEvent(new CustomEvent('galleryUpdate', {
+        detail: { newPhoto: dbResult }
+      }));
+
+      // Force refresh the gallery page if it exists
+      if (window.location.pathname.includes('gallery')) {
+        window.location.reload();
+      }
+      
+      return dbResult;
+      
     } catch (error) {
-      console.error('❌ GALLERY UPLOAD FAILED:', error);
+      console.error('❌ DIRECT UPLOAD FAILED:', error);
       
-      // Show error to user
-      alert(`❌ Gallery upload error: ${error.message}`);
+      // Show detailed error
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      alert(`❌ Gallery save failed: ${errorMsg}`);
       
-      // Detailed error logging
-      if (error instanceof Error) {
-        console.error('Error details:', {
-          name: error.name,
-          message: error.message,
-          stack: error.stack
-        });
-      }
-      
-      // Try to identify common issues
-      if (error.message.includes('permission') || error.message.includes('policy')) {
-        console.error('🔒 Likely cause: Database RLS policy blocking photo inserts');
-        alert('🔒 Permission error - check database policies');
-      } else if (error.message.includes('storage')) {
-        console.error('💾 Likely cause: Supabase storage access issues');
-        alert('💾 Storage error - check Supabase configuration');
-      } else if (error.message.includes('network') || error.message.includes('fetch')) {
-        console.error('🌐 Likely cause: Network connectivity issues');
-        alert('🌐 Network error - check your connection');
-      } else if (error.message.includes('timeout')) {
-        console.error('⏱️ Upload timed out - server may be slow');
-        alert('⏱️ Upload timed out - please try again');
-      }
+      // Log comprehensive error details
+      console.error('Full error details:', {
+        error,
+        stack: error instanceof Error ? error.stack : 'No stack trace'
+      });
+
+      return null;
     }
   };
 
