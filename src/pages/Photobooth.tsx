@@ -15,6 +15,7 @@ export default function Photobooth() {
   const [currentModelType, setCurrentModelType] = useState<'image' | 'video'>('image');
   const [generationAttempts, setGenerationAttempts] = useState(0);
   const [showInstructions, setShowInstructions] = useState(true);
+  const [uploading, setUploading] = useState(false);
   
   const webcamRef = React.useRef<Webcam>(null);
 
@@ -129,6 +130,107 @@ export default function Photobooth() {
       }
     };
   }, [processedMedia]);
+
+  // AUTOMATIC UPLOAD TRIGGER - Runs whenever processedMedia changes
+  useEffect(() => {
+    const automaticUpload = async () => {
+      // Only upload if we have processed media, config, not currently processing, and not already uploading
+      if (!processedMedia || !config || processing || uploading) {
+        return;
+      }
+
+      // Check if this image was already uploaded (simple check)
+      const uploadedKey = `uploaded_${processedMedia.substring(0, 50)}`;
+      if (sessionStorage.getItem(uploadedKey)) {
+        console.log('🔄 Image already uploaded, skipping duplicate upload');
+        return;
+      }
+
+      console.log('🚀 === AUTOMATIC UPLOAD TRIGGERED ===');
+      console.log('📊 Upload trigger details:', {
+        hasProcessedMedia: !!processedMedia,
+        hasConfig: !!config,
+        processing: processing,
+        uploading: uploading,
+        mediaType: currentModelType,
+        mediaSize: processedMedia.length
+      });
+
+      setUploading(true);
+
+      try {
+        // Small delay to ensure everything is ready
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        console.log('📤 Starting automatic gallery upload...');
+        console.log('📋 Upload parameters:', {
+          contentType: currentModelType,
+          hasContent: !!processedMedia,
+          contentSize: processedMedia.length,
+          prompt: config.global_prompt || 'AI Generated Image'
+        });
+        
+        const uploadResult = await uploadPhoto(
+          processedMedia,
+          config.global_prompt || 'AI Generated Image',
+          currentModelType
+        );
+        
+        if (!uploadResult) {
+          throw new Error('Upload function returned null - upload failed');
+        }
+        
+        console.log('🎉 === AUTOMATIC UPLOAD SUCCESSFUL ===');
+        console.log('📊 Upload result:', {
+          id: uploadResult.id,
+          url: uploadResult.processed_url,
+          type: uploadResult.content_type,
+          created: uploadResult.created_at,
+          prompt: uploadResult.prompt
+        });
+
+        // Mark this image as uploaded to prevent duplicates
+        sessionStorage.setItem(uploadedKey, 'uploaded');
+
+        // === CRITICAL GALLERY UPDATE EVENT ===
+        console.log('📢 Dispatching gallery update event...');
+        
+        const galleryEvent = new CustomEvent('galleryUpdate', {
+          detail: { 
+            newPhoto: uploadResult,
+            source: 'automatic_upload',
+            timestamp: new Date().toISOString()
+          }
+        });
+        
+        window.dispatchEvent(galleryEvent);
+        
+        console.log('✅ Gallery update event dispatched successfully');
+        console.log('🎯 Gallery should refresh automatically now!');
+        
+        // Also trigger storage event as backup
+        localStorage.setItem('galleryRefresh', Date.now().toString());
+        
+        console.log('🎨 AI image automatically saved to gallery!');
+
+      } catch (uploadError) {
+        console.error('❌ === AUTOMATIC UPLOAD FAILED ===');
+        console.error('📊 Upload error details:', uploadError);
+        
+        // Don't show error to user since the image is still generated successfully
+        console.warn('⚠️ Image generated successfully but automatic gallery save failed');
+        console.warn('🎯 User can still see the generated image in the photobooth');
+      } finally {
+        setUploading(false);
+      }
+    };
+
+    // Trigger automatic upload
+    if (processedMedia && !processing) {
+      automaticUpload();
+    }
+
+  }, [processedMedia, config, processing, currentModelType, uploading]);
 
   // Enhanced resize function with validation
   const resizeImage = async (imageData: string): Promise<string> => {
@@ -300,7 +402,7 @@ export default function Photobooth() {
     </div>
   );
 
-  // Enhanced processMedia function with comprehensive debugging
+  // Enhanced processMedia function with automatic upload
   const processMedia = async () => {
     if (!mediaData) {
       setError('No photo captured');
@@ -432,60 +534,15 @@ export default function Photobooth() {
         size: aiContent.length
       });
 
+      // Update UI - this will trigger the automatic upload via useEffect
       setProcessedMedia(aiContent);
       setError(null);
 
-      // Upload to gallery if successful and enabled
-      if (config.enable_uploads && aiContent) {
-        console.log('📤 Starting gallery upload...');
-        
-        try {
-          // Add a small delay to ensure the UI updates
-          await new Promise(resolve => setTimeout(resolve, 100));
-          
-          const uploadResult = await uploadPhoto(
-            aiContent, 
-            config.global_prompt,
-            currentModelType
-          );
-          
-          if (uploadResult) {
-            console.log('🎉 Photo uploaded to gallery successfully:', {
-              id: uploadResult.id,
-              url: uploadResult.processed_url,
-              type: uploadResult.content_type
-            });
-
-            // Dispatch gallery update event
-            window.dispatchEvent(new CustomEvent('galleryUpdate', {
-              detail: { newPhoto: uploadResult }
-            }));
-
-            // Show success notification in console
-            console.log('📢 Gallery update event dispatched - gallery should refresh automatically');
-            
-          } else {
-            console.warn('⚠️ Upload completed but no result returned');
-          }
-          
-        } catch (uploadError) {
-          console.error('❌ Upload failed (non-critical):', uploadError);
-          
-          // Don't fail the entire process for upload errors
-          // Just log them as warnings since the user still has their generated image
-          console.warn('🤷 Upload failed but AI generation was successful. Image is still available for viewing.');
-          
-          // Show a subtle warning to the user
-          setTimeout(() => {
-            console.warn('💾 Note: Image generated successfully but gallery upload failed. The image is still visible above.');
-          }, 2000);
-        }
-      } else if (!config.enable_uploads) {
-        console.log('⚠️ Gallery uploads are disabled in configuration');
-      }
+      console.log('🎯 processMedia completed - automatic upload should trigger via useEffect');
 
     } catch (error) {
-      console.error('❌ Processing failed:', error);
+      console.error('❌ === AI GENERATION FAILED ===');
+      console.error('📊 Generation error details:', error);
 
       let errorMessage = 'Failed to generate AI content. Please try again.';
       
@@ -536,9 +593,12 @@ export default function Photobooth() {
     setError(null);
     setGenerationAttempts(0);
     setShowInstructions(true);
+    setUploading(false);
     if (processedMedia && processedMedia.startsWith('blob:')) {
       URL.revokeObjectURL(processedMedia);
     }
+    // Clear session storage for this session
+    sessionStorage.clear();
   };
 
   const handleWebcamError = (err: string | DOMException) => {
@@ -579,8 +639,6 @@ export default function Photobooth() {
     }
   };
 
-
-
   return (
     <div className="min-h-screen bg-gray-900">
       {/* Header */}
@@ -596,6 +654,13 @@ export default function Photobooth() {
               <ImageIcon className="w-6 h-6 text-green-500" />
               <span className="text-white font-medium">AI Photo Magic</span>
             </>
+          )}
+          {/* Upload Status Indicator */}
+          {uploading && (
+            <div className="inline-flex items-center gap-2 bg-blue-600/20 px-3 py-1 rounded-full">
+              <RefreshCw className="w-4 h-4 animate-spin text-blue-400" />
+              <span className="text-blue-400 text-sm">Saving to Gallery...</span>
+            </div>
           )}
         </div>
         {config?.global_prompt && (
@@ -773,6 +838,9 @@ export default function Photobooth() {
               <div className="absolute top-3 left-3 bg-black/70 text-white px-2 py-1 rounded-lg text-xs flex items-center gap-1">
                 <Wand2 className="w-3 h-3 text-purple-400" />
                 <span className="text-purple-400">AI Generated</span>
+                {uploading && (
+                  <RefreshCw className="w-3 h-3 text-blue-400 animate-spin ml-1" />
+                )}
               </div>
             )}
           </div>
@@ -810,8 +878,23 @@ export default function Photobooth() {
               </button>
             </div>
           )}
-          
 
+          {/* Auto-upload status message */}
+          {processedMedia && (
+            <div className="text-center text-sm text-gray-400 bg-gray-800/50 rounded-lg p-3">
+              {uploading ? (
+                <div className="flex items-center justify-center gap-2">
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  <span>Automatically saving to gallery...</span>
+                </div>
+              ) : (
+                <div className="flex items-center justify-center gap-2">
+                  <ImageIcon className="w-4 h-4 text-green-400" />
+                  <span className="text-green-400">Automatically saved to gallery</span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
