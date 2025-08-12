@@ -1,4 +1,78 @@
-// Updated uploadPhoto function for src/lib/supabase.ts
+// Complete src/lib/supabase.ts file
+import { createClient } from '@supabase/supabase-js';
+import type { Config, Photo } from '../types/supabase';
+
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error('Missing Supabase environment variables');
+}
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+// Configuration functions
+export async function getConfig(): Promise<Config | null> {
+  try {
+    const { data, error } = await supabase
+      .from('configs')
+      .select('*')
+      .single();
+
+    if (error) {
+      console.error('Error fetching config:', error);
+      return null;
+    }
+
+    return data;
+  } catch (error) {
+    console.error('Error in getConfig:', error);
+    return null;
+  }
+}
+
+export async function updateConfig(updates: Partial<Config>): Promise<Config | null> {
+  try {
+    // First, get the existing config to update
+    const existingConfig = await getConfig();
+    
+    if (!existingConfig) {
+      // If no config exists, create one with the updates
+      const { data, error } = await supabase
+        .from('configs')
+        .insert([updates])
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error creating config:', error);
+        return null;
+      }
+
+      return data;
+    }
+
+    // Update the existing config
+    const { data, error } = await supabase
+      .from('configs')
+      .update(updates)
+      .eq('id', existingConfig.id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error updating config:', error);
+      return null;
+    }
+
+    return data;
+  } catch (error) {
+    console.error('Error in updateConfig:', error);
+    return null;
+  }
+}
+
+// Enhanced uploadPhoto function with comprehensive error handling
 export async function uploadPhoto(
   imageData: string | File, 
   prompt: string, 
@@ -115,8 +189,7 @@ export async function uploadPhoto(
         .from('photos')
         .upload(filename, blob, {
           contentType: blob.type || (contentType === 'video' ? 'video/mp4' : 'image/png'),
-          upsert: false, // Don't overwrite existing files
-          duplex: 'half' // Required for some blob uploads
+          upsert: false // Don't overwrite existing files
         });
 
       if (uploadError) {
@@ -273,5 +346,33 @@ export async function uploadPhoto(
     }
     
     throw new Error('Upload failed due to an unexpected error. Please try again.');
+  }
+}
+
+// Get public photos function
+export async function getPublicPhotos(): Promise<Photo[]> {
+  try {
+    console.log('🔍 Fetching public photos from database...');
+    
+    const { data, error } = await supabase
+      .from('photos')
+      .select('*')
+      .eq('public', true)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('❌ Error fetching public photos:', error);
+      throw new Error(`Failed to fetch photos: ${error.message}`);
+    }
+
+    console.log('📊 Public photos query result:', {
+      count: data?.length || 0,
+      hasData: !!data
+    });
+
+    return data || [];
+  } catch (error) {
+    console.error('❌ Error in getPublicPhotos:', error);
+    throw error;
   }
 }
