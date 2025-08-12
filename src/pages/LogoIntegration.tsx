@@ -366,27 +366,69 @@ const BUILT_IN_BORDERS: BuiltInBorder[] = [
     }
   },
   {
-    id: 'minimal-line',
-    name: 'Minimal Line',
-    description: 'Clean, thin border line',
-    category: 'modern',
+    id: 'neon-circuit',
+    name: 'Neon Circuit',
+    description: 'Electric circuit board pattern with glow',
+    category: 'tech',
     generateCanvas: (width: number, height: number) => {
       const canvas = document.createElement('canvas');
       canvas.width = width;
       canvas.height = height;
       const ctx = canvas.getContext('2d')!;
       
-      const lineWidth = Math.min(width, height) * 0.008;
-      const offset = lineWidth * 3;
+      const borderWidth = Math.min(width, height) * 0.08;
       
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = lineWidth;
-      ctx.strokeRect(offset, offset, width - offset*2, height - offset*2);
+      // Dark background
+      ctx.fillStyle = '#0a0a0a';
+      ctx.fillRect(0, 0, width, height);
       
-      // Double line effect
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-      ctx.lineWidth = lineWidth/2;
-      ctx.strokeRect(offset*2, offset*2, width - offset*4, height - offset*4);
+      // Circuit traces
+      const traceWidth = 3;
+      const glowColor = '#00FFAA';
+      
+      // Create circuit pattern
+      ctx.strokeStyle = glowColor;
+      ctx.lineWidth = traceWidth;
+      ctx.shadowBlur = 10;
+      ctx.shadowColor = glowColor;
+      
+      // Horizontal traces
+      for (let y = borderWidth; y < height - borderWidth; y += borderWidth / 3) {
+        if (y < borderWidth * 2 || y > height - borderWidth * 2) {
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(width, y);
+          ctx.stroke();
+        }
+      }
+      
+      // Vertical traces
+      for (let x = borderWidth; x < width - borderWidth; x += borderWidth / 3) {
+        if (x < borderWidth * 2 || x > width - borderWidth * 2) {
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, height);
+          ctx.stroke();
+        }
+      }
+      
+      // Circuit nodes
+      ctx.shadowBlur = 5;
+      for (let i = 0; i < 8; i++) {
+        const x = (i < 4) ? borderWidth/2 : width - borderWidth/2;
+        const y = borderWidth + (i % 4) * (height - borderWidth*2) / 3;
+        
+        ctx.fillStyle = glowColor;
+        ctx.beginPath();
+        ctx.arc(x, y, 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      
+      ctx.shadowBlur = 0;
+      
+      // Clear center
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.fillRect(borderWidth, borderWidth, width - borderWidth*2, height - borderWidth*2);
       
       return canvas.toDataURL();
     }
