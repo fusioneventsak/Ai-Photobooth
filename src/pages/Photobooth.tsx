@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Webcam from 'react-webcam';
-import { Camera, Image as ImageIcon, Wand2, AlertCircle, Video, RefreshCw, Users, UserX } from 'lucide-react';
+import { Camera, ImageIcon, Wand2, AlertCircle, Video, RefreshCw, Users, UserX, Lightbulb, Eye, User } from 'lucide-react';
 import { useConfigStore } from '../store/configStore';
 import { uploadPhoto } from '../lib/supabase';
 import { generateImage } from '../lib/stableDiffusion';
@@ -14,6 +14,7 @@ export default function Photobooth() {
   const [error, setError] = useState<string | null>(null);
   const [currentModelType, setCurrentModelType] = useState<'image' | 'video'>('image');
   const [generationAttempts, setGenerationAttempts] = useState(0);
+  const [showInstructions, setShowInstructions] = useState(true);
   
   const webcamRef = React.useRef<Webcam>(null);
 
@@ -22,9 +23,6 @@ export default function Photobooth() {
     const checkEnv = () => {
       const stabilityKey = import.meta.env.VITE_STABILITY_API_KEY;
       const replicateKey = import.meta.env.VITE_REPLICATE_API_KEY;
-      
-      // Check if the key is being read
-      console.log('API Key:', import.meta.env.VITE_REPLICATE_API_KEY?.substring(0, 10) + '...');
       
       console.log('🔍 API Keys Status:');
       console.log('Stability AI:', stabilityKey ? 
@@ -47,7 +45,6 @@ export default function Photobooth() {
     // Load face detection models
     loadFaceApiModels().catch(error => {
       console.warn('Failed to load face detection models:', error);
-      // Don't set error state as this is not critical for basic functionality
     });
   }, []);
 
@@ -147,6 +144,7 @@ export default function Photobooth() {
       setMediaData(imageSrc);
       setProcessedMedia(null);
       setGenerationAttempts(0);
+      setShowInstructions(false);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to capture photo';
       console.error('Error capturing photo:', err);
@@ -155,7 +153,6 @@ export default function Photobooth() {
     }
   }, [webcamRef]);
 
-  // Helper function for better error icons
   const getErrorIcon = (error: string) => {
     if (error.includes('API') || error.includes('key')) return '🔑';
     if (error.includes('credits') || error.includes('balance')) return '💳';
@@ -165,15 +162,14 @@ export default function Photobooth() {
     return '❌';
   };
 
-  // Enhanced error display component
   const ErrorDisplay = ({ error, attempts }: { error: string; attempts: number }) => (
-    <div className="text-center p-4">
-      <div className="text-4xl mb-2">{getErrorIcon(error)}</div>
-      <AlertCircle className="w-12 h-12 mx-auto mb-2 text-red-500" />
-      <p className="text-red-500 max-w-md mx-auto">{error}</p>
+    <div className="text-center p-6">
+      <div className="text-4xl mb-3">{getErrorIcon(error)}</div>
+      <AlertCircle className="w-12 h-12 mx-auto mb-3 text-red-500" />
+      <p className="text-red-500 max-w-sm mx-auto text-sm">{error}</p>
       {attempts > 0 && attempts < 3 && (
-        <div className="mt-3">
-          <p className="text-gray-400 text-sm">
+        <div className="mt-4">
+          <p className="text-gray-400 text-xs">
             You can try again ({3 - attempts} attempts remaining)
           </p>
           <div className="w-full bg-gray-700 rounded-full h-2 mt-2">
@@ -185,7 +181,7 @@ export default function Photobooth() {
         </div>
       )}
       {attempts >= 3 && (
-        <p className="text-yellow-500 text-sm mt-2">
+        <p className="text-yellow-500 text-xs mt-2">
           Maximum attempts reached. Please capture a new photo.
         </p>
       )}
@@ -212,10 +208,8 @@ export default function Photobooth() {
     setError(null);
 
     try {
-      // Increment attempt counter
       setGenerationAttempts(prev => prev + 1);
 
-      // Resize the captured photo
       console.log('Resizing captured image...');
       const processedContent = await resizeImage(mediaData);
 
@@ -225,7 +219,6 @@ export default function Photobooth() {
       let aiContent: string;
 
       if (currentModelType === 'video') {
-        // Video generation
         const generationPromise = generateImage(
           config.global_prompt,
           processedContent,
@@ -239,7 +232,6 @@ export default function Photobooth() {
 
         aiContent = await Promise.race([generationPromise, timeoutPromise]);
       } else {
-        // Image generation with configurable face processing mode
         const faceMode = config.face_preservation_mode || 'preserve_face';
         console.log(`🎭 Using ${faceMode} mode...`);
         
@@ -248,8 +240,8 @@ export default function Photobooth() {
           processedContent,
           'image',
           5,
-          true, // Enable face processing
-          faceMode // Pass the face preservation mode
+          true,
+          faceMode
         );
 
         const timeoutPromise = new Promise<never>((_, reject) => {
@@ -283,7 +275,6 @@ export default function Photobooth() {
         }
       } catch (uploadError) {
         console.warn('Upload failed (non-critical):', uploadError);
-        // Don't show upload errors to user as the generation was successful
       }
 
     } catch (error) {
@@ -294,7 +285,6 @@ export default function Photobooth() {
       if (error instanceof Error) {
         const message = error.message.toLowerCase();
         
-        // Enhanced error message mapping
         if (message.includes('api key') || message.includes('unauthorized') || message.includes('401')) {
           errorMessage = 'API authentication failed. Please check your API key configuration.';
         } else if (message.includes('credits') || message.includes('insufficient') || message.includes('402')) {
@@ -314,7 +304,6 @@ export default function Photobooth() {
         } else if (message.includes('prompt')) {
           errorMessage = 'Invalid prompt configuration. Please check your settings.';
         } else {
-          // Use the original error message if it's user-friendly
           if (error.message.length < 100 && !message.includes('stack') && !message.includes('undefined')) {
             errorMessage = error.message;
           }
@@ -334,6 +323,7 @@ export default function Photobooth() {
     setProcessedMedia(null);
     setError(null);
     setGenerationAttempts(0);
+    setShowInstructions(true);
     if (processedMedia && processedMedia.startsWith('blob:')) {
       URL.revokeObjectURL(processedMedia);
     }
@@ -363,7 +353,6 @@ export default function Photobooth() {
     setError(userFriendlyMessage);
   };
 
-  // Helper functions for dynamic content based on face mode
   const getProcessingText = () => {
     const faceMode = config?.face_preservation_mode || 'preserve_face';
     
@@ -378,86 +367,159 @@ export default function Photobooth() {
     }
   };
 
-  const getPreviewText = () => {
-    const faceMode = config?.face_preservation_mode || 'preserve_face';
-    
-    if (currentModelType === 'video') {
-      return 'AI generated video will appear here';
-    }
-    
-    if (faceMode === 'preserve_face') {
-      return (
-        <>
-          AI generated image will appear here
-          <span className="block text-green-400 text-sm mt-1">with your face preserved</span>
-        </>
-      );
-    } else {
-      return (
-        <>
-          AI generated image will appear here
-          <span className="block text-orange-400 text-sm mt-1">with new character/face</span>
-        </>
-      );
-    }
-  };
+  // Don't show the processed media area until there's either processed media, processing, or an error
+  const showResultArea = processedMedia || processing || (error && !showInstructions);
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="max-w-4xl mx-auto">
-        {/* Model type indicator */}
-        <div className="mb-6 text-center">
-          <div className="inline-flex items-center gap-2 px-4 py-2 bg-gray-800 rounded-full">
-            {currentModelType === 'video' ? (
-              <>
-                <Video className="w-5 h-5 text-blue-500" />
-                <span className="text-white">Video Generation Mode</span>
-              </>
+    <div className="min-h-screen bg-gray-900">
+      {/* Header */}
+      <div className="bg-gray-800 p-4 text-center border-b border-gray-700">
+        <div className="flex items-center justify-center gap-3 mb-2">
+          {currentModelType === 'video' ? (
+            <>
+              <Video className="w-6 h-6 text-blue-500" />
+              <span className="text-white font-medium">AI Video Generator</span>
+            </>
+          ) : (
+            <>
+              <ImageIcon className="w-6 h-6 text-green-500" />
+              <span className="text-white font-medium">AI Photo Magic</span>
+            </>
+          )}
+        </div>
+        {config?.global_prompt && (
+          <p className="text-gray-300 text-sm px-2">
+            {config.global_prompt}
+          </p>
+        )}
+      </div>
+
+      <div className="container mx-auto px-4 py-6 max-w-lg">
+        {/* Photography Instructions */}
+        {showInstructions && !mediaData && (
+          <div className="mb-6 bg-gradient-to-br from-blue-900/20 to-purple-900/20 border border-blue-500/30 rounded-xl p-5">
+            <h3 className="text-white font-semibold mb-4 flex items-center gap-2">
+              <Lightbulb className="w-5 h-5 text-yellow-400" />
+              Get the Best Results
+            </h3>
+            <div className="space-y-3 text-sm">
+              <div className="flex items-start gap-3">
+                <Lightbulb className="w-4 h-4 text-yellow-400 mt-0.5 flex-shrink-0" />
+                <div>
+                  <span className="text-white font-medium">Good Lighting:</span>
+                  <span className="text-gray-300"> Face the light source, avoid shadows on your face</span>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <Eye className="w-4 h-4 text-green-400 mt-0.5 flex-shrink-0" />
+                <div>
+                  <span className="text-white font-medium">Face the Camera:</span>
+                  <span className="text-gray-300"> Look directly at the lens for best face detection</span>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <User className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" />
+                <div>
+                  <span className="text-white font-medium">Chest Up Shot:</span>
+                  <span className="text-gray-300"> Frame from chest to top of head for optimal results</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Camera Preview */}
+        <div className="bg-gray-800 rounded-xl overflow-hidden mb-6 shadow-2xl">
+          <div className="aspect-square bg-black relative">
+            {mediaData ? (
+              <img 
+                src={mediaData} 
+                alt="Captured" 
+                className="w-full h-full object-cover" 
+              />
             ) : (
-              <>
-                <ImageIcon className="w-5 h-5 text-green-500" />
-                <span className="text-white">Smart Face Processing</span>
-              </>
+              <Webcam
+                ref={webcamRef}
+                screenshotFormat="image/jpeg"
+                className="w-full h-full object-cover"
+                onUserMediaError={handleWebcamError}
+                videoConstraints={{
+                  width: 1024,
+                  height: 1024,
+                  facingMode: "user"
+                }}
+              />
+            )}
+            
+            {/* Generation attempts indicator */}
+            {generationAttempts > 0 && (
+              <div className="absolute top-3 right-3 bg-black/70 text-white px-2 py-1 rounded-lg text-sm">
+                Attempt {generationAttempts}/3
+              </div>
+            )}
+
+            {/* Face mode indicator */}
+            {currentModelType === 'image' && config && (
+              <div className="absolute top-3 left-3 bg-black/70 text-white px-2 py-1 rounded-lg text-xs flex items-center gap-1">
+                {(config.face_preservation_mode || 'preserve_face') === 'preserve_face' ? (
+                  <>
+                    <Users className="w-3 h-3 text-green-400" />
+                    <span className="text-green-400">Face Preserved</span>
+                  </>
+                ) : (
+                  <>
+                    <UserX className="w-3 h-3 text-orange-400" />
+                    <span className="text-orange-400">New Character</span>
+                  </>
+                )}
+              </div>
             )}
           </div>
         </div>
 
-        {/* Main content grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Webcam section */}
-          <div className="bg-gray-800 rounded-lg overflow-hidden">
-            <div className="aspect-square bg-black relative">
-              {mediaData ? (
-                <img 
-                  src={mediaData} 
-                  alt="Captured" 
-                  className="w-full h-full object-cover" 
-                />
-              ) : (
-                <Webcam
-                  ref={webcamRef}
-                  screenshotFormat="image/jpeg"
-                  className="w-full h-full object-cover"
-                  onUserMediaError={handleWebcamError}
-                  videoConstraints={{
-                    width: 1024,
-                    height: 1024,
-                    facingMode: "user"
-                  }}
-                />
-              )}
-              
-              {/* Generation attempts indicator */}
-              {generationAttempts > 0 && (
-                <div className="absolute top-2 right-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded text-sm">
-                  Attempts: {generationAttempts}/3
-                </div>
-              )}
+        {/* Action Buttons */}
+        <div className="space-y-4 mb-6">
+          {!mediaData ? (
+            <button
+              onClick={capturePhoto}
+              disabled={!!error}
+              className="w-full flex items-center justify-center gap-3 py-5 rounded-xl hover:opacity-90 transition disabled:opacity-50 text-lg font-semibold shadow-lg"
+              style={{ backgroundColor: config?.primary_color || '#3B82F6' }}
+            >
+              <Camera className="w-7 h-7" />
+              Take Photo
+            </button>
+          ) : (
+            <div className="space-y-3">
+              <button
+                onClick={processMedia}
+                disabled={processing || !!error || generationAttempts >= 3}
+                className="w-full flex items-center justify-center gap-3 py-5 rounded-xl transition disabled:opacity-50 text-lg font-semibold shadow-lg"
+                style={{ backgroundColor: config?.primary_color || '#3B82F6' }}
+              >
+                <Wand2 className="w-7 h-7" />
+                {processing ? 'Creating Magic...' : `Generate AI ${currentModelType}`}
+              </button>
+              <button
+                onClick={reset}
+                className="w-full flex items-center justify-center gap-2 py-3 bg-gray-600 rounded-xl hover:bg-gray-700 transition font-medium"
+              >
+                <Camera className="w-5 h-5" />
+                Take New Photo
+              </button>
             </div>
-          </div>
+          )}
+        </div>
 
-          {/* Generated content section */}
-          <div className="bg-gray-800 rounded-lg overflow-hidden">
+        {/* AI Generated Result - Only show when there's content, processing, or error */}
+        {showResultArea && (
+          <div className="bg-gray-800 rounded-xl overflow-hidden shadow-2xl">
+            <div className="bg-gray-700 px-4 py-3 border-b border-gray-600">
+              <h3 className="text-white font-medium flex items-center gap-2">
+                <Wand2 className="w-4 h-4" />
+                AI Generated {currentModelType}
+              </h3>
+            </div>
             <div className="aspect-square bg-black relative flex items-center justify-center">
               {processedMedia ? (
                 currentModelType === 'video' ? (
@@ -476,99 +538,18 @@ export default function Photobooth() {
                     className="w-full h-full object-cover" 
                   />
                 )
-              ) : (
-                <div className="flex items-center justify-center h-full text-gray-500">
-                  {processing ? (
-                    <div className="text-center p-4">
-                      <RefreshCw className="w-12 h-12 mx-auto mb-3 animate-spin text-blue-500" />
-                      <p className="text-white">Creating your AI {currentModelType}...</p>
-                      <p className="text-gray-400 text-sm mt-2">
-                        {getProcessingText()}
-                      </p>
-                    </div>
-                  ) : error ? (
-                    <ErrorDisplay error={error} attempts={generationAttempts} />
-                  ) : (
-                    <div className="text-center">
-                      <div className="flex items-center justify-center gap-2 mb-2">
-                        {currentModelType === 'video' ? (
-                          <Video className="w-8 h-8" />
-                        ) : (
-                          <ImageIcon className="w-8 h-8 text-green-400" />
-                        )}
-                      </div>
-                      <p>
-                        {getPreviewText()}
-                      </p>
-                    </div>
-                  )}
+              ) : processing ? (
+                <div className="text-center p-6">
+                  <RefreshCw className="w-16 h-16 mx-auto mb-4 animate-spin text-blue-500" />
+                  <p className="text-white text-lg font-medium mb-2">Creating your AI {currentModelType}...</p>
+                  <p className="text-gray-400 text-sm">
+                    {getProcessingText()}
+                  </p>
                 </div>
-              )}
+              ) : error ? (
+                <ErrorDisplay error={error} attempts={generationAttempts} />
+              ) : null}
             </div>
-          </div>
-        </div>
-
-        {/* Action buttons */}
-        <div className="mt-6 flex justify-center gap-4">
-          {!mediaData ? (
-            <button
-              onClick={capturePhoto}
-              disabled={!!error}
-              className="flex items-center gap-2 px-8 py-4 rounded-lg hover:opacity-90 transition disabled:opacity-50 text-lg font-medium"
-              style={{ backgroundColor: config?.primary_color || '#3B82F6' }}
-            >
-              <Camera className="w-6 h-6" />
-              Take Photo
-            </button>
-          ) : (
-            <>
-              <button
-                onClick={reset}
-                className="flex items-center gap-2 px-6 py-3 bg-gray-600 rounded-lg hover:bg-gray-700 transition"
-              >
-                <Camera className="w-5 h-5" />
-                Retake Photo
-              </button>
-              <button
-                onClick={processMedia}
-                disabled={processing || !!error || generationAttempts >= 3}
-                className="flex items-center gap-2 px-8 py-4 rounded-lg transition disabled:opacity-50 text-lg font-medium"
-                style={{ backgroundColor: config?.primary_color || '#3B82F6' }}
-              >
-                <Wand2 className="w-6 h-6" />
-                {processing ? 'Creating Magic...' : `Create AI ${currentModelType}`}
-              </button>
-            </>
-          )}
-        </div>
-
-        {/* Current prompt display */}
-        {config?.global_prompt && (
-          <div className="mt-8 bg-gray-800 rounded-lg p-4">
-            <h3 className="text-white font-medium mb-2 flex items-center gap-2">
-              <Wand2 className="w-4 h-4" />
-              AI Generation Theme:
-            </h3>
-            <p className="text-gray-300 text-sm">{config.global_prompt}</p>
-            {currentModelType === 'image' && (
-              <div className="mt-2 flex items-center gap-2">
-                {(config.face_preservation_mode || 'preserve_face') === 'preserve_face' ? (
-                  <>
-                    <Users className="w-4 h-4 text-green-400" />
-                    <p className="text-green-400 text-xs">
-                      ✨ Preserve Face Mode - Your identity will be maintained
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <UserX className="w-4 h-4 text-orange-400" />
-                    <p className="text-orange-400 text-xs">
-                      🎭 Replace Face Mode - New character will be generated
-                    </p>
-                  </>
-                )}
-              </div>
-            )}
           </div>
         )}
       </div>
