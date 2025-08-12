@@ -579,136 +579,7 @@ export default function Photobooth() {
     }
   };
 
-  // Enhanced debugging test button
-  const debugUploadTest = async () => {
-    console.log('🔧 === ENHANCED DEBUGGING UPLOAD SYSTEM ===');
-    
-    try {
-      // Test 1: Environment variables
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-      
-      console.log('1. Environment Check:', {
-        supabaseUrl: supabaseUrl ? '✅ Present' : '❌ Missing',
-        supabaseKey: supabaseKey ? '✅ Present' : '❌ Missing'
-      });
 
-      if (!supabaseUrl || !supabaseKey) {
-        alert('❌ Missing Supabase environment variables!');
-        return;
-      }
-
-      // Test 2: Create a proper test image (colorful pattern, not solid)
-      const canvas = document.createElement('canvas');
-      canvas.width = 200;
-      canvas.height = 200;
-      const ctx = canvas.getContext('2d');
-      
-      if (!ctx) {
-        throw new Error('Canvas context not available');
-      }
-
-      // Create a colorful test pattern instead of solid color
-      const gradient = ctx.createLinearGradient(0, 0, 200, 200);
-      gradient.addColorStop(0, '#FF6B6B');
-      gradient.addColorStop(0.25, '#4ECDC4');
-      gradient.addColorStop(0.5, '#45B7D1');
-      gradient.addColorStop(0.75, '#96CEB4');
-      gradient.addColorStop(1, '#FFEAA7');
-      
-      ctx.fillStyle = gradient;
-      ctx.fillRect(0, 0, 200, 200);
-      
-      // Add some geometric shapes
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-      ctx.beginPath();
-      ctx.arc(50, 50, 30, 0, 2 * Math.PI);
-      ctx.fill();
-      
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-      ctx.fillRect(120, 30, 60, 60);
-      
-      // Add some text
-      ctx.fillStyle = 'white';
-      ctx.font = 'bold 16px Arial';
-      ctx.fillText('DEBUG TEST', 60, 130);
-      ctx.fillText(new Date().toLocaleTimeString(), 45, 150);
-      
-      const testImageData = canvas.toDataURL('image/png');
-      
-      console.log('2. Test Image Created:', {
-        format: testImageData.substring(0, 30) + '...',
-        size: testImageData.length,
-        canvas: `${canvas.width}x${canvas.height}`
-      });
-
-      // Validate the test image
-      const validation = validateImageData(testImageData);
-      console.log('3. Test Image Validation:', validation);
-      
-      if (!validation.isValid) {
-        alert(`❌ Test image validation failed: ${validation.error}`);
-        return;
-      }
-
-      // Test 4: Upload the test image
-      console.log('4. Testing upload...');
-      const uploadResult = await uploadPhoto(testImageData, 'Enhanced Debug Test - Colorful gradient pattern with shapes and text', 'image');
-      
-      if (!uploadResult) {
-        alert('❌ Upload returned null result');
-        return;
-      }
-
-      console.log('5. Upload Success:', uploadResult);
-      
-      // Test 5: Verify the uploaded image can be loaded
-      const testImg = new Image();
-      
-      const imageLoadPromise = new Promise<void>((resolve, reject) => {
-        testImg.onload = () => {
-          console.log('6. ✅ Uploaded image loads successfully:', {
-            width: testImg.width,
-            height: testImg.height,
-            src: uploadResult.processed_url
-          });
-          resolve();
-        };
-        
-        testImg.onerror = (err) => {
-          console.error('6. ❌ Uploaded image failed to load:', err);
-          reject(new Error('Uploaded image failed to load'));
-        };
-        
-        // Set timeout for image loading
-        setTimeout(() => {
-          reject(new Error('Image loading timeout'));
-        }, 10000);
-        
-        testImg.src = uploadResult.processed_url || uploadResult.original_url;
-      });
-
-      try {
-        await imageLoadPromise;
-        
-        alert(`🎉 ENHANCED DEBUG TEST SUCCESSFUL!\n\nDetails:\n• ID: ${uploadResult.id}\n• Type: ${uploadResult.content_type}\n• Size: ${testImageData.length} bytes\n• URL: ${uploadResult.processed_url}\n\n✅ Check the gallery now to see the colorful test image!`);
-        
-        // Dispatch gallery update
-        window.dispatchEvent(new CustomEvent('galleryUpdate', {
-          detail: { newPhoto: uploadResult }
-        }));
-        
-        console.log('📢 Gallery update event dispatched for debug test');
-        
-      } catch (loadError) {
-        alert(`⚠️ Upload succeeded but image verification failed:\n${loadError instanceof Error ? loadError.message : 'Unknown error'}\n\nCheck the gallery and browser network tab for more details.`);
-      }
-      
-    } catch (error) {
-      console.error('Enhanced debug test failed:', error);
-      alert(`❌ Enhanced debug test failed:\n${error instanceof Error ? error.message : 'Unknown error'}\n\nCheck the browser console for detailed logs.`);
-    }
-  };
 
   return (
     <div className="min-h-screen bg-gray-900">
@@ -940,14 +811,44 @@ export default function Photobooth() {
             </div>
           )}
           
-          {/* Enhanced Debug Test Button */}
-          <button
-            onClick={debugUploadTest}
-            className="w-full flex items-center justify-center gap-2 py-3 bg-purple-600 rounded-xl hover:bg-purple-700 transition font-medium"
-          >
-            <Wand2 className="w-5 h-5" />
-            🔧 Enhanced Debug Test
-          </button>
+          {/* Add to Gallery Button - Only show when there's a processed image */}
+          {processedMedia && !processing && (
+            <button
+              onClick={async () => {
+                if (!processedMedia || !config) return;
+                
+                try {
+                  console.log('📤 Manual gallery upload triggered...');
+                  
+                  const uploadResult = await uploadPhoto(
+                    processedMedia,
+                    config.global_prompt || 'AI Generated Image',
+                    currentModelType
+                  );
+                  
+                  if (uploadResult) {
+                    console.log('✅ Manual upload successful:', uploadResult.id);
+                    
+                    // Dispatch gallery update event
+                    window.dispatchEvent(new CustomEvent('galleryUpdate', {
+                      detail: { newPhoto: uploadResult }
+                    }));
+                    
+                    alert('✅ Photo added to gallery successfully!');
+                  } else {
+                    alert('❌ Failed to add photo to gallery');
+                  }
+                } catch (error) {
+                  console.error('❌ Manual upload failed:', error);
+                  alert(`❌ Upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                }
+              }}
+              className="w-full flex items-center justify-center gap-2 py-3 bg-green-600 rounded-xl hover:bg-green-700 transition font-medium"
+            >
+              <ImageIcon className="w-5 h-5" />
+              Add to Gallery
+            </button>
+          )}
         </div>
       </div>
     </div>
