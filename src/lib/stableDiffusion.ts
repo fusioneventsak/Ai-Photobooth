@@ -18,7 +18,7 @@ export async function generateImage(
   preserveFace: boolean = true,
   facePreservationMode: 'preserve_face' | 'replace_face' = 'preserve_face'
 ): Promise<string> {
-  console.log(`🎯 Using ${facePreservationMode} mode for ${modelType} transformation`);
+  console.log(`🎯 Starting generation - ${facePreservationMode} mode for ${modelType} transformation`);
  
   // Input validation
   if (!prompt.trim()) {
@@ -32,9 +32,12 @@ export async function generateImage(
   try {
     let generatedResult: string;
 
+    // Generate the base image/video first
     if (modelType === 'video') {
+      console.log('🎬 Generating video...');
       generatedResult = await generateVideoWithIdeogram(prompt, originalContent, videoDuration, preserveFace, facePreservationMode);
     } else {
+      console.log('🖼️ Generating image...');
       if (facePreservationMode === 'preserve_face') {
         generatedResult = await generateWithFacePreservation(prompt, originalContent);
       } else {
@@ -42,28 +45,67 @@ export async function generateImage(
       }
     }
 
-    // **NEW: Apply overlay if one is configured (only for images, not videos)**
-    if (modelType === 'image' && shouldApplyOverlay()) {
-      console.log('🎨 Overlay detected - applying to generated image...');
+    console.log('✅ Base generation completed successfully, result length:', generatedResult.length);
+
+    // **ENHANCED: Apply overlay if one is configured (only for images, not videos)**
+    if (modelType === 'image') {
+      console.log('🔍 Checking for overlay application...');
       
       try {
-        const overlayConfig = getActiveOverlay();
-        if (overlayConfig) {
-          const imageWithOverlay = await applyOverlayToImage(generatedResult, overlayConfig);
-          console.log('✅ Overlay applied successfully');
-          return imageWithOverlay;
+        // Check if overlay should be applied
+        const shouldApply = shouldApplyOverlay();
+        console.log('🎯 Should apply overlay:', shouldApply);
+        
+        if (shouldApply) {
+          console.log('🎨 Overlay detected - applying to generated image...');
+          
+          const overlayConfig = getActiveOverlay();
+          console.log('📋 Overlay config:', {
+            hasConfig: !!overlayConfig,
+            name: overlayConfig?.name,
+            type: overlayConfig?.type,
+            borderId: overlayConfig?.borderId,
+            position: overlayConfig?.settings?.position,
+            scale: overlayConfig?.settings?.scale,
+            opacity: overlayConfig?.settings?.opacity
+          });
+          
+          if (overlayConfig) {
+            console.log('🖼️ Applying overlay to generated image...');
+            const startTime = Date.now();
+            
+            const imageWithOverlay = await applyOverlayToImage(generatedResult, overlayConfig);
+            
+            const endTime = Date.now();
+            console.log(`✅ Overlay applied successfully in ${endTime - startTime}ms!`);
+            console.log('📊 Final result:', {
+              originalLength: generatedResult.length,
+              overlayLength: imageWithOverlay.length,
+              hasOverlay: imageWithOverlay !== generatedResult
+            });
+            
+            return imageWithOverlay;
+          } else {
+            console.warn('⚠️ shouldApplyOverlay returned true but getActiveOverlay returned null');
+          }
+        } else {
+          console.log('ℹ️ No overlay configured - returning original image');
         }
       } catch (overlayError) {
-        console.warn('⚠️ Overlay application failed:', overlayError);
-        // Return original image if overlay fails - don't break the flow
+        console.error('❌ Overlay application failed:', overlayError);
+        console.error('Stack trace:', overlayError);
         console.log('📤 Returning original generated image without overlay');
+        // Return original image if overlay fails - don't break the flow
       }
+    } else {
+      console.log('ℹ️ Skipping overlay for video generation');
     }
 
+    console.log('📤 Returning final result (no overlay applied), length:', generatedResult.length);
     return generatedResult;
 
   } catch (error) {
-    console.error(`${modelType} generation with ${facePreservationMode} failed:`, error);
+    console.error(`❌ ${modelType} generation with ${facePreservationMode} failed:`, error);
     throw new Error(error instanceof Error ? error.message : `Failed to generate ${modelType} with ${facePreservationMode}`);
   }
 }
