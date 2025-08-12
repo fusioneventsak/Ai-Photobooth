@@ -792,12 +792,12 @@ export default function OverlayIntegration() {
     reader.readAsDataURL(file);
   };
 
-  // Handle border selection with auto-settings
+  // Handle border selection with auto-settings and optimized storage
   const handleBorderSelect = (borderId: string) => {
     const border = BUILT_IN_BORDERS.find(b => b.id === borderId);
     if (border) {
-      // Generate border at a high resolution for quality
-      const borderImage = border.generateCanvas(1024, 1024);
+      // Generate border at optimized resolution (512x512 is sufficient for quality)
+      const borderImage = border.generateCanvas(512, 512);
       setOverlayImage(borderImage);
       setSelectedBorder(borderId);
       setOverlayName(border.name);
@@ -952,7 +952,55 @@ export default function OverlayIntegration() {
     }
   }, [overlaySettings, overlayImage, testImage]);
 
-  // Save overlay configuration
+  // Compress image data for storage
+  const compressImageForStorage = (imageData: string): string => {
+    try {
+      // For built-in borders, store reference instead of full image data
+      if (selectedBorder) {
+        return JSON.stringify({ 
+          type: 'built-in', 
+          borderId: selectedBorder,
+          compressed: true 
+        });
+      }
+      
+      // For custom images, compress if too large
+      if (imageData.length > 500000) { // If larger than ~500KB
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        const img = new Image();
+        
+        return new Promise<string>((resolve) => {
+          img.onload = () => {
+            // Reduce size while maintaining quality
+            const maxSize = 800;
+            let { width, height } = img;
+            
+            if (width > maxSize || height > maxSize) {
+              const ratio = Math.min(maxSize / width, maxSize / height);
+              width *= ratio;
+              height *= ratio;
+            }
+            
+            canvas.width = width;
+            canvas.height = height;
+            ctx!.drawImage(img, 0, 0, width, height);
+            
+            // Use higher compression for storage
+            resolve(canvas.toDataURL('image/jpeg', 0.7));
+          };
+          img.src = imageData;
+        }).then(compressed => compressed);
+      }
+      
+      return imageData;
+    } catch (error) {
+      console.warn('Compression failed, using original:', error);
+      return imageData;
+    }
+  };
+
+  // Save overlay configuration with compression and error handling
   const saveOverlayConfig = async () => {
     if (!overlayImage || !overlayName.trim()) {
       setError('Please provide an overlay image and name');
@@ -963,19 +1011,100 @@ export default function OverlayIntegration() {
     setError(null);
     
     try {
-      // Save overlay configuration to localStorage
+      // Compress image for storage
+      let compressedImage: string;
+      
+      if (selectedBorder) {
+        // For built-in borders, just store the reference
+        compressedImage = JSON.stringify({ 
+          type: 'built-in', 
+          borderId: selectedBorder 
+        });
+      } else {
+        // For custom uploads, compress if needed
+        compressedImage = overlayImage;
+        if (overlayImage.length > 500000) {
+          // Compress large images
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          const img = new Image();
+          
+          compressedImage = await new Promise<string>((resolve) => {
+            img.onload = () => {
+              const maxSize = 600;
+              let { width, height } = img;
+              
+              if (width > maxSize || height > maxSize) {
+                const ratio = Math.min(maxSize / width, maxSize / height);
+                width *= ratio;
+                height *= ratio;
+              }
+              
+              canvas.width = width;
+              canvas.height = height;
+              ctx!.drawImage(img, 0, 0, width, height);
+              
+              // Use JPEG compression for smaller storage
+              resolve(canvas.toDataURL('image/jpeg', 0.8));
+            };
+            img.src = overlayImage;
+          });
+        }
+      }
+
+      // Save overlay configuration
       const overlayConfig = {
         name: overlayName,
-        image: overlayImage,
+        image: compressedImage,
         settings: overlaySettings,
         createdAt: new Date().toISOString(),
-        type: selectedBorder ? 'border' : 'custom'
+        type: selectedBorder ? 'border' : 'custom',
+        borderId: selectedBorder || undefined
       };
 
-      // Get existing overlays and add new one
+      // Check localStorage space before saving
+      const testKey = 'storage-test';
+      const testData = JSON.stringify(overlayConfig);
+      
+      try {
+        localStorage.setItem(testKey, testData);
+        localStorage.removeItem(testKey);
+      } catch (quotaError) {
+        // If still too big, try more aggressive compression
+        if (!selectedBorder && overlayImage.length > 200000) {
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          const img = new Image();
+          
+          compressedImage = await new Promise<string>((resolve) => {
+            img.onload = () => {
+              const maxSize = 400; // Even smaller
+              let { width, height } = img;
+              
+              const ratio = Math.min(maxSize / width, maxSize / height);
+              width *= ratio;
+              height *= ratio;
+              
+              canvas.width = width;
+              canvas.height = height;
+              ctx!.drawImage(img, 0, 0, width, height);
+              
+              // More aggressive compression
+              resolve(canvas.toDataURL('image/jpeg', 0.6));
+            };
+            img.src = overlayImage;
+          });
+          
+          overlayConfig.image = compressedImage;
+        } else {
+          throw new Error('Overlay too large for storage. Please use a smaller image or try a built-in border.');
+        }
+      }
+
+      // Get existing overlays
       const existingOverlays = JSON.parse(localStorage.getItem('photoboothOverlays') || '[]');
       
-      // Check if overlay with same name exists and ask for confirmation
+      // Check if overlay with same name exists
       const existingIndex = existingOverlays.findIndex((overlay: any) => overlay.name === overlayName);
       if (existingIndex !== -1) {
         const shouldReplace = confirm(`An overlay named "${overlayName}" already exists. Do you want to replace it?`);
@@ -986,11 +1115,33 @@ export default function OverlayIntegration() {
           return;
         }
       } else {
-        existingOverlays.push(overlayConfig);
+        // Limit to 10 overlays to prevent storage issues
+        if (existingOverlays.length >= 10) {
+          const shouldContinue = confirm('You have reached the maximum of 10 overlays. The oldest one will be removed. Continue?');
+          if (shouldContinue) {
+            existingOverlays.shift(); // Remove oldest
+            existingOverlays.push(overlayConfig);
+          } else {
+            setProcessing(false);
+            return;
+          }
+        } else {
+          existingOverlays.push(overlayConfig);
+        }
       }
 
-      // Save to localStorage
-      localStorage.setItem('photoboothOverlays', JSON.stringify(existingOverlays));
+      // Save to localStorage with final check
+      try {
+        localStorage.setItem('photoboothOverlays', JSON.stringify(existingOverlays));
+      } catch (finalError) {
+        // Last resort: clear old overlays and save just this one
+        const shouldClearOld = confirm('Storage is full. Would you like to clear old overlays and save this new one?');
+        if (shouldClearOld) {
+          localStorage.setItem('photoboothOverlays', JSON.stringify([overlayConfig]));
+        } else {
+          throw new Error('Unable to save overlay due to storage limitations. Please try a smaller image.');
+        }
+      }
 
       // Also save test result to gallery if available
       if (resultImage) {
