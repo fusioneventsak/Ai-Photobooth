@@ -1,11 +1,15 @@
 import axios, { AxiosError } from 'axios';
 import { detectFaces, createFaceMask, loadFaceApiModels } from './faceDetection';
+import { getActiveOverlay, applyOverlayToImage, shouldApplyOverlay } from './overlayUtils';
+
 const STABILITY_API_KEY = import.meta.env.VITE_STABILITY_API_KEY;
 const REPLICATE_API_KEY = import.meta.env.VITE_REPLICATE_API_KEY;
+
 // Enhanced error handling and retry logic
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 2000; // 2 seconds
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 export async function generateImage(
   prompt: string,
   originalContent: string,
@@ -24,21 +28,46 @@ export async function generateImage(
   if (!originalContent?.startsWith('data:image/')) {
     throw new Error('Invalid image format. Please provide a valid image.');
   }
+
   try {
+    let generatedResult: string;
+
     if (modelType === 'video') {
-      return await generateVideoWithIdeogram(prompt, originalContent, videoDuration, preserveFace, facePreservationMode);
+      generatedResult = await generateVideoWithIdeogram(prompt, originalContent, videoDuration, preserveFace, facePreservationMode);
     } else {
       if (facePreservationMode === 'preserve_face') {
-        return await generateWithFacePreservation(prompt, originalContent);
+        generatedResult = await generateWithFacePreservation(prompt, originalContent);
       } else {
-        return await generateWithFaceReplacement(prompt, originalContent);
+        generatedResult = await generateWithFaceReplacement(prompt, originalContent);
       }
     }
+
+    // **NEW: Apply overlay if one is configured (only for images, not videos)**
+    if (modelType === 'image' && shouldApplyOverlay()) {
+      console.log('🎨 Overlay detected - applying to generated image...');
+      
+      try {
+        const overlayConfig = getActiveOverlay();
+        if (overlayConfig) {
+          const imageWithOverlay = await applyOverlayToImage(generatedResult, overlayConfig);
+          console.log('✅ Overlay applied successfully');
+          return imageWithOverlay;
+        }
+      } catch (overlayError) {
+        console.warn('⚠️ Overlay application failed:', overlayError);
+        // Return original image if overlay fails - don't break the flow
+        console.log('📤 Returning original generated image without overlay');
+      }
+    }
+
+    return generatedResult;
+
   } catch (error) {
     console.error(`${modelType} generation with ${facePreservationMode} failed:`, error);
     throw new Error(error instanceof Error ? error.message : `Failed to generate ${modelType} with ${facePreservationMode}`);
   }
 }
+
 async function generateVideoWithIdeogram(
   prompt: string,
   originalContent: string,
@@ -121,6 +150,7 @@ async function generateVideoWithIdeogram(
     throw new Error('Failed to generate video: ' + (error instanceof Error ? error.message : 'Unknown error'));
   }
 }
+
 // Direct API calls without using the Replicate library (browser-compatible)
 async function generateCharacterPreservationImageDirect(prompt: string, originalContent: string): Promise<string> {
   try {
@@ -164,11 +194,13 @@ async function generateCharacterPreservationImageDirect(prompt: string, original
     return await generateWithIdeogramV3Direct(prompt);
   }
 }
+
 async function generateCharacterTransformationImageDirect(prompt: string, originalContent: string): Promise<string> {
   console.log('🎨 Using direct API call for character transformation...');
  
   return await generateWithIdeogramV3Direct(prompt);
 }
+
 async function generateWithIdeogramV3Direct(prompt: string): Promise<string> {
   try {
     const response = await fetch('https://api.replicate.com/v1/predictions', {
@@ -205,6 +237,7 @@ async function generateWithIdeogramV3Direct(prompt: string): Promise<string> {
     throw new Error('Image generation failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
   }
 }
+
 async function generateVideoFromImageDirect(imageUrl: string): Promise<string> {
   try {
     const response = await fetch('https://api.replicate.com/v1/predictions', {
@@ -246,6 +279,7 @@ async function generateVideoFromImageDirect(imageUrl: string): Promise<string> {
     throw error;
   }
 }
+
 // Wait for a Replicate prediction to complete
 async function waitForPrediction(predictionId: string): Promise<any> {
   const maxAttempts = 60; // 5 minutes max (5 second intervals)
@@ -289,6 +323,7 @@ async function waitForPrediction(predictionId: string): Promise<any> {
  
   throw new Error('Prediction timed out');
 }
+
 // Generate character image while preserving identity
 async function generateCharacterPreservationImage(replicate: any, prompt: string, originalContent: string): Promise<string> {
   try {
@@ -327,12 +362,14 @@ async function generateCharacterPreservationImage(replicate: any, prompt: string
     return await generateWithIdeogramV3(replicate, prompt);
   }
 }
+
 // Generate transformed character image
 async function generateCharacterTransformationImage(replicate: any, prompt: string, originalContent: string): Promise<string> {
   console.log('🎨 Using Ideogram v3 for character transformation...');
  
   return await generateWithIdeogramV3(replicate, prompt);
 }
+
 // Generate image using Ideogram v3
 async function generateWithIdeogramV3(replicate: any, prompt: string): Promise<string> {
   try {
@@ -364,6 +401,7 @@ async function generateWithIdeogramV3(replicate: any, prompt: string): Promise<s
     throw new Error('Image generation failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
   }
 }
+
 // Create a simple fallback image when all else fails
 async function createSimpleFallbackImage(prompt: string): Promise<string> {
   console.log('🎨 Creating fallback image...');
@@ -419,6 +457,7 @@ async function createSimpleFallbackImage(prompt: string): Promise<string> {
   // Convert to data URL
   return canvas.toDataURL('image/png');
 }
+
 async function downloadAndCreateBlobUrl(url: string, type: 'image' | 'video'): Promise<string> {
   try {
     console.log(`⬇️ Downloading generated ${type}...`);
@@ -458,6 +497,7 @@ async function downloadAndCreateBlobUrl(url: string, type: 'image' | 'video'): P
     throw new Error(`Failed to download ${type}: ` + (error instanceof Error ? error.message : 'Unknown error'));
   }
 }
+
 // Existing image generation functions for Stability AI
 async function generateWithFacePreservation(prompt: string, originalContent: string): Promise<string> {
   if (!STABILITY_API_KEY || STABILITY_API_KEY.includes('undefined')) {
@@ -484,6 +524,7 @@ async function generateWithFacePreservation(prompt: string, originalContent: str
     return await generateWithImageToImage(prompt, originalContent, 0.65, true);
   }
 }
+
 async function generateWithFaceReplacement(prompt: string, originalContent: string): Promise<string> {
   if (!STABILITY_API_KEY || STABILITY_API_KEY.includes('undefined')) {
     throw new Error('Stability AI API key not found. Please check your .env file and make sure VITE_STABILITY_API_KEY is set.');
@@ -502,6 +543,7 @@ async function generateWithFaceReplacement(prompt: string, originalContent: stri
     return await generateWithImageToImage(prompt, originalContent, 0.5, false);
   }
 }
+
 async function generateWithImageToImage(
   prompt: string,
   originalContent: string,
@@ -603,6 +645,7 @@ async function generateWithImageToImage(
   }
   throw new Error('Failed to generate image after all retry attempts');
 }
+
 function base64ToBlob(base64Data: string): Blob {
   try {
     const base64String = base64Data.split(',')[1];
@@ -623,6 +666,7 @@ function base64ToBlob(base64Data: string): Blob {
     throw new Error('Failed to convert base64 to blob: ' + (error instanceof Error ? error.message : 'Unknown error'));
   }
 }
+
 async function createPreciseFaceMask(originalContent: string): Promise<string> {
   return new Promise(async (resolve, reject) => {
     try {
@@ -734,6 +778,7 @@ async function createPreciseFaceMask(originalContent: string): Promise<string> {
     }
   });
 }
+
 async function createFallbackMask(originalContent: string): Promise<string> {
   return new Promise((resolve, reject) => {
     try {
@@ -782,6 +827,7 @@ async function createFallbackMask(originalContent: string): Promise<string> {
     }
   });
 }
+
 async function inpaintAroundFace(prompt: string, originalContent: string, maskContent: string): Promise<string> {
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
