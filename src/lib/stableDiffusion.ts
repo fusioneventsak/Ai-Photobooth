@@ -1,9 +1,7 @@
-import axios, { AxiosError } from 'axios';
 import { detectFaces, createFaceMask, loadFaceApiModels } from './faceDetection';
 import { getActiveOverlay, applyOverlayToImage, shouldApplyOverlay } from './overlayUtils';
+import { supabase } from './supabase';
 
-const STABILITY_API_KEY = import.meta.env.VITE_STABILITY_API_KEY;
-const REPLICATE_API_KEY = import.meta.env.VITE_REPLICATE_API_KEY;
 
 // Enhanced error handling and retry logic
 const MAX_RETRIES = 3;
@@ -117,64 +115,32 @@ async function generateVideoWithIdeogram(
   preserveFace: boolean,
   facePreservationMode: 'preserve_face' | 'replace_face'
 ): Promise<string> {
-  // Video generation requires Replicate API key
-  if (!REPLICATE_API_KEY || REPLICATE_API_KEY.includes('undefined')) {
-    throw new Error('Replicate API key is required for video generation. Please add VITE_REPLICATE_API_KEY to your .env file.');
-  }
   try {
     console.log('🎬 Generating video using browser-compatible approach...');
    
-    // Add Buffer polyfill for browser compatibility
-    if (typeof window !== 'undefined' && !window.Buffer) {
-      // Simple Buffer polyfill for browser
-      window.Buffer = {
-        from: (data: any, encoding?: string) => {
-          if (typeof data === 'string') {
-            if (encoding === 'base64') {
-              return atob(data);
-            }
-            return data;
-          }
-          return data;
-        },
-        isBuffer: () => false
-      } as any;
-    }
-   
-    // Import Replicate dynamically
-    const { default: Replicate } = await import('replicate');
-   
-    const replicate = new Replicate({
-      auth: REPLICATE_API_KEY,
-    });
-    // Step 1: Generate a character-consistent image using direct API calls
-    console.log('🎭 Step 1: Creating character-consistent image...');
-   
-    let characterImageUrl: string;
-   
-    try {
-      if (facePreservationMode === 'preserve_face') {
-        characterImageUrl = await generateCharacterPreservationImageDirect(prompt, originalContent);
-      } else {
-        characterImageUrl = await generateCharacterTransformationImageDirect(prompt, originalContent);
+    // Call Supabase Edge Function for video generation
+    const { data, error } = await supabase.functions.invoke('generate-replicate-content', {
+      body: {
+        prompt: prompt,
+        inputData: originalContent,
+        type: 'video',
+        duration: videoDuration,
+        preserveFace: preserveFace
       }
-    } catch (characterError) {
-      console.error('Character generation failed:', characterError);
-      // Create a fallback image if character generation fails
-      characterImageUrl = await createSimpleFallbackImage(prompt);
+    });
+
+    if (error) {
+      console.error('Edge function error:', error);
+      throw new Error(error.message || 'Failed to generate video');
     }
-    // Step 2: Convert to video using direct API call
-    console.log('🎬 Step 2: Converting character image to video...');
-   
-    try {
-      const videoUrl = await generateVideoFromImageDirect(characterImageUrl);
-      console.log('✅ Video generation successful');
-      return videoUrl;
-     
-    } catch (videoError) {
-      console.error('Video generation failed:', videoError);
-      throw new Error('Video generation model failed. Please try again later.');
+
+    if (!data?.success || !data?.result) {
+      throw new Error(data?.error || 'Invalid response from video generation service');
     }
+
+    console.log('✅ Video generation successful');
+    return data.result;
+
   } catch (error) {
     console.error('Video generation error:', error);
    
@@ -190,257 +156,6 @@ async function generateVideoWithIdeogram(
     }
    
     throw new Error('Failed to generate video: ' + (error instanceof Error ? error.message : 'Unknown error'));
-  }
-}
-
-// Direct API calls without using the Replicate library (browser-compatible)
-async function generateCharacterPreservationImageDirect(prompt: string, originalContent: string): Promise<string> {
-  try {
-    console.log('🎭 Using direct API call for character preservation...');
-   
-    const response = await fetch('https://api.replicate.com/v1/predictions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Token ${REPLICATE_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        version: 'ideogram-ai/ideogram-character',
-        input: {
-          prompt: `${prompt}, photorealistic, high quality, cinematic lighting, detailed`,
-          reference_image: originalContent,
-          aspect_ratio: "1:1",
-          magic_prompt: true
-        }
-      })
-    });
-    if (!response.ok) {
-      throw new Error(`API request failed: ${response.status} ${response.statusText}`);
-    }
-    const prediction = await response.json();
-   
-    // Wait for the prediction to complete
-    const result = await waitForPrediction(prediction.id);
-   
-    if (result.output && result.output.length > 0) {
-      return result.output[0];
-    }
-   
-    throw new Error('No output from character generation');
-   
-  } catch (error) {
-    console.error('Direct character generation failed:', error);
-   
-    // Fallback to Ideogram v3
-    console.log('🔄 Falling back to Ideogram v3...');
-    return await generateWithIdeogramV3Direct(prompt);
-  }
-}
-
-async function generateCharacterTransformationImageDirect(prompt: string, originalContent: string): Promise<string> {
-  console.log('🎨 Using direct API call for character transformation...');
- 
-  return await generateWithIdeogramV3Direct(prompt);
-}
-
-async function generateWithIdeogramV3Direct(prompt: string): Promise<string> {
-  try {
-    const response = await fetch('https://api.replicate.com/v1/predictions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Token ${REPLICATE_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        version: 'ideogram-ai/ideogram-v3-quality',
-        input: {
-          prompt: `${prompt}, photorealistic, high quality, cinematic lighting, detailed`,
-          aspect_ratio: "1:1",
-          magic_prompt: true
-        }
-      })
-    });
-    if (!response.ok) {
-      throw new Error(`API request failed: ${response.status} ${response.statusText}`);
-    }
-    const prediction = await response.json();
-   
-    // Wait for the prediction to complete
-    const result = await waitForPrediction(prediction.id);
-   
-    if (result.output && result.output.length > 0) {
-      return result.output[0];
-    }
-   
-    throw new Error('No output from Ideogram v3');
-   
-  } catch (error) {
-    console.error('Direct Ideogram v3 failed:', error);
-    throw new Error('Image generation failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
-  }
-}
-
-async function generateVideoFromImageDirect(imageUrl: string): Promise<string> {
-  try {
-    const response = await fetch('https://api.replicate.com/v1/predictions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Token ${REPLICATE_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        version: 'stability-ai/stable-video-diffusion:3f0457e4619daac51203dedb1a4c069b4bb91bc25be5667a0b525e63c21e2257',
-        input: {
-          cond_aug: 0.02,
-          decoding_t: 14,
-          video_length: "14_frames_with_svd",
-          sizing_strategy: "maintain_aspect_ratio",
-          motion_bucket_id: 127,
-          frames_per_second: 6,
-          image: imageUrl
-        }
-      })
-    });
-    if (!response.ok) {
-      throw new Error(`Video API request failed: ${response.status} ${response.statusText}`);
-    }
-    const prediction = await response.json();
-   
-    // Wait for the prediction to complete
-    const result = await waitForPrediction(prediction.id);
-   
-    if (result.output && typeof result.output === 'string') {
-      // Download and create blob URL
-      return await downloadAndCreateBlobUrl(result.output, 'video');
-    }
-   
-    throw new Error('No video output received');
-   
-  } catch (error) {
-    console.error('Direct video generation failed:', error);
-    throw error;
-  }
-}
-
-// Wait for a Replicate prediction to complete
-async function waitForPrediction(predictionId: string): Promise<any> {
-  const maxAttempts = 60; // 5 minutes max (5 second intervals)
- 
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    try {
-      const response = await fetch(`https://api.replicate.com/v1/predictions/${predictionId}`, {
-        headers: {
-          'Authorization': `Token ${REPLICATE_API_KEY}`,
-          'Content-Type': 'application/json'
-        }
-      });
-      if (!response.ok) {
-        throw new Error(`Failed to check prediction status: ${response.status}`);
-      }
-      const prediction = await response.json();
-     
-      console.log(`Prediction status: ${prediction.status}`);
-     
-      if (prediction.status === 'succeeded') {
-        return prediction;
-      } else if (prediction.status === 'failed') {
-        throw new Error(`Prediction failed: ${prediction.error || 'Unknown error'}`);
-      } else if (prediction.status === 'canceled') {
-        throw new Error('Prediction was canceled');
-      }
-     
-      // Still processing, wait before checking again
-      await sleep(5000); // Wait 5 seconds
-     
-    } catch (error) {
-      console.error(`Error checking prediction (attempt ${attempt + 1}):`, error);
-     
-      if (attempt === maxAttempts - 1) {
-        throw new Error('Prediction timed out or failed to complete');
-      }
-     
-      await sleep(5000);
-    }
-  }
- 
-  throw new Error('Prediction timed out');
-}
-
-// Generate character image while preserving identity
-async function generateCharacterPreservationImage(replicate: any, prompt: string, originalContent: string): Promise<string> {
-  try {
-    console.log('🎭 Using Ideogram Character for identity preservation...');
-   
-    // Try Ideogram Character first (best for face preservation)
-    const output = await replicate.run(
-      "ideogram-ai/ideogram-character",
-      {
-        input: {
-          prompt: `${prompt}, photorealistic, high quality, cinematic lighting, detailed`,
-          reference_image: originalContent,
-          aspect_ratio: "1:1",
-          magic_prompt: true
-        }
-      }
-    );
-    if (output && output.url && typeof output.url === 'function') {
-      const imageUrl = output.url();
-      console.log('✅ Ideogram Character generated image:', imageUrl);
-      return imageUrl;
-    }
-   
-    // Handle array output (fallback)
-    if (output && Array.isArray(output) && output.length > 0) {
-      return output[0];
-    }
-   
-    throw new Error('No valid output from Ideogram Character');
-   
-  } catch (error) {
-    console.error('Ideogram Character failed:', error);
-   
-    // Fallback to Ideogram v3
-    console.log('🔄 Falling back to Ideogram v3...');
-    return await generateWithIdeogramV3(replicate, prompt);
-  }
-}
-
-// Generate transformed character image
-async function generateCharacterTransformationImage(replicate: any, prompt: string, originalContent: string): Promise<string> {
-  console.log('🎨 Using Ideogram v3 for character transformation...');
- 
-  return await generateWithIdeogramV3(replicate, prompt);
-}
-
-// Generate image using Ideogram v3
-async function generateWithIdeogramV3(replicate: any, prompt: string): Promise<string> {
-  try {
-    const output = await replicate.run(
-      "ideogram-ai/ideogram-v3-quality",
-      {
-        input: {
-          prompt: `${prompt}, photorealistic, high quality, cinematic lighting, detailed`,
-          aspect_ratio: "1:1",
-          magic_prompt: true
-        }
-      }
-    );
-    if (output && output.url && typeof output.url === 'function') {
-      const imageUrl = output.url();
-      console.log('✅ Ideogram v3 generated image:', imageUrl);
-      return imageUrl;
-    }
-   
-    // Handle array output (fallback)
-    if (output && Array.isArray(output) && output.length > 0) {
-      return output[0];
-    }
-   
-    throw new Error('No valid output from Ideogram v3');
-   
-  } catch (error) {
-    console.error('Ideogram v3 failed:', error);
-    throw new Error('Image generation failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
   }
 }
 
@@ -500,51 +215,8 @@ async function createSimpleFallbackImage(prompt: string): Promise<string> {
   return canvas.toDataURL('image/png');
 }
 
-async function downloadAndCreateBlobUrl(url: string, type: 'image' | 'video'): Promise<string> {
-  try {
-    console.log(`⬇️ Downloading generated ${type}...`);
-   
-    const response = await fetch(url, {
-      signal: AbortSignal.timeout(120000) // 2 minute timeout
-    });
-   
-    if (!response.ok) {
-      throw new Error(`Failed to download ${type}: ${response.statusText}`);
-    }
-   
-    const blob = await response.blob();
-    if (blob.size === 0) {
-      throw new Error(`Received empty ${type} file`);
-    }
-   
-    if (type === 'video') {
-      // For videos, return blob URL for direct playback
-      return URL.createObjectURL(blob);
-    } else {
-      // For images, convert to base64 data URL
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          if (typeof reader.result === 'string') {
-            resolve(reader.result);
-          } else {
-            reject(new Error('Failed to convert image to data URL'));
-          }
-        };
-        reader.onerror = () => reject(new Error('Failed to read image blob'));
-        reader.readAsDataURL(blob);
-      });
-    }
-  } catch (error) {
-    throw new Error(`Failed to download ${type}: ` + (error instanceof Error ? error.message : 'Unknown error'));
-  }
-}
-
 // Existing image generation functions for Stability AI
 async function generateWithFacePreservation(prompt: string, originalContent: string): Promise<string> {
-  if (!STABILITY_API_KEY || STABILITY_API_KEY.includes('undefined')) {
-    throw new Error('Stability AI API key not found. Please check your .env file and make sure VITE_STABILITY_API_KEY is set.');
-  }
   try {
     console.log('🎭 Using face-api.js for precise face detection and masking...');
   
@@ -568,9 +240,6 @@ async function generateWithFacePreservation(prompt: string, originalContent: str
 }
 
 async function generateWithFaceReplacement(prompt: string, originalContent: string): Promise<string> {
-  if (!STABILITY_API_KEY || STABILITY_API_KEY.includes('undefined')) {
-    throw new Error('Stability AI API key not found. Please check your .env file and make sure VITE_STABILITY_API_KEY is set.');
-  }
   try {
     console.log('🔄 Replacing face, preserving background/clothing...');
   
@@ -596,8 +265,6 @@ async function generateWithImageToImage(
     try {
       console.log(`🔄 Using image-to-image with strength ${strength} (preserve face: ${preserveFace})... Attempt ${attempt}/${MAX_RETRIES}`);
     
-      const imageBlob = base64ToBlob(originalContent);
-    
       let enhancedPrompt = prompt;
       let negativePrompt = 'blurry, low quality, distorted, deformed, ugly, bad anatomy, extra limbs';
     
@@ -608,76 +275,37 @@ async function generateWithImageToImage(
         enhancedPrompt = `${prompt}, generate new face that fits the scene, transform the person`;
         negativePrompt = 'preserve original face, same identity, blurry, low quality, distorted';
       }
-      const formData = new FormData();
-      formData.append('image', imageBlob, 'image.png');
-      formData.append('prompt', enhancedPrompt);
-      formData.append('negative_prompt', negativePrompt);
-      formData.append('strength', preserveFace ? '0.8' : strength.toString());
-      formData.append('cfg_scale', preserveFace ? '10' : '7');
-      formData.append('output_format', 'png');
-      formData.append('mode', 'image-to-image');
+      
       console.log('📡 Making request to Stability AI...');
     
-      const response = await axios.post(
-        'https://api.stability.ai/v2beta/stable-image/generate/sd3',
-        formData,
-        {
-          headers: {
-            Accept: 'image/*',
-            Authorization: `Bearer ${STABILITY_API_KEY}`,
-            'Content-Type': 'multipart/form-data',
-          },
-          responseType: 'arraybuffer',
-          timeout: 120000,
-          validateStatus: (status) => status < 500,
+      // Call Supabase Edge Function
+      const { data, error } = await supabase.functions.invoke('generate-stability-image', {
+        body: {
+          prompt: enhancedPrompt,
+          imageData: originalContent,
+          mode: 'image-to-image',
+          strength: preserveFace ? 0.8 : strength,
+          cfgScale: preserveFace ? 10 : 7,
+          negativePrompt: negativePrompt
         }
-      );
-      if (response.status === 401) {
-        throw new Error('Invalid API key. Please check your Stability AI API key.');
+      });
+
+      if (error) {
+        console.error('Edge function error:', error);
+        throw new Error(error.message || 'Failed to generate image');
       }
-    
-      if (response.status === 402) {
-        throw new Error('Insufficient credits. Please check your Stability AI account.');
+
+      if (!data?.success || !data?.imageData) {
+        throw new Error(data?.error || 'Invalid response from image generation service');
       }
-    
-      if (response.status === 429) {
-        throw new Error('Rate limit exceeded. Please wait and try again.');
-      }
-    
-      if (response.status >= 400) {
-        const errorText = new TextDecoder().decode(response.data);
-        console.error('API Error Response:', errorText);
-        throw new Error(`API Error (${response.status}): ${errorText || 'Unknown error'}`);
-      }
-      if (!response?.data || response.data.byteLength === 0) {
-        throw new Error('Empty response from Stability AI');
-      }
-      const arrayBuffer = response.data;
-      const base64String = btoa(
-        new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
-      );
-      const result = `data:image/png;base64,${base64String}`;
+
+      const result = data.imageData;
       console.log('✅ Image generation successful');
       return result;
     } catch (error) {
       console.error(`Image-to-image generation failed (attempt ${attempt}):`, error);
     
       if (attempt === MAX_RETRIES) {
-        if (error instanceof AxiosError) {
-          if (error.code === 'ECONNABORTED' || error.code === 'ENOTFOUND') {
-            throw new Error('Network connection failed. Please check your internet connection and try again.');
-          }
-          if (error.response?.status === 401) {
-            throw new Error('Invalid API key. Please check your Stability AI API key configuration.');
-          }
-          if (error.response?.status === 402) {
-            throw new Error('Insufficient Stability AI credits. Please check your account.');
-          }
-          if (error.response?.status === 429) {
-            throw new Error('Rate limit exceeded. Please wait a moment and try again.');
-          }
-        }
-      
         throw new Error(error instanceof Error ? error.message : 'Failed to generate with image-to-image');
       }
     
@@ -686,27 +314,6 @@ async function generateWithImageToImage(
     }
   }
   throw new Error('Failed to generate image after all retry attempts');
-}
-
-function base64ToBlob(base64Data: string): Blob {
-  try {
-    const base64String = base64Data.split(',')[1];
-    if (!base64String) {
-      throw new Error('Invalid base64 data format');
-    }
-  
-    const byteCharacters = atob(base64String);
-    const byteNumbers = new Array(byteCharacters.length);
-  
-    for (let i = 0; i < byteCharacters.length; i++) {
-      byteNumbers[i] = byteCharacters.charCodeAt(i);
-    }
-  
-    const byteArray = new Uint8Array(byteNumbers);
-    return new Blob([byteArray], { type: 'image/png' });
-  } catch (error) {
-    throw new Error('Failed to convert base64 to blob: ' + (error instanceof Error ? error.message : 'Unknown error'));
-  }
 }
 
 async function createPreciseFaceMask(originalContent: string): Promise<string> {
@@ -875,57 +482,32 @@ async function inpaintAroundFace(prompt: string, originalContent: string, maskCo
     try {
       console.log(`🖌️ Inpainting around face area (preserving face region)... Attempt ${attempt}/${MAX_RETRIES}`);
     
-      const originalBlob = base64ToBlob(originalContent);
-      const maskBlob = base64ToBlob(maskContent);
-     
-      const formData = new FormData();
-      formData.append('image', originalBlob, 'original.png');
-      formData.append('mask', maskBlob, 'mask.png');
-      formData.append('prompt', `${prompt}, completely transform the background and environment, change all clothing and accessories, new setting, new location, dramatic scene change, keep the person's face exactly the same, seamlessly blended face, natural integration, no visible boundaries`);
-      formData.append('negative_prompt', 'preserve original background, keep original clothing, maintain original setting, same environment, face changes, different person, facial modifications, visible mask edges, blending artifacts, halo effects, dark rings, unnatural transitions, blurry, low quality');
-      formData.append('strength', '0.85');
-      formData.append('cfg_scale', '10');
-      formData.append('output_format', 'png');
-     
-      const response = await axios.post(
-        'https://api.stability.ai/v2beta/stable-image/edit/inpaint',
-        formData,
-        {
-          headers: {
-            Accept: 'image/*',
-            Authorization: `Bearer ${STABILITY_API_KEY}`,
-            'Content-Type': 'multipart/form-data',
-          },
-          responseType: 'arraybuffer',
-          timeout: 120000,
-          validateStatus: (status) => status < 500,
+      const enhancedPrompt = `${prompt}, completely transform the background and environment, change all clothing and accessories, new setting, new location, dramatic scene change, keep the person's face exactly the same, seamlessly blended face, natural integration, no visible boundaries`;
+      const negativePrompt = 'preserve original background, keep original clothing, maintain original setting, same environment, face changes, different person, facial modifications, visible mask edges, blending artifacts, halo effects, dark rings, unnatural transitions, blurry, low quality';
+
+      // Call Supabase Edge Function for inpainting
+      const { data, error } = await supabase.functions.invoke('generate-stability-image', {
+        body: {
+          prompt: enhancedPrompt,
+          imageData: originalContent,
+          mode: 'inpaint',
+          maskData: maskContent,
+          strength: 0.85,
+          cfgScale: 10,
+          negativePrompt: negativePrompt
         }
-      );
-      if (response.status === 401) {
-        throw new Error('Invalid API key. Please check your Stability AI API key.');
+      });
+
+      if (error) {
+        console.error('Edge function error:', error);
+        throw new Error(error.message || 'Failed to generate image');
       }
-    
-      if (response.status === 402) {
-        throw new Error('Insufficient credits. Please check your Stability AI account.');
+
+      if (!data?.success || !data?.imageData) {
+        throw new Error(data?.error || 'Invalid response from inpainting service');
       }
-    
-      if (response.status === 429) {
-        throw new Error('Rate limit exceeded. Please wait and try again.');
-      }
-    
-      if (response.status >= 400) {
-        const errorText = new TextDecoder().decode(response.data);
-        console.error('Inpaint API Error Response:', errorText);
-        throw new Error(`Inpaint API Error (${response.status}): ${errorText || 'Unknown error'}`);
-      }
-      if (!response?.data || response.data.byteLength === 0) {
-        throw new Error('Empty response from Stability AI inpaint');
-      }
-      const arrayBuffer = response.data;
-      const base64String = btoa(
-        new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
-      );
-      const result = `data:image/png;base64,${base64String}`;
+
+      const result = data.imageData;
       console.log('✅ Face preservation inpainting successful');
       return result;
     } catch (error) {

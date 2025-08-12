@@ -67,44 +67,8 @@ export default function Photobooth() {
   // Environment variable checker for debugging
   useEffect(() => {
     const checkEnv = () => {
-      const stabilityKey = import.meta.env.VITE_STABILITY_API_KEY;
-      const replicateKey = import.meta.env.VITE_REPLICATE_API_KEY;
-      
-      console.log('🔍 API Keys Status Check:');
-      console.log('Stability AI:', stabilityKey ? 
-        `✅ Present (${stabilityKey.substring(0, 10)}...)` : 
-        '❌ Missing - Set VITE_STABILITY_API_KEY in your .env file'
-      );
-      console.log('Replicate:', replicateKey ? 
-        `✅ Present (${replicateKey.substring(0, 10)}...)` : 
-        '❌ Missing - Set VITE_REPLICATE_API_KEY in your .env file'
-      );
-
-      if (!stabilityKey && !replicateKey) {
-        console.warn('⚠️ No AI service keys found - generation will fail');
-        setError('🔑 Missing API Keys: Please configure VITE_STABILITY_API_KEY or VITE_REPLICATE_API_KEY in your environment variables to generate AI images.');
-        return;
-      }
-
-      // Test API key validity for Stability AI
-      if (stabilityKey) {
-        fetch('https://api.stability.ai/v1/user/account', {
-          headers: {
-            'Authorization': `Bearer ${stabilityKey}`
-          }
-        })
-        .then(response => {
-          if (response.status === 403) {
-            console.error('❌ Stability AI: Invalid API key or insufficient credits');
-            setError('🔑 Stability AI API key is invalid or has insufficient credits. Please check your API key and account balance.');
-          } else if (response.ok) {
-            console.log('✅ Stability AI API key is valid');
-          }
-        })
-        .catch(err => {
-          console.warn('⚠️ Could not verify Stability AI key:', err);
-        });
-      }
+      console.log('🔍 Using secure Supabase Edge Functions for AI generation');
+      console.log('✅ API keys are now securely stored server-side');
     };
     
     checkEnv();
