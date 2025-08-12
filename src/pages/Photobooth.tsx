@@ -367,8 +367,8 @@ export default function Photobooth() {
     }
   };
 
-  // Don't show the processed media area until there's either processed media, processing, or an error
-  const showResultArea = processedMedia || processing || (error && !showInstructions);
+  // Don't need separate result area anymore
+  const showResultArea = false;
 
   return (
     <div className="min-h-screen bg-gray-900">
@@ -428,16 +428,96 @@ export default function Photobooth() {
           </div>
         )}
 
-        {/* Camera Preview */}
+        {/* Main View - Camera Preview or AI Result */}
         <div className="bg-gray-800 rounded-xl overflow-hidden mb-6 shadow-2xl">
           <div className="aspect-square bg-black relative">
-            {mediaData ? (
+            {processedMedia ? (
+              // Show AI generated result
+              currentModelType === 'video' ? (
+                <video
+                  src={processedMedia}
+                  autoPlay
+                  loop
+                  muted
+                  playsInline
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <img 
+                  src={processedMedia} 
+                  alt="AI Generated" 
+                  className="w-full h-full object-cover" 
+                />
+              )
+            ) : processing ? (
+              // Show processing state with enhanced loading animation
+              <div className="flex items-center justify-center h-full bg-gradient-to-br from-purple-900/20 to-blue-900/20">
+                <div className="text-center p-8">
+                  {/* Main loading animation */}
+                  <div className="relative mb-6">
+                    <div className="w-20 h-20 mx-auto">
+                      {/* Outer spinning ring */}
+                      <div className="absolute inset-0 border-4 border-blue-500/30 rounded-full animate-spin border-t-blue-500"></div>
+                      {/* Inner pulsing circle */}
+                      <div className="absolute inset-2 bg-gradient-to-br from-purple-500 to-blue-500 rounded-full animate-pulse flex items-center justify-center">
+                        <Wand2 className="w-8 h-8 text-white animate-bounce" />
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Loading text */}
+                  <p className="text-white text-xl font-semibold mb-3">
+                    Creating your AI {currentModelType}
+                    <span className="animate-pulse">...</span>
+                  </p>
+                  
+                  {/* Detailed status */}
+                  <div className="text-gray-300 text-sm space-y-2">
+                    <p className="font-medium">{getProcessingText()}</p>
+                    
+                    {/* Progress indicator */}
+                    <div className="mt-4">
+                      <div className="flex justify-center space-x-1 mb-2">
+                        {[0, 1, 2, 3, 4].map((i) => (
+                          <div
+                            key={i}
+                            className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"
+                            style={{
+                              animationDelay: `${i * 0.2}s`,
+                              animationDuration: '1s'
+                            }}
+                          />
+                        ))}
+                      </div>
+                      <p className="text-xs text-gray-400">
+                        {currentModelType === 'video' ? 'Video generation in progress...' : 'Processing your image...'}
+                      </p>
+                    </div>
+                    
+                    {/* Generation attempt indicator */}
+                    {generationAttempts > 0 && (
+                      <div className="mt-4 inline-flex items-center gap-2 bg-black/30 px-3 py-1 rounded-full">
+                        <div className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse" />
+                        <span className="text-xs">Attempt {generationAttempts}/3</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : error && !showInstructions ? (
+              // Show error state
+              <div className="flex items-center justify-center h-full">
+                <ErrorDisplay error={error} attempts={generationAttempts} />
+              </div>
+            ) : mediaData ? (
+              // Show captured photo
               <img 
                 src={mediaData} 
                 alt="Captured" 
                 className="w-full h-full object-cover" 
               />
             ) : (
+              // Show camera preview
               <Webcam
                 ref={webcamRef}
                 screenshotFormat="image/jpeg"
@@ -452,14 +532,14 @@ export default function Photobooth() {
             )}
             
             {/* Generation attempts indicator */}
-            {generationAttempts > 0 && (
+            {generationAttempts > 0 && !processedMedia && (
               <div className="absolute top-3 right-3 bg-black/70 text-white px-2 py-1 rounded-lg text-sm">
                 Attempt {generationAttempts}/3
               </div>
             )}
 
-            {/* Face mode indicator */}
-            {currentModelType === 'image' && config && (
+            {/* Face mode indicator - only show during camera preview */}
+            {currentModelType === 'image' && config && !mediaData && !processing && !processedMedia && (
               <div className="absolute top-3 left-3 bg-black/70 text-white px-2 py-1 rounded-lg text-xs flex items-center gap-1">
                 {(config.face_preservation_mode || 'preserve_face') === 'preserve_face' ? (
                   <>
@@ -472,6 +552,14 @@ export default function Photobooth() {
                     <span className="text-orange-400">New Character</span>
                   </>
                 )}
+              </div>
+            )}
+
+            {/* AI Result indicator */}
+            {processedMedia && (
+              <div className="absolute top-3 left-3 bg-black/70 text-white px-2 py-1 rounded-lg text-xs flex items-center gap-1">
+                <Wand2 className="w-3 h-3 text-purple-400" />
+                <span className="text-purple-400">AI Generated</span>
               </div>
             )}
           </div>
@@ -511,47 +599,7 @@ export default function Photobooth() {
           )}
         </div>
 
-        {/* AI Generated Result - Only show when there's content, processing, or error */}
-        {showResultArea && (
-          <div className="bg-gray-800 rounded-xl overflow-hidden shadow-2xl">
-            <div className="bg-gray-700 px-4 py-3 border-b border-gray-600">
-              <h3 className="text-white font-medium flex items-center gap-2">
-                <Wand2 className="w-4 h-4" />
-                AI Generated {currentModelType}
-              </h3>
-            </div>
-            <div className="aspect-square bg-black relative flex items-center justify-center">
-              {processedMedia ? (
-                currentModelType === 'video' ? (
-                  <video
-                    src={processedMedia}
-                    autoPlay
-                    loop
-                    muted
-                    playsInline
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <img 
-                    src={processedMedia} 
-                    alt="AI Generated" 
-                    className="w-full h-full object-cover" 
-                  />
-                )
-              ) : processing ? (
-                <div className="text-center p-6">
-                  <RefreshCw className="w-16 h-16 mx-auto mb-4 animate-spin text-blue-500" />
-                  <p className="text-white text-lg font-medium mb-2">Creating your AI {currentModelType}...</p>
-                  <p className="text-gray-400 text-sm">
-                    {getProcessingText()}
-                  </p>
-                </div>
-              ) : error ? (
-                <ErrorDisplay error={error} attempts={generationAttempts} />
-              ) : null}
-            </div>
-          </div>
-        )}
+        {/* Removed separate AI result section - now shows in main view */}
       </div>
     </div>
   );
