@@ -133,40 +133,24 @@ export default function Photobooth() {
     };
   }, [processedMedia]);
 
-  // SINGLE IMMEDIATE UPLOAD - No batching, no delays, no duplicates
+  // AUTOMATIC UPLOAD - Triggers immediately after each photo generation (not batch)
   useEffect(() => {
-    if (!processedMedia || !config || processing || uploading) {
+    if (!processedMedia || !config) {
       return;
     }
 
-    // Create a unique key for this specific image to prevent duplicates
-    const imageHash = btoa(processedMedia.substring(0, 100)).substring(0, 20);
-    const uploadKey = `upload_${imageHash}_${Date.now()}`;
+    console.log('📸 NEW PHOTO GENERATED - Starting automatic upload');
     
-    // Check if this exact image was already uploaded
-    const existingUploads = Object.keys(sessionStorage).filter(key => 
-      key.startsWith('upload_') && 
-      sessionStorage.getItem(key)?.includes(imageHash)
-    );
-    
-    if (existingUploads.length > 0) {
-      console.log('🔄 This exact image already uploaded, skipping:', existingUploads);
-      return;
-    }
-
-    console.log('🎯 NEW IMAGE DETECTED - Starting immediate upload');
-    console.log('📊 Upload details:', {
-      imageHash,
-      uploadKey,
-      imageLength: processedMedia.length,
-      imageType: processedMedia.startsWith('data:') ? 'data URL' : 'blob URL'
-    });
-
-    const uploadImmediately = async () => {
-      setUploading(true);
-      
+    const automaticUploadNow = async () => {
       try {
-        console.log('📤 Starting upload for new image...');
+        setUploading(true);
+        
+        console.log('📤 Auto-uploading new photo...');
+        console.log('📊 Photo details:', {
+          length: processedMedia.length,
+          type: processedMedia.startsWith('data:') ? 'data URL' : processedMedia.startsWith('blob:') ? 'blob URL' : 'unknown',
+          modelType: currentModelType
+        });
         
         const uploadResult = await uploadPhoto(
           processedMedia,
@@ -175,40 +159,36 @@ export default function Photobooth() {
         );
         
         if (uploadResult) {
-          // Mark this specific image as uploaded
-          sessionStorage.setItem(uploadKey, JSON.stringify({
-            photoId: uploadResult.id,
-            imageHash,
-            uploadedAt: new Date().toISOString()
-          }));
+          console.log('✅ Auto-upload successful:', uploadResult.id);
           
-          console.log('✅ Upload successful, dispatching gallery event:', uploadResult.id);
-          
-          // Single gallery event dispatch
+          // Dispatch gallery event immediately
           window.dispatchEvent(new CustomEvent('galleryUpdate', {
             detail: { 
               newPhoto: uploadResult,
-              source: 'immediate_single_upload'
+              source: 'automatic_after_generation'
             }
           }));
           
           setUploadSuccess(true);
           setTimeout(() => setUploadSuccess(false), 2000);
           
+          console.log('🎯 Gallery should update now with new photo');
+          
         } else {
-          throw new Error('Upload returned null');
+          console.error('❌ Auto-upload returned null');
         }
         
       } catch (error) {
-        console.error('❌ Single upload failed:', error);
+        console.error('❌ Auto-upload failed:', error);
       } finally {
         setUploading(false);
       }
     };
 
-    uploadImmediately();
+    // Upload immediately - no delays
+    automaticUploadNow();
 
-  }, [processedMedia]); // Only depend on processedMedia changes
+  }, [processedMedia, config, currentModelType]); // Trigger on each new photo
 
   // Enhanced resize function with validation
   const resizeImage = async (imageData: string): Promise<string> => {
@@ -634,49 +614,6 @@ export default function Photobooth() {
               <ImageIcon className="w-6 h-6 text-green-500" />
               <span className="text-white font-medium">AI Photo Magic</span>
             </>
-          )}
-
-          {/* DEBUG: Manual Upload Test Button */}
-          {processedMedia && (
-            <button
-              onClick={async () => {
-                console.log('🧪 === MANUAL UPLOAD TEST ===');
-                console.log('Current processedMedia:', {
-                  exists: !!processedMedia,
-                  type: typeof processedMedia,
-                  length: processedMedia.length,
-                  format: processedMedia.startsWith('data:') ? 'data URL' : processedMedia.startsWith('blob:') ? 'blob URL' : 'unknown',
-                  preview: processedMedia.substring(0, 100) + '...'
-                });
-                
-                try {
-                  const testResult = await uploadPhoto(
-                    processedMedia,
-                    config?.global_prompt || 'Manual Test Upload',
-                    currentModelType
-                  );
-                  
-                  console.log('🎉 Manual test upload result:', testResult);
-                  
-                  if (testResult) {
-                    window.dispatchEvent(new CustomEvent('galleryUpdate', {
-                      detail: { newPhoto: testResult, source: 'manual_test' }
-                    }));
-                    
-                    alert(`✅ Manual upload SUCCESS!\nID: ${testResult.id}\nCheck gallery now!`);
-                  } else {
-                    alert('❌ Manual upload returned null');
-                  }
-                } catch (error) {
-                  console.error('❌ Manual test failed:', error);
-                  alert(`❌ Manual upload failed:\n${error instanceof Error ? error.message : 'Unknown error'}`);
-                }
-              }}
-              className="w-full flex items-center justify-center gap-2 py-3 bg-purple-600 rounded-xl hover:bg-purple-700 transition font-medium"
-            >
-              <ImageIcon className="w-5 h-5" />
-              🧪 Test Upload to Gallery
-            </button>
           )}
           {/* Upload Status Indicator */}
           {(uploading || uploadSuccess) && (
