@@ -5,6 +5,7 @@ import { useConfigStore } from '../store/configStore';
 import { uploadPhoto } from '../lib/supabase';
 import { generateImage } from '../lib/stableDiffusion';
 import { loadFaceApiModels } from '../lib/faceDetection';
+import { getActiveOverlay, applyOverlayToImage, shouldApplyOverlay } from '../lib/overlayUtils';
 
 export default function Photobooth() {
   const { config } = useConfigStore();
