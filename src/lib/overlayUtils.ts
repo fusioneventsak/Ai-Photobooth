@@ -26,7 +26,7 @@ export function getActiveOverlay(): OverlayConfig | null {
   }
 }
 
-// Apply overlay to an image
+// Apply overlay to an image with smart auto-scaling
 export async function applyOverlayToImage(
   backgroundImageData: string, 
   overlayConfig: OverlayConfig
@@ -44,7 +44,7 @@ export async function applyOverlayToImage(
 
       // Load background image
       backgroundImg.onload = () => {
-        // Set canvas size
+        // Set canvas size to background image
         canvas.width = backgroundImg.width;
         canvas.height = backgroundImg.height;
 
@@ -54,50 +54,84 @@ export async function applyOverlayToImage(
         // Load and draw overlay
         overlayImg.onload = () => {
           try {
-            // Calculate overlay dimensions
-            const overlayWidth = overlayImg.width * overlayConfig.settings.scale;
-            const overlayHeight = overlayImg.height * overlayConfig.settings.scale;
+            // **ENHANCED: Smart auto-scaling based on image sizes**
+            let finalScale = overlayConfig.settings.scale;
+            let overlayWidth = overlayImg.width * finalScale;
+            let overlayHeight = overlayImg.height * finalScale;
+
+            // Detect if this is likely a border (large overlay) vs logo (small overlay)
+            const isBorder = overlayImg.width >= canvas.width * 0.8 && overlayImg.height >= canvas.height * 0.8;
+            
+            if (isBorder) {
+              // For borders: scale to exactly match canvas size
+              finalScale = 1.0;
+              overlayWidth = canvas.width;
+              overlayHeight = canvas.height;
+            } else {
+              // For logos/watermarks: intelligent scaling
+              const canvasSize = Math.min(canvas.width, canvas.height);
+              const overlaySize = Math.max(overlayImg.width, overlayImg.height);
+              
+              // Calculate smart scale factor
+              const maxOverlayRatio = 0.25; // Don't exceed 25% of canvas size
+              const smartScale = Math.min(
+                (canvasSize * maxOverlayRatio) / overlaySize,
+                1.0 // Don't upscale beyond original
+              );
+              
+              // Apply smart scale with user preference
+              finalScale = smartScale * overlayConfig.settings.scale;
+              overlayWidth = overlayImg.width * finalScale;
+              overlayHeight = overlayImg.height * finalScale;
+            }
 
             // Calculate position
             let overlayX = 0;
             let overlayY = 0;
 
-            switch (overlayConfig.settings.position) {
-              case 'top-left':
-                overlayX = overlayConfig.settings.offsetX;
-                overlayY = overlayConfig.settings.offsetY;
-                break;
-              case 'top-right':
-                overlayX = canvas.width - overlayWidth - overlayConfig.settings.offsetX;
-                overlayY = overlayConfig.settings.offsetY;
-                break;
-              case 'bottom-left':
-                overlayX = overlayConfig.settings.offsetX;
-                overlayY = canvas.height - overlayHeight - overlayConfig.settings.offsetY;
-                break;
-              case 'bottom-right':
-                overlayX = canvas.width - overlayWidth - overlayConfig.settings.offsetX;
-                overlayY = canvas.height - overlayHeight - overlayConfig.settings.offsetY;
-                break;
-              case 'center':
-                overlayX = (canvas.width - overlayWidth) / 2;
-                overlayY = (canvas.height - overlayHeight) / 2;
-                break;
-              case 'top-center':
-                overlayX = (canvas.width - overlayWidth) / 2;
-                overlayY = overlayConfig.settings.offsetY;
-                break;
-              case 'bottom-center':
-                overlayX = (canvas.width - overlayWidth) / 2;
-                overlayY = canvas.height - overlayHeight - overlayConfig.settings.offsetY;
-                break;
+            if (isBorder) {
+              // Borders always center and fill
+              overlayX = 0;
+              overlayY = 0;
+            } else {
+              // Position logos/watermarks according to settings
+              switch (overlayConfig.settings.position) {
+                case 'top-left':
+                  overlayX = overlayConfig.settings.offsetX;
+                  overlayY = overlayConfig.settings.offsetY;
+                  break;
+                case 'top-right':
+                  overlayX = canvas.width - overlayWidth - overlayConfig.settings.offsetX;
+                  overlayY = overlayConfig.settings.offsetY;
+                  break;
+                case 'bottom-left':
+                  overlayX = overlayConfig.settings.offsetX;
+                  overlayY = canvas.height - overlayHeight - overlayConfig.settings.offsetY;
+                  break;
+                case 'bottom-right':
+                  overlayX = canvas.width - overlayWidth - overlayConfig.settings.offsetX;
+                  overlayY = canvas.height - overlayHeight - overlayConfig.settings.offsetY;
+                  break;
+                case 'center':
+                  overlayX = (canvas.width - overlayWidth) / 2;
+                  overlayY = (canvas.height - overlayHeight) / 2;
+                  break;
+                case 'top-center':
+                  overlayX = (canvas.width - overlayWidth) / 2;
+                  overlayY = overlayConfig.settings.offsetY;
+                  break;
+                case 'bottom-center':
+                  overlayX = (canvas.width - overlayWidth) / 2;
+                  overlayY = canvas.height - overlayHeight - overlayConfig.settings.offsetY;
+                  break;
+              }
             }
 
             // Apply overlay settings
             ctx.globalAlpha = overlayConfig.settings.opacity;
             ctx.globalCompositeOperation = overlayConfig.settings.blendMode as GlobalCompositeOperation;
 
-            // Draw overlay
+            // Draw overlay with smart scaling
             ctx.drawImage(overlayImg, overlayX, overlayY, overlayWidth, overlayHeight);
 
             // Reset canvas state
