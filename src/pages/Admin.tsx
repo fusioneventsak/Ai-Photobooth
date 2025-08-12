@@ -613,53 +613,6 @@ export default function Admin() {
                     </div>
                   </div>
 
-                  {/* Color Swatches */}
-                  <div className="mt-6 grid grid-cols-2 gap-4">
-                    <div className="text-center">
-                      <div 
-                        className="w-full h-8 rounded-lg mb-2"
-                        style={{ backgroundColor: previewColors.primary }}
-                      />
-                      <div className="text-xs text-gray-400">Primary</div>
-                    </div>
-                    <div className="text-center">
-                      <div 
-                        className="w-full h-8 rounded-lg mb-2"
-                        style={{ backgroundColor: previewColors.secondary }}
-                      />
-                      <div className="text-xs text-gray-400">Secondary</div>
-                    </div>
-                  </div>
-
-                  {/* Settings Summary */}
-                  <div className="mt-6 space-y-2 text-xs">
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Images/Page:</span>
-                      <span>{formData.gallery_images_per_page || 12}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Layout:</span>
-                      <span className="capitalize">{formData.gallery_layout || 'grid'}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Downloads:</span>
-                      <span>{formData.gallery_allow_downloads ? 'Enabled' : 'Disabled'}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Metadata:</span>
-                      <span>{formData.gallery_show_metadata ? 'Shown' : 'Hidden'}</span>
-                    </div>
-                  </div>
-                </motion.div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}>
-
                   {/* Preview Window */}
                   <div className={`border rounded-lg overflow-hidden ${
                     previewMode === 'mobile' ? 'max-w-[240px] mx-auto' : 'w-full'
@@ -718,4 +671,51 @@ export default function Admin() {
                         </div>
                       </div>
                     </div>
-                  </div
+                  </div>
+
+                  {/* Color Swatches */}
+                  <div className="mt-6 grid grid-cols-2 gap-4">
+                    <div className="text-center">
+                      <div 
+                        className="w-full h-8 rounded-lg mb-2"
+                        style={{ backgroundColor: previewColors.primary }}
+                      />
+                      <div className="text-xs text-gray-400">Primary</div>
+                    </div>
+                    <div className="text-center">
+                      <div 
+                        className="w-full h-8 rounded-lg mb-2"
+                        style={{ backgroundColor: previewColors.secondary }}
+                      />
+                      <div className="text-xs text-gray-400">Secondary</div>
+                    </div>
+                  </div>
+
+                  {/* Settings Summary */}
+                  <div className="mt-6 space-y-2 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Images/Page:</span>
+                      <span>{formData.gallery_images_per_page || 12}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Layout:</span>
+                      <span className="capitalize">{formData.gallery_layout || 'grid'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Downloads:</span>
+                      <span>{formData.gallery_allow_downloads ? 'Enabled' : 'Disabled'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Metadata:</span>
+                      <span>{formData.gallery_show_metadata ? 'Shown' : 'Hidden'}</span>
+                    </div>
+                  </div>
+                </motion.div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
