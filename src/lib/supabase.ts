@@ -1,4 +1,4 @@
-// Complete src/lib/supabase.ts file
+// Complete src/lib/supabase.ts file with all functions
 import { createClient } from '@supabase/supabase-js';
 import type { Config, Photo } from '../types/supabase';
 
@@ -373,6 +373,275 @@ export async function getPublicPhotos(): Promise<Photo[]> {
     return data || [];
   } catch (error) {
     console.error('❌ Error in getPublicPhotos:', error);
+    throw error;
+  }
+}
+
+// Delete individual photo
+export async function deletePhoto(photoId: string): Promise<boolean> {
+  try {
+    console.log('🗑️ Starting photo deletion process for ID:', photoId);
+    
+    // First, get the photo details to find the file path
+    const { data: photo, error: fetchError } = await supabase
+      .from('photos')
+      .select('*')
+      .eq('id', photoId)
+      .single();
+
+    if (fetchError) {
+      console.error('❌ Error fetching photo for deletion:', fetchError);
+      throw new Error(`Failed to find photo: ${fetchError.message}`);
+    }
+
+    if (!photo) {
+      console.warn('⚠️ Photo not found in database:', photoId);
+      throw new Error('Photo not found');
+    }
+
+    console.log('📋 Photo found for deletion:', {
+      id: photo.id,
+      url: photo.processed_url,
+      type: photo.content_type
+    });
+
+    // Extract file path from URL for storage deletion
+    let filePath: string | null = null;
+    
+    if (photo.processed_url) {
+      try {
+        // Extract the file path from the Supabase storage URL
+        // URL format: https://[project].supabase.co/storage/v1/object/public/photos/filename
+        const url = new URL(photo.processed_url);
+        const pathParts = url.pathname.split('/');
+        const photosIndex = pathParts.indexOf('photos');
+        
+        if (photosIndex !== -1 && photosIndex < pathParts.length - 1) {
+          filePath = pathParts.slice(photosIndex + 1).join('/');
+          console.log('📁 Extracted file path:', filePath);
+        }
+      } catch (urlError) {
+        console.warn('⚠️ Could not extract file path from URL:', photo.processed_url);
+      }
+    }
+
+    // Delete from storage if we have a file path
+    if (filePath) {
+      console.log('🗑️ Deleting file from storage:', filePath);
+      
+      const { error: storageError } = await supabase.storage
+        .from('photos')
+        .remove([filePath]);
+
+      if (storageError) {
+        console.warn('⚠️ Storage deletion failed (continuing with database deletion):', storageError);
+        // Don't throw error here - continue with database deletion even if storage fails
+      } else {
+        console.log('✅ File deleted from storage successfully');
+      }
+    }
+
+    // Delete from database
+    console.log('🗑️ Deleting photo record from database...');
+    
+    const { error: dbError } = await supabase
+      .from('photos')
+      .delete()
+      .eq('id', photoId);
+
+    if (dbError) {
+      console.error('❌ Database deletion failed:', dbError);
+      throw new Error(`Failed to delete photo record: ${dbError.message}`);
+    }
+
+    console.log('✅ Photo deleted successfully from database');
+    
+    // Trigger gallery refresh event
+    window.dispatchEvent(new CustomEvent('galleryUpdate', {
+      detail: { 
+        action: 'delete',
+        photoId: photoId,
+        timestamp: new Date().toISOString()
+      }
+    }));
+    
+    return true;
+
+  } catch (error) {
+    console.error('❌ Photo deletion failed:', error);
+    throw error;
+  }
+}
+
+// Delete all photos
+export async function deleteAllPhotos(): Promise<boolean> {
+  try {
+    console.log('🗑️ Starting bulk photo deletion process...');
+    
+    // First, get all photos to find their file paths
+    const { data: photos, error: fetchError } = await supabase
+      .from('photos')
+      .select('*')
+      .eq('public', true);
+
+    if (fetchError) {
+      console.error('❌ Error fetching photos for bulk deletion:', fetchError);
+      throw new Error(`Failed to fetch photos: ${fetchError.message}`);
+    }
+
+    if (!photos || photos.length === 0) {
+      console.log('ℹ️ No photos found to delete');
+      return true;
+    }
+
+    console.log('📋 Found photos for deletion:', {
+      count: photos.length,
+      photos: photos.map(p => ({
+        id: p.id.substring(0, 8),
+        type: p.content_type,
+        url: p.processed_url
+      }))
+    });
+
+    // Extract all file paths for storage deletion
+    const filePaths: string[] = [];
+    
+    photos.forEach(photo => {
+      if (photo.processed_url) {
+        try {
+          const url = new URL(photo.processed_url);
+          const pathParts = url.pathname.split('/');
+          const photosIndex = pathParts.indexOf('photos');
+          
+          if (photosIndex !== -1 && photosIndex < pathParts.length - 1) {
+            const filePath = pathParts.slice(photosIndex + 1).join('/');
+            filePaths.push(filePath);
+          }
+        } catch (urlError) {
+          console.warn('⚠️ Could not extract file path from URL:', photo.processed_url);
+        }
+      }
+    });
+
+    console.log('📁 Extracted file paths for deletion:', {
+      count: filePaths.length,
+      paths: filePaths.slice(0, 3) // Log first 3 for debugging
+    });
+
+    // Delete files from storage in batches (Supabase has limits)
+    if (filePaths.length > 0) {
+      console.log('🗑️ Deleting files from storage...');
+      
+      // Process in batches of 100 (Supabase storage limit)
+      const batchSize = 100;
+      let deletedCount = 0;
+      
+      for (let i = 0; i < filePaths.length; i += batchSize) {
+        const batch = filePaths.slice(i, i + batchSize);
+        console.log(`🔄 Deleting storage batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(filePaths.length / batchSize)}...`);
+        
+        const { error: storageError } = await supabase.storage
+          .from('photos')
+          .remove(batch);
+
+        if (storageError) {
+          console.warn(`⚠️ Storage batch deletion failed (continuing):`, storageError);
+        } else {
+          deletedCount += batch.length;
+          console.log(`✅ Storage batch deleted successfully (${deletedCount}/${filePaths.length})`);
+        }
+      }
+      
+      console.log(`📊 Storage deletion completed: ${deletedCount}/${filePaths.length} files processed`);
+    }
+
+    // Delete all records from database
+    console.log('🗑️ Deleting all photo records from database...');
+    
+    const { error: dbError, count } = await supabase
+      .from('photos')
+      .delete()
+      .eq('public', true);
+
+    if (dbError) {
+      console.error('❌ Database bulk deletion failed:', dbError);
+      throw new Error(`Failed to delete photo records: ${dbError.message}`);
+    }
+
+    console.log('✅ All photos deleted successfully from database:', {
+      recordsDeleted: count || photos.length,
+      filesDeleted: filePaths.length
+    });
+    
+    // Trigger gallery refresh event
+    window.dispatchEvent(new CustomEvent('galleryUpdate', {
+      detail: { 
+        action: 'deleteAll',
+        count: photos.length,
+        timestamp: new Date().toISOString()
+      }
+    }));
+    
+    // Also clear local storage
+    localStorage.setItem('galleryRefresh', Date.now().toString());
+    
+    return true;
+
+  } catch (error) {
+    console.error('❌ Bulk photo deletion failed:', error);
+    throw error;
+  }
+}
+
+// Optional: Delete photos older than X days
+export async function deleteOldPhotos(daysOld: number = 30): Promise<{ deletedCount: number; errors: string[] }> {
+  try {
+    console.log(`🗑️ Starting deletion of photos older than ${daysOld} days...`);
+    
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - daysOld);
+    
+    // Get old photos
+    const { data: oldPhotos, error: fetchError } = await supabase
+      .from('photos')
+      .select('*')
+      .lt('created_at', cutoffDate.toISOString())
+      .eq('public', true);
+
+    if (fetchError) {
+      console.error('❌ Error fetching old photos:', fetchError);
+      throw new Error(`Failed to fetch old photos: ${fetchError.message}`);
+    }
+
+    if (!oldPhotos || oldPhotos.length === 0) {
+      console.log(`ℹ️ No photos older than ${daysOld} days found`);
+      return { deletedCount: 0, errors: [] };
+    }
+
+    console.log(`📋 Found ${oldPhotos.length} photos older than ${daysOld} days`);
+
+    const errors: string[] = [];
+    let deletedCount = 0;
+
+    // Delete each photo individually to handle errors gracefully
+    for (const photo of oldPhotos) {
+      try {
+        await deletePhoto(photo.id);
+        deletedCount++;
+        console.log(`✅ Deleted old photo: ${photo.id.substring(0, 8)}`);
+      } catch (error) {
+        const errorMsg = `Failed to delete ${photo.id}: ${error instanceof Error ? error.message : 'Unknown error'}`;
+        errors.push(errorMsg);
+        console.warn(`⚠️ ${errorMsg}`);
+      }
+    }
+
+    console.log(`📊 Old photo deletion completed: ${deletedCount}/${oldPhotos.length} deleted, ${errors.length} errors`);
+    
+    return { deletedCount, errors };
+
+  } catch (error) {
+    console.error('❌ Old photo deletion failed:', error);
     throw error;
   }
 }
