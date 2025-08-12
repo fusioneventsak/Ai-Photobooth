@@ -342,10 +342,18 @@ export async function applyOverlayToImage(
   });
 }
 
-// Check if overlay should be applied
+// Check if overlay should be applied with debug logging
 export function shouldApplyOverlay(): boolean {
   const overlay = getActiveOverlay();
-  return overlay !== null;
+  const shouldApply = overlay !== null;
+  
+  console.log('🔍 Checking if overlay should be applied:', {
+    hasOverlay: shouldApply,
+    overlayName: overlay?.name || 'none',
+    overlayType: overlay?.type || 'unknown'
+  });
+  
+  return shouldApply;
 }
 
 // Get all saved overlays
