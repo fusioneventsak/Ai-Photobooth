@@ -1,4 +1,4 @@
-// src/pages/Gallery.tsx - Fixed with working social sharing and delete functions
+// src/pages/Gallery.tsx - Complete Gallery Component with Animated Masonry
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useConfigStore } from '../store/configStore';
@@ -151,6 +151,28 @@ export default function Gallery() {
       setError(error instanceof Error ? error.message : 'Failed to delete all photos');
     } finally {
       setDeleting(false);
+    }
+  };
+
+  // Download photo function
+  const downloadPhoto = async (photo: Photo) => {
+    try {
+      const url = photo.processed_url || photo.original_url;
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = `photobooth-${photo.id.substring(0, 8)}.${photo.content_type === 'video' ? 'mp4' : 'jpg'}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      window.URL.revokeObjectURL(downloadUrl);
+    } catch (error) {
+      console.error('Failed to download photo:', error);
+      setError('Failed to download photo');
     }
   };
 
@@ -461,152 +483,7 @@ export default function Gallery() {
                           <Play className="w-8 h-8 text-white opacity-80" />
                         </div>
                       </div>
-                    ) : config?.gallery_layout === 'masonry' ? (
-          /* Animated Masonry Grid */
-          <div className="relative">
-            {/* Masonry Controls */}
-            <div className="mb-6 flex justify-between items-center">
-              <div className="text-lg font-medium text-gray-300">
-                Live Masonry Grid • {photos.length} photos • Updates every {(config.gallery_speed || 3000) / 1000}s
-              </div>
-              <button
-                onClick={toggleFullscreen}
-                className="flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors"
-                title="Enter Fullscreen"
-              >
-                <Maximize className="w-4 h-4" />
-                <span>Fullscreen</span>
-              </button>
-            </div>
-
-            {/* Masonry Container */}
-            <div className="relative bg-gray-800 rounded-2xl overflow-hidden shadow-2xl">
-              <div 
-                className="w-full grid gap-2 p-2"
-                style={{
-                  aspectRatio: '16/9',
-                  gridTemplateColumns: `repeat(${Math.floor(masonryGridSize.cols * 0.8)}, 1fr)`,
-                  gridTemplateRows: `repeat(${Math.floor(masonryGridSize.rows * 0.8)}, 1fr)`
-                }}
-              >
-                {masonryPhotoOrder.slice(0, Math.floor(masonryGridSize.cols * 0.8) * Math.floor(masonryGridSize.rows * 0.8)).map((photoIndex, tileIndex) => {
-                  const photo = photos[photoIndex];
-                  if (!photo) return null;
-
-                  return (
-                    <motion.div
-                      key={`${tileIndex}-${photoIndex}`}
-                      layout
-                      transition={{
-                        duration: config.gallery_animation === 'fade' ? 1.2 : 
-                                 config.gallery_animation === 'slide' ? 0.8 : 0.6,
-                        ease: "easeInOut"
-                      }}
-                      className="relative group bg-gray-900 rounded-lg overflow-hidden cursor-pointer shadow-lg hover:shadow-xl"
-                      onClick={() => {
-                        setSelectedPhoto(photo);
-                        setShowPhotoModal(true);
-                      }}
-                    >
-                      {(photo.content_type === 'video' || photo.content_type === 'mp4') ? (
-                        <div className="relative w-full h-full">
-                          <video
-                            src={photo.processed_url || photo.original_url}
-                            className="w-full h-full object-cover"
-                            muted
-                            playsInline
-                            poster={photo.thumbnail_url}
-                          />
-                          <div className="absolute inset-0 flex items-center justify-center bg-black/30">
-                            <Play className="w-6 h-6 text-white opacity-80" />
-                          </div>
-                        </div>
-                      ) : (
-                        <img
-                          src={photo.processed_url || photo.original_url}
-                          alt="Gallery"
-                          className="w-full h-full object-cover"
-                          onError={(e) => {
-                            const img = e.target as HTMLImageElement;
-                            if (img.src !== photo.original_url && photo.original_url) {
-                              img.src = photo.original_url;
-                            }
-                          }}
-                        />
-                      )}
-
-                      {/* Tile Overlay Controls */}
-                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-between p-2">
-                        <div className="flex justify-end gap-1">
-                          {allowDownloads && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                downloadPhoto(photo);
-                              }}
-                              className="p-1.5 bg-blue-600 hover:bg-blue-700 rounded-full transition-colors shadow-lg"
-                              title="Download"
-                            >
-                              <Download className="w-3 h-3 text-white" />
-                            </button>
-                          )}
-                          
-                          {allowSharing && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setShowShareModal(photo);
-                              }}
-                              className="p-1.5 bg-green-600 hover:bg-green-700 rounded-full transition-colors shadow-lg"
-                              title="Share"
-                            >
-                              <Share2 className="w-3 h-3 text-white" />
-                            </button>
-                          )}
-
-                          {showAdminControls && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setShowDeleteConfirm(photo.id);
-                              }}
-                              className="p-1.5 bg-red-600 hover:bg-red-700 rounded-full transition-colors shadow-lg"
-                              title="Delete"
-                            >
-                              <Trash2 className="w-3 h-3 text-white" />
-                            </button>
-                          )}
-                        </div>
-
-                        <div className="text-white text-xs">
-                          <p className="font-medium line-clamp-1 mb-1">
-                            {photo.prompt && photo.prompt.length > 20 
-                              ? photo.prompt.substring(0, 20) + '...' 
-                              : photo.prompt || 'No prompt'
-                            }
-                          </p>
-                          {showMetadata && (
-                            <p className="text-gray-300 text-xs">
-                              {photo.id.substring(0, 6)}...
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </motion.div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Masonry Status */}
-            <div className="mt-4 text-center text-sm text-gray-400">
-              <span>Photos automatically rearrange every {(config.gallery_speed || 3000) / 1000} seconds</span>
-              {photos.length < 20 && (
-                <span className="ml-2 text-yellow-400">• Add more photos for better effect</span>
-              )}
-            </div>
-          </div>
-        ) : (
+                    ) : (
                       <img
                         src={photo.processed_url || photo.original_url}
                         alt="Gallery"
@@ -1190,13 +1067,154 @@ export default function Gallery() {
               )}
             </div>
           </div>
+        ) : config?.gallery_layout === 'masonry' ? (
+          /* Animated Masonry Grid */
+          <div className="relative">
+            {/* Masonry Controls */}
+            <div className="mb-6 flex justify-between items-center">
+              <div className="text-lg font-medium text-gray-300">
+                Live Masonry Grid • {photos.length} photos • Updates every {(config.gallery_speed || 3000) / 1000}s
+              </div>
+              <button
+                onClick={toggleFullscreen}
+                className="flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors"
+                title="Enter Fullscreen"
+              >
+                <Maximize className="w-4 h-4" />
+                <span>Fullscreen</span>
+              </button>
+            </div>
+
+            {/* Masonry Container */}
+            <div className="relative bg-gray-800 rounded-2xl overflow-hidden shadow-2xl">
+              <div 
+                className="w-full grid gap-2 p-2"
+                style={{
+                  aspectRatio: '16/9',
+                  gridTemplateColumns: `repeat(${Math.floor(masonryGridSize.cols * 0.8)}, 1fr)`,
+                  gridTemplateRows: `repeat(${Math.floor(masonryGridSize.rows * 0.8)}, 1fr)`
+                }}
+              >
+                {masonryPhotoOrder.slice(0, Math.floor(masonryGridSize.cols * 0.8) * Math.floor(masonryGridSize.rows * 0.8)).map((photoIndex, tileIndex) => {
+                  const photo = photos[photoIndex];
+                  if (!photo) return null;
+
+                  return (
+                    <motion.div
+                      key={`${tileIndex}-${photoIndex}`}
+                      layout
+                      transition={{
+                        duration: config.gallery_animation === 'fade' ? 1.2 : 
+                                 config.gallery_animation === 'slide' ? 0.8 : 0.6,
+                        ease: "easeInOut"
+                      }}
+                      className="relative group bg-gray-900 rounded-lg overflow-hidden cursor-pointer shadow-lg hover:shadow-xl"
+                      onClick={() => {
+                        setSelectedPhoto(photo);
+                        setShowPhotoModal(true);
+                      }}
+                    >
+                      {(photo.content_type === 'video' || photo.content_type === 'mp4') ? (
+                        <div className="relative w-full h-full">
+                          <video
+                            src={photo.processed_url || photo.original_url}
+                            className="w-full h-full object-cover"
+                            muted
+                            playsInline
+                            poster={photo.thumbnail_url}
+                          />
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                            <Play className="w-6 h-6 text-white opacity-80" />
+                          </div>
+                        </div>
+                      ) : (
+                        <img
+                          src={photo.processed_url || photo.original_url}
+                          alt="Gallery"
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            const img = e.target as HTMLImageElement;
+                            if (img.src !== photo.original_url && photo.original_url) {
+                              img.src = photo.original_url;
+                            }
+                          }}
+                        />
+                      )}
+
+                      {/* Tile Overlay Controls */}
+                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-between p-2">
+                        <div className="flex justify-end gap-1">
+                          {allowDownloads && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                downloadPhoto(photo);
+                              }}
+                              className="p-1.5 bg-blue-600 hover:bg-blue-700 rounded-full transition-colors shadow-lg"
+                              title="Download"
+                            >
+                              <Download className="w-3 h-3 text-white" />
+                            </button>
+                          )}
+                          
+                          {allowSharing && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setShowShareModal(photo);
+                              }}
+                              className="p-1.5 bg-green-600 hover:bg-green-700 rounded-full transition-colors shadow-lg"
+                              title="Share"
+                            >
+                              <Share2 className="w-3 h-3 text-white" />
+                            </button>
+                          )}
+
+                          {showAdminControls && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setShowDeleteConfirm(photo.id);
+                              }}
+                              className="p-1.5 bg-red-600 hover:bg-red-700 rounded-full transition-colors shadow-lg"
+                              title="Delete"
+                            >
+                              <Trash2 className="w-3 h-3 text-white" />
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="text-white text-xs">
+                          <p className="font-medium line-clamp-1 mb-1">
+                            {photo.prompt && photo.prompt.length > 20 
+                              ? photo.prompt.substring(0, 20) + '...' 
+                              : photo.prompt || 'No prompt'
+                            }
+                          </p>
+                          {showMetadata && (
+                            <p className="text-gray-300 text-xs">
+                              {photo.id.substring(0, 6)}...
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Masonry Status */}
+            <div className="mt-4 text-center text-sm text-gray-400">
+              <span>Photos automatically rearrange every {(config.gallery_speed || 3000) / 1000} seconds</span>
+              {photos.length < 20 && (
+                <span className="ml-2 text-yellow-400">• Add more photos for better effect</span>
+              )}
+            </div>
+          </div>
         ) : (
-          /* Grid and Masonry Layouts */
-          <div className={`grid gap-6 ${
-            config?.gallery_layout === 'masonry' 
-              ? 'columns-1 sm:columns-2 md:columns-3 lg:columns-4' 
-              : 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4'
-          }`}>
+          /* Grid Layout */
+          <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
             {photos.map((photo, index) => (
               <motion.div
                 key={photo.id}
@@ -1209,9 +1227,7 @@ export default function Gallery() {
                     duration: (config?.gallery_speed || 3000) / 1000
                   }
                 }}
-                className={`relative group bg-gray-800 rounded-xl overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-300 ${
-                  config?.gallery_layout === 'masonry' ? 'break-inside-avoid mb-6' : ''
-                }`}
+                className="relative group bg-gray-800 rounded-xl overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-300"
               >
                 {/* Media Display */}
                 {(photo.content_type === 'video' || photo.content_type === 'mp4') ? (
