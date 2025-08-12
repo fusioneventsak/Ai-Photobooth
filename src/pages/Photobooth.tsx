@@ -309,10 +309,100 @@ export default function Photobooth() {
 
     // Trigger upload with a small delay to ensure everything is ready
     if (processedMedia && !processing) {
-      console.log('🎯 processedMedia detected, scheduling automatic upload...');
-      setTimeout(() => {
-        guaranteedUpload();
-      }, 200); // Small delay to ensure state is fully updated
+      console.log('🎯 processedMedia detected, starting IMMEDIATE upload...');
+      
+      // IMMEDIATE UPLOAD - No delays, no conditions, just upload
+      const immediateUpload = async () => {
+        console.log('🚀 === IMMEDIATE UPLOAD STARTING ===');
+        console.log('📊 Direct upload details:', {
+          processedMediaExists: !!processedMedia,
+          processedMediaType: typeof processedMedia,
+          processedMediaLength: processedMedia.length,
+          processedMediaFormat: processedMedia.startsWith('data:') ? 'data URL' : processedMedia.startsWith('blob:') ? 'blob URL' : 'unknown',
+          configExists: !!config,
+          prompt: config?.global_prompt || 'AI Generated Image',
+          contentType: currentModelType
+        });
+
+        try {
+          setUploading(true);
+          setUploadAttempts(1);
+
+          console.log('📤 Calling uploadPhoto directly...');
+          
+          const uploadResult = await uploadPhoto(
+            processedMedia,
+            config?.global_prompt || 'AI Generated Image',
+            currentModelType
+          );
+          
+          console.log('📋 Upload result received:', uploadResult);
+          
+          if (!uploadResult) {
+            throw new Error('uploadPhoto returned null/undefined');
+          }
+          
+          console.log('🎉 === IMMEDIATE UPLOAD SUCCESS ===');
+          console.log('✅ Upload details:', {
+            id: uploadResult.id,
+            url: uploadResult.processed_url,
+            type: uploadResult.content_type,
+            created: uploadResult.created_at
+          });
+
+          // Mark as uploaded
+          const uploadedKey = `uploaded_${processedMedia.substring(0, 50)}`;
+          sessionStorage.setItem(uploadedKey, JSON.stringify({
+            uploadedAt: new Date().toISOString(),
+            photoId: uploadResult.id,
+            source: 'immediate_upload'
+          }));
+
+          // IMMEDIATE GALLERY EVENT
+          console.log('📢 Dispatching gallery event IMMEDIATELY...');
+          
+          const galleryEvent = new CustomEvent('galleryUpdate', {
+            detail: { 
+              newPhoto: uploadResult,
+              source: 'immediate_upload',
+              timestamp: new Date().toISOString()
+            }
+          });
+          
+          window.dispatchEvent(galleryEvent);
+          console.log('✅ Gallery event dispatched');
+          
+          // Additional storage trigger
+          localStorage.setItem('galleryRefresh', JSON.stringify({
+            timestamp: Date.now(),
+            photoId: uploadResult.id
+          }));
+          
+          setUploadSuccess(true);
+          setTimeout(() => setUploadSuccess(false), 3000);
+          
+          console.log('🎯 IMMEDIATE UPLOAD COMPLETE - Gallery should update NOW');
+          
+        } catch (error) {
+          console.error('❌ IMMEDIATE UPLOAD FAILED:', error);
+          console.error('📊 Error details:', {
+            errorType: typeof error,
+            errorMessage: error instanceof Error ? error.message : 'Unknown error',
+            errorStack: error instanceof Error ? error.stack : 'No stack trace',
+            processedMediaValid: !!processedMedia && processedMedia.length > 0,
+            configValid: !!config
+          });
+          
+          setUploadSuccess(false);
+          
+        } finally {
+          setUploading(false);
+          setUploadAttempts(0);
+        }
+      };
+
+      // Call immediately without any delays
+      immediateUpload();
     }
 
   }, [processedMedia, config, processing, currentModelType, uploading]);
@@ -800,6 +890,49 @@ export default function Photobooth() {
               <ImageIcon className="w-6 h-6 text-green-500" />
               <span className="text-white font-medium">AI Photo Magic</span>
             </>
+          )}
+
+          {/* DEBUG: Manual Upload Test Button */}
+          {processedMedia && (
+            <button
+              onClick={async () => {
+                console.log('🧪 === MANUAL UPLOAD TEST ===');
+                console.log('Current processedMedia:', {
+                  exists: !!processedMedia,
+                  type: typeof processedMedia,
+                  length: processedMedia.length,
+                  format: processedMedia.startsWith('data:') ? 'data URL' : processedMedia.startsWith('blob:') ? 'blob URL' : 'unknown',
+                  preview: processedMedia.substring(0, 100) + '...'
+                });
+                
+                try {
+                  const testResult = await uploadPhoto(
+                    processedMedia,
+                    config?.global_prompt || 'Manual Test Upload',
+                    currentModelType
+                  );
+                  
+                  console.log('🎉 Manual test upload result:', testResult);
+                  
+                  if (testResult) {
+                    window.dispatchEvent(new CustomEvent('galleryUpdate', {
+                      detail: { newPhoto: testResult, source: 'manual_test' }
+                    }));
+                    
+                    alert(`✅ Manual upload SUCCESS!\nID: ${testResult.id}\nCheck gallery now!`);
+                  } else {
+                    alert('❌ Manual upload returned null');
+                  }
+                } catch (error) {
+                  console.error('❌ Manual test failed:', error);
+                  alert(`❌ Manual upload failed:\n${error instanceof Error ? error.message : 'Unknown error'}`);
+                }
+              }}
+              className="w-full flex items-center justify-center gap-2 py-3 bg-purple-600 rounded-xl hover:bg-purple-700 transition font-medium"
+            >
+              <ImageIcon className="w-5 h-5" />
+              🧪 Test Upload to Gallery
+            </button>
           )}
           {/* Upload Status Indicator */}
           {(uploading || uploadSuccess) && (
