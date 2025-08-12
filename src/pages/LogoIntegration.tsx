@@ -1,5 +1,5 @@
 import React, { useState, useRef, ChangeEvent } from 'react';
-import { Upload, Wand2, AlertCircle, RefreshCw, Image as ImageIcon, Layers, Settings, Eye } from 'lucide-react';
+import { Upload, Wand2, AlertCircle, RefreshCw, Image as ImageIcon, Layers, Settings, Eye, Info } from 'lucide-react';
 import { useConfigStore } from '../store/configStore';
 import { uploadPhoto } from '../lib/supabase';
 
@@ -39,7 +39,7 @@ export default function OverlayIntegration() {
     offsetY: 20
   });
 
-  // Handle overlay image upload
+  // **FIXED: Handle overlay image upload with proper file reading**
   const handleOverlayChange = (event: ChangeEvent<HTMLInputElement>) => {
     setError(null);
     
@@ -58,17 +58,27 @@ export default function OverlayIntegration() {
       setError('Overlay file is too large (max 10MB)');
       return;
     }
-    
+
+    // **FIXED: Actually read the file and convert to base64**
     const reader = new FileReader();
     reader.onload = (e) => {
-      if (e.target?.result) {
-        setOverlayImage(e.target.result as string);
-        generatePreview(e.target.result as string, testImage);
+      if (e.target?.result && typeof e.target.result === 'string') {
+        console.log('✅ Overlay image loaded successfully:', {
+          size: file.size,
+          type: file.type,
+          name: file.name
+        });
+        setOverlayImage(e.target.result);
+        setError(null);
+      } else {
+        setError('Failed to read overlay image file');
       }
     };
+    
     reader.onerror = () => {
-      setError('Failed to read the overlay file');
+      setError('Failed to read overlay image file');
     };
+    
     reader.readAsDataURL(file);
   };
 
@@ -91,45 +101,54 @@ export default function OverlayIntegration() {
       setError('Test image file is too large (max 10MB)');
       return;
     }
-    
+
     const reader = new FileReader();
     reader.onload = (e) => {
-      if (e.target?.result) {
-        setTestImage(e.target.result as string);
-        generatePreview(overlayImage, e.target.result as string);
+      if (e.target?.result && typeof e.target.result === 'string') {
+        setTestImage(e.target.result);
+        setError(null);
+      } else {
+        setError('Failed to read test image file');
       }
     };
+    
     reader.onerror = () => {
-      setError('Failed to read the test image file');
+      setError('Failed to read test image file');
     };
+    
     reader.readAsDataURL(file);
   };
 
   // Generate preview with overlay
-  const generatePreview = async (overlayData: string | null, backgroundData: string | null) => {
-    if (!overlayData || !backgroundData || !canvasRef.current) {
-      setResultImage(null);
-      return;
-    }
-
+  const generatePreview = async (overlayData: string, backgroundData: string) => {
     try {
-      const canvas = canvasRef.current;
+      setError(null);
+      
+      const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
-      if (!ctx) return;
+      if (!ctx) {
+        throw new Error('Cannot get canvas context');
+      }
 
-      // Load background image
+      // Load both images
       const bgImg = new Image();
       const overlayImg = new Image();
 
       await new Promise<void>((resolve, reject) => {
-        bgImg.onload = () => resolve();
-        bgImg.onerror = () => reject(new Error('Failed to load background image'));
-        bgImg.src = backgroundData;
-      });
+        let loadedCount = 0;
+        
+        const checkComplete = () => {
+          loadedCount++;
+          if (loadedCount === 2) resolve();
+        };
 
-      await new Promise<void>((resolve, reject) => {
-        overlayImg.onload = () => resolve();
+        bgImg.onload = checkComplete;
+        bgImg.onerror = () => reject(new Error('Failed to load background image'));
+        
+        overlayImg.onload = checkComplete;
         overlayImg.onerror = () => reject(new Error('Failed to load overlay image'));
+        
+        bgImg.src = backgroundData;
         overlayImg.src = overlayData;
       });
 
@@ -207,6 +226,7 @@ export default function OverlayIntegration() {
     }
   }, [overlaySettings, overlayImage, testImage]);
 
+  // **ENHANCED: Save overlay configuration with better error handling**
   const saveOverlayConfig = async () => {
     if (!overlayImage || !overlayName.trim()) {
       setError('Please provide an overlay image and name');
@@ -214,9 +234,17 @@ export default function OverlayIntegration() {
     }
 
     setProcessing(true);
+    setError(null);
     
     try {
-      // Save overlay configuration to localStorage or config
+      console.log('💾 Saving overlay configuration...', {
+        name: overlayName,
+        hasImage: !!overlayImage,
+        imageSize: overlayImage.length,
+        settings: overlaySettings
+      });
+
+      // Save overlay configuration to localStorage
       const overlayConfig = {
         name: overlayName,
         image: overlayImage,
@@ -224,35 +252,60 @@ export default function OverlayIntegration() {
         createdAt: new Date().toISOString()
       };
 
-      // Store in localStorage for now (could be moved to Supabase later)
+      // Get existing overlays and add new one
       const existingOverlays = JSON.parse(localStorage.getItem('photoboothOverlays') || '[]');
-      existingOverlays.push(overlayConfig);
+      
+      // Check if overlay with same name exists and ask for confirmation
+      const existingIndex = existingOverlays.findIndex((overlay: any) => overlay.name === overlayName);
+      if (existingIndex !== -1) {
+        const shouldReplace = confirm(`An overlay named "${overlayName}" already exists. Do you want to replace it?`);
+        if (shouldReplace) {
+          existingOverlays[existingIndex] = overlayConfig;
+        } else {
+          setProcessing(false);
+          return;
+        }
+      } else {
+        existingOverlays.push(overlayConfig);
+      }
+
+      // Save to localStorage
       localStorage.setItem('photoboothOverlays', JSON.stringify(existingOverlays));
+      
+      console.log('✅ Overlay saved to localStorage successfully');
 
       // Also save test result to gallery if available
       if (resultImage) {
-        const uploadResult = await uploadPhoto(
-          resultImage,
-          `Overlay Preview: ${overlayName} - ${overlaySettings.position} at ${Math.round(overlaySettings.scale * 100)}% scale`,
-          'image'
-        );
+        try {
+          const uploadResult = await uploadPhoto(
+            resultImage,
+            `Overlay Preview: ${overlayName} - ${overlaySettings.position} at ${Math.round(overlaySettings.scale * 100)}% scale`,
+            'image'
+          );
 
-        if (uploadResult) {
-          // Dispatch gallery update
-          window.dispatchEvent(new CustomEvent('galleryUpdate', {
-            detail: { newPhoto: uploadResult, source: 'overlay_preview' }
-          }));
+          if (uploadResult) {
+            console.log('✅ Preview uploaded to gallery');
+            // Dispatch gallery update
+            window.dispatchEvent(new CustomEvent('galleryUpdate', {
+              detail: { newPhoto: uploadResult, source: 'overlay_preview' }
+            }));
+          }
+        } catch (uploadError) {
+          console.warn('⚠️ Failed to upload preview to gallery:', uploadError);
+          // Don't fail the whole process if gallery upload fails
         }
       }
 
-      alert(`✅ Overlay "${overlayName}" saved successfully!\n\nThis overlay will now be automatically applied to all AI generated photos.`);
+      // Success message
+      alert(`✅ Overlay "${overlayName}" saved successfully!\n\nThis overlay will now be automatically applied to all AI generated photos.\n\nRecommended overlay size: 200x200 to 512x512 pixels for best quality.`);
       
       // Reset form
       resetForm();
       
     } catch (err) {
-      console.error('Error saving overlay:', err);
-      setError(err instanceof Error ? err.message : 'Failed to save overlay');
+      console.error('❌ Error saving overlay:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to save overlay';
+      setError(`Failed to save overlay: ${errorMessage}`);
     } finally {
       setProcessing(false);
     }
@@ -293,6 +346,23 @@ export default function OverlayIntegration() {
           <p className="text-gray-300">
             Upload a custom overlay (logo, watermark, frame) that will be automatically applied to all AI generated photos.
           </p>
+          
+          {/* **NEW: Size recommendations** */}
+          <div className="mt-4 p-4 bg-blue-900/30 rounded-lg border border-blue-500/30 max-w-2xl mx-auto">
+            <div className="flex items-start gap-3">
+              <Info className="w-5 h-5 text-blue-400 mt-0.5 flex-shrink-0" />
+              <div className="text-left">
+                <h3 className="font-semibold text-blue-400 mb-2">Overlay Size Recommendations:</h3>
+                <ul className="text-sm text-blue-200 space-y-1">
+                  <li>• <strong>Small logos/watermarks:</strong> 100x100 to 200x200 pixels</li>
+                  <li>• <strong>Large logos:</strong> 300x300 to 512x512 pixels</li>
+                  <li>• <strong>Frames/borders:</strong> Same size as your AI images (typically 512x512 or 1024x1024)</li>
+                  <li>• <strong>File format:</strong> PNG with transparency for best results</li>
+                  <li>• <strong>Max file size:</strong> 10MB</li>
+                </ul>
+              </div>
+            </div>
+          </div>
         </div>
         
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -335,13 +405,14 @@ export default function OverlayIntegration() {
               />
               
               <div className="mt-4">
-                <label className="block text-sm font-medium mb-2">Overlay Name</label>
+                <label className="block text-sm font-medium mb-2">Overlay Name *</label>
                 <input
                   type="text"
                   value={overlayName}
                   onChange={(e) => setOverlayName(e.target.value)}
                   placeholder="e.g., Company Logo, Watermark, etc."
                   className="w-full bg-gray-700 rounded-lg px-4 py-2 text-white"
+                  required
                 />
               </div>
             </div>
@@ -361,7 +432,7 @@ export default function OverlayIntegration() {
                   <div className="flex flex-col items-center">
                     <img 
                       src={testImage} 
-                      alt="Test Background" 
+                      alt="Test Image Preview" 
                       className="max-h-32 max-w-full mb-2 rounded"
                     />
                     <p className="text-sm text-gray-400">Click to change test image</p>
@@ -391,12 +462,13 @@ export default function OverlayIntegration() {
               </h2>
               
               <div className="space-y-4">
+                {/* Position */}
                 <div>
                   <label className="block text-sm font-medium mb-2">Position</label>
-                  <select 
+                  <select
                     value={overlaySettings.position}
                     onChange={(e) => setOverlaySettings(prev => ({ ...prev, position: e.target.value as OverlayPosition }))}
-                    className="w-full bg-gray-700 rounded-lg px-4 py-2 text-white"
+                    className="w-full bg-gray-700 rounded-lg px-3 py-2 text-white"
                   >
                     <option value="top-left">Top Left</option>
                     <option value="top-center">Top Center</option>
@@ -408,12 +480,15 @@ export default function OverlayIntegration() {
                   </select>
                 </div>
 
+                {/* Scale */}
                 <div>
-                  <label className="block text-sm font-medium mb-2">Size: {Math.round(overlaySettings.scale * 100)}%</label>
+                  <label className="block text-sm font-medium mb-2">
+                    Scale: {Math.round(overlaySettings.scale * 100)}%
+                  </label>
                   <input
                     type="range"
                     min="0.1"
-                    max="1"
+                    max="1.0"
                     step="0.05"
                     value={overlaySettings.scale}
                     onChange={(e) => setOverlaySettings(prev => ({ ...prev, scale: parseFloat(e.target.value) }))}
@@ -421,12 +496,15 @@ export default function OverlayIntegration() {
                   />
                 </div>
 
+                {/* Opacity */}
                 <div>
-                  <label className="block text-sm font-medium mb-2">Opacity: {Math.round(overlaySettings.opacity * 100)}%</label>
+                  <label className="block text-sm font-medium mb-2">
+                    Opacity: {Math.round(overlaySettings.opacity * 100)}%
+                  </label>
                   <input
                     type="range"
                     min="0.1"
-                    max="1"
+                    max="1.0"
                     step="0.05"
                     value={overlaySettings.opacity}
                     onChange={(e) => setOverlaySettings(prev => ({ ...prev, opacity: parseFloat(e.target.value) }))}
@@ -434,37 +512,13 @@ export default function OverlayIntegration() {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Offset X: {overlaySettings.offsetX}px</label>
-                    <input
-                      type="range"
-                      min="0"
-                      max="100"
-                      value={overlaySettings.offsetX}
-                      onChange={(e) => setOverlaySettings(prev => ({ ...prev, offsetX: parseInt(e.target.value) }))}
-                      className="w-full"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Offset Y: {overlaySettings.offsetY}px</label>
-                    <input
-                      type="range"
-                      min="0"
-                      max="100"
-                      value={overlaySettings.offsetY}
-                      onChange={(e) => setOverlaySettings(prev => ({ ...prev, offsetY: parseInt(e.target.value) }))}
-                      className="w-full"
-                    />
-                  </div>
-                </div>
-
+                {/* Blend Mode */}
                 <div>
                   <label className="block text-sm font-medium mb-2">Blend Mode</label>
-                  <select 
+                  <select
                     value={overlaySettings.blendMode}
                     onChange={(e) => setOverlaySettings(prev => ({ ...prev, blendMode: e.target.value as BlendMode }))}
-                    className="w-full bg-gray-700 rounded-lg px-4 py-2 text-white"
+                    className="w-full bg-gray-700 rounded-lg px-3 py-2 text-white"
                   >
                     <option value="normal">Normal</option>
                     <option value="multiply">Multiply</option>
@@ -474,10 +528,42 @@ export default function OverlayIntegration() {
                     <option value="hard-light">Hard Light</option>
                   </select>
                 </div>
+
+                {/* Offset X */}
+                <div>
+                  <label className="block text-sm font-medium mb-2">
+                    Horizontal Offset: {overlaySettings.offsetX}px
+                  </label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    step="5"
+                    value={overlaySettings.offsetX}
+                    onChange={(e) => setOverlaySettings(prev => ({ ...prev, offsetX: parseInt(e.target.value) }))}
+                    className="w-full"
+                  />
+                </div>
+
+                {/* Offset Y */}
+                <div>
+                  <label className="block text-sm font-medium mb-2">
+                    Vertical Offset: {overlaySettings.offsetY}px
+                  </label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    step="5"
+                    value={overlaySettings.offsetY}
+                    onChange={(e) => setOverlaySettings(prev => ({ ...prev, offsetY: parseInt(e.target.value) }))}
+                    className="w-full"
+                  />
+                </div>
               </div>
             </div>
           </div>
-          
+
           {/* Right Column - Preview & Actions */}
           <div className="space-y-6">
             {/* Preview */}
@@ -487,7 +573,7 @@ export default function OverlayIntegration() {
                 Preview
               </h2>
               
-              <div className="bg-black rounded-lg p-4 min-h-[400px] flex items-center justify-center">
+              <div className="border border-gray-600 rounded-lg p-4 min-h-[300px] flex items-center justify-center">
                 {resultImage ? (
                   <img 
                     src={resultImage} 
@@ -546,16 +632,14 @@ export default function OverlayIntegration() {
                 <ul className="text-sm text-blue-200 space-y-1">
                   <li>• Upload your overlay image (logo, watermark, etc.)</li>
                   <li>• Adjust position, size, and opacity settings</li>
-                  <li>• Test with a sample image to preview</li>
-                  <li>• Save configuration to apply to all future AI photos</li>
+                  <li>• Test with a sample image to preview the result</li>
+                  <li>• Save configuration - it will apply to ALL future AI photos!</li>
+                  <li>• Your overlay will be permanently embedded in generated images</li>
                 </ul>
               </div>
             </div>
           </div>
         </div>
-        
-        {/* Hidden canvas for processing */}
-        <canvas ref={canvasRef} className="hidden" />
       </div>
     </div>
   );
