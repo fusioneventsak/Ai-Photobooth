@@ -133,338 +133,82 @@ export default function Photobooth() {
     };
   }, [processedMedia]);
 
-  // BULLETPROOF AUTOMATIC UPLOAD TRIGGER - Runs whenever processedMedia changes
+  // SINGLE IMMEDIATE UPLOAD - No batching, no delays, no duplicates
   useEffect(() => {
-    const guaranteedUpload = async () => {
-      // Only upload if we have processed media, config, not currently processing, and not already uploading
-      if (!processedMedia || !config || processing || uploading) {
-        console.log('🔍 Upload conditions not met:', {
-          hasProcessedMedia: !!processedMedia,
-          hasConfig: !!config,
-          processing,
-          uploading
-        });
-        return;
-      }
-
-      // Check if this image was already uploaded (prevent duplicates)
-      const uploadedKey = `uploaded_${processedMedia.substring(0, 50)}`;
-      if (sessionStorage.getItem(uploadedKey)) {
-        console.log('🔄 Image already uploaded, skipping duplicate upload');
-        return;
-      }
-
-      console.log('🚀 === BULLETPROOF AUTOMATIC UPLOAD TRIGGERED ===');
-      console.log('📊 Upload trigger details:', {
-        hasProcessedMedia: !!processedMedia,
-        mediaLength: processedMedia.length,
-        mediaType: processedMedia.startsWith('data:') ? 'data URL' : 'blob URL',
-        hasConfig: !!config,
-        processing,
-        uploading,
-        currentModelType,
-        prompt: config.global_prompt || 'AI Generated Image'
-      });
-
-      setUploading(true);
-
-      try {
-        // Multiple attempts with different delays to ensure upload succeeds
-        let uploadSuccess = false;
-        let lastError: Error | null = null;
-
-        for (let attempt = 1; attempt <= 3; attempt++) {
-          try {
-            setUploadAttempts(attempt);
-            console.log(`📤 Upload attempt ${attempt}/3...`);
-            
-            // Wait longer on subsequent attempts
-            const delay = attempt === 1 ? 500 : attempt * 1000;
-            await new Promise(resolve => setTimeout(resolve, delay));
-
-            console.log('📋 Upload parameters for attempt:', {
-              contentType: currentModelType,
-              promptLength: config.global_prompt?.length || 0,
-              prompt: config.global_prompt || 'AI Generated Image'
-            });
-            
-            const uploadResult = await uploadPhoto(
-              processedMedia,
-              config.global_prompt || 'AI Generated Image',
-              currentModelType
-            );
-            
-            if (!uploadResult) {
-              throw new Error(`Upload attempt ${attempt} returned null result`);
-            }
-            
-            console.log(`🎉 === UPLOAD ATTEMPT ${attempt} SUCCESSFUL ===`);
-            console.log('📊 Upload result:', {
-              id: uploadResult.id,
-              url: uploadResult.processed_url,
-              type: uploadResult.content_type,
-              created: uploadResult.created_at,
-              prompt: uploadResult.prompt?.substring(0, 50) + '...'
-            });
-
-            // Mark as uploaded to prevent duplicates
-            sessionStorage.setItem(uploadedKey, JSON.stringify({
-              uploadedAt: new Date().toISOString(),
-              photoId: uploadResult.id,
-              attempt: attempt
-            }));
-
-            // === GUARANTEED GALLERY UPDATE EVENTS ===
-            console.log('📢 Dispatching multiple gallery update events...');
-            
-            // Primary event
-            const galleryEvent = new CustomEvent('galleryUpdate', {
-              detail: { 
-                newPhoto: uploadResult,
-                source: 'automatic_upload',
-                timestamp: new Date().toISOString(),
-                attempt: attempt
-              }
-            });
-            
-            window.dispatchEvent(galleryEvent);
-            
-            // Backup events with slight delays
-            setTimeout(() => {
-              window.dispatchEvent(new CustomEvent('galleryUpdate', {
-                detail: { 
-                  newPhoto: uploadResult,
-                  source: 'automatic_upload_backup_1',
-                  timestamp: new Date().toISOString()
-                }
-              }));
-            }, 100);
-            
-            setTimeout(() => {
-              window.dispatchEvent(new CustomEvent('galleryUpdate', {
-                detail: { 
-                  newPhoto: uploadResult,
-                  source: 'automatic_upload_backup_2',
-                  timestamp: new Date().toISOString()
-                }
-              }));
-            }, 500);
-            
-            // Storage event as additional backup
-            localStorage.setItem('galleryRefresh', JSON.stringify({
-              timestamp: Date.now(),
-              photoId: uploadResult.id,
-              source: 'automatic_upload'
-            }));
-            
-            console.log('✅ All gallery update events dispatched successfully');
-            console.log('🎯 Gallery should refresh automatically now!');
-            
-            uploadSuccess = true;
-            setUploadSuccess(true);
-            
-            // Hide success indicator after 3 seconds
-            setTimeout(() => setUploadSuccess(false), 3000);
-            
-            break; // Exit retry loop on success
-
-          } catch (attemptError) {
-            lastError = attemptError instanceof Error ? attemptError : new Error('Unknown upload error');
-            console.error(`❌ Upload attempt ${attempt} failed:`, lastError);
-            
-            if (attempt < 3) {
-              console.log(`⏳ Retrying upload in ${attempt * 1000}ms...`);
-            }
-          }
-        }
-
-        if (!uploadSuccess) {
-          throw lastError || new Error('All upload attempts failed');
-        }
-
-      } catch (uploadError) {
-        console.error('❌ === ALL AUTOMATIC UPLOAD ATTEMPTS FAILED ===');
-        console.error('📊 Final upload error:', uploadError);
-        
-        // Don't show error to user since the image is still generated successfully
-        console.warn('⚠️ Image generated successfully but automatic gallery save failed after multiple attempts');
-        console.warn('🎯 User can still see the generated image in the photobooth');
-        
-        // Log detailed debugging info
-        console.error('🔍 Debug info for failed upload:', {
-          processedMediaType: typeof processedMedia,
-          processedMediaLength: processedMedia?.length,
-          processedMediaStart: processedMedia?.substring(0, 100),
-          configExists: !!config,
-          globalPrompt: config?.global_prompt,
-          currentModelType,
-          error: uploadError instanceof Error ? uploadError.message : uploadError
-        });
-        
-      } finally {
-        setUploading(false);
-        setUploadAttempts(0);
-      }
-    };
-
-    // Trigger upload with a small delay to ensure everything is ready
-    if (processedMedia && !processing) {
-      console.log('🎯 processedMedia detected, starting IMMEDIATE upload...');
-      
-      // IMMEDIATE UPLOAD - No delays, no conditions, just upload
-      const immediateUpload = async () => {
-        console.log('🚀 === IMMEDIATE UPLOAD STARTING ===');
-        console.log('📊 Direct upload details:', {
-          processedMediaExists: !!processedMedia,
-          processedMediaType: typeof processedMedia,
-          processedMediaLength: processedMedia.length,
-          processedMediaFormat: processedMedia.startsWith('data:') ? 'data URL' : processedMedia.startsWith('blob:') ? 'blob URL' : 'unknown',
-          configExists: !!config,
-          prompt: config?.global_prompt || 'AI Generated Image',
-          contentType: currentModelType
-        });
-
-        try {
-          setUploading(true);
-          setUploadAttempts(1);
-
-          console.log('📤 Calling uploadPhoto directly...');
-          
-          const uploadResult = await uploadPhoto(
-            processedMedia,
-            config?.global_prompt || 'AI Generated Image',
-            currentModelType
-          );
-          
-          console.log('📋 Upload result received:', uploadResult);
-          
-          if (!uploadResult) {
-            throw new Error('uploadPhoto returned null/undefined');
-          }
-          
-          console.log('🎉 === IMMEDIATE UPLOAD SUCCESS ===');
-          console.log('✅ Upload details:', {
-            id: uploadResult.id,
-            url: uploadResult.processed_url,
-            type: uploadResult.content_type,
-            created: uploadResult.created_at
-          });
-
-          // Mark as uploaded
-          const uploadedKey = `uploaded_${processedMedia.substring(0, 50)}`;
-          sessionStorage.setItem(uploadedKey, JSON.stringify({
-            uploadedAt: new Date().toISOString(),
-            photoId: uploadResult.id,
-            source: 'immediate_upload'
-          }));
-
-          // IMMEDIATE GALLERY EVENT
-          console.log('📢 Dispatching gallery event IMMEDIATELY...');
-          
-          const galleryEvent = new CustomEvent('galleryUpdate', {
-            detail: { 
-              newPhoto: uploadResult,
-              source: 'immediate_upload',
-              timestamp: new Date().toISOString()
-            }
-          });
-          
-          window.dispatchEvent(galleryEvent);
-          console.log('✅ Gallery event dispatched');
-          
-          // Additional storage trigger
-          localStorage.setItem('galleryRefresh', JSON.stringify({
-            timestamp: Date.now(),
-            photoId: uploadResult.id
-          }));
-          
-          setUploadSuccess(true);
-          setTimeout(() => setUploadSuccess(false), 3000);
-          
-          console.log('🎯 IMMEDIATE UPLOAD COMPLETE - Gallery should update NOW');
-          
-        } catch (error) {
-          console.error('❌ IMMEDIATE UPLOAD FAILED:', error);
-          console.error('📊 Error details:', {
-            errorType: typeof error,
-            errorMessage: error instanceof Error ? error.message : 'Unknown error',
-            errorStack: error instanceof Error ? error.stack : 'No stack trace',
-            processedMediaValid: !!processedMedia && processedMedia.length > 0,
-            configValid: !!config
-          });
-          
-          setUploadSuccess(false);
-          
-        } finally {
-          setUploading(false);
-          setUploadAttempts(0);
-        }
-      };
-
-      // Call immediately without any delays
-      immediateUpload();
+    if (!processedMedia || !config || processing || uploading) {
+      return;
     }
 
-  }, [processedMedia, config, processing, currentModelType, uploading]);
+    // Create a unique key for this specific image to prevent duplicates
+    const imageHash = btoa(processedMedia.substring(0, 100)).substring(0, 20);
+    const uploadKey = `upload_${imageHash}_${Date.now()}`;
+    
+    // Check if this exact image was already uploaded
+    const existingUploads = Object.keys(sessionStorage).filter(key => 
+      key.startsWith('upload_') && 
+      sessionStorage.getItem(key)?.includes(imageHash)
+    );
+    
+    if (existingUploads.length > 0) {
+      console.log('🔄 This exact image already uploaded, skipping:', existingUploads);
+      return;
+    }
 
-  // BACKUP UPLOAD TRIGGER - Runs 5 seconds after processedMedia changes as final safety net
-  useEffect(() => {
-    if (!processedMedia || !config) return;
+    console.log('🎯 NEW IMAGE DETECTED - Starting immediate upload');
+    console.log('📊 Upload details:', {
+      imageHash,
+      uploadKey,
+      imageLength: processedMedia.length,
+      imageType: processedMedia.startsWith('data:') ? 'data URL' : 'blob URL'
+    });
 
-    const backupUploadTimer = setTimeout(async () => {
-      const uploadedKey = `uploaded_${processedMedia.substring(0, 50)}`;
-      const uploadRecord = sessionStorage.getItem(uploadedKey);
-      
-      if (uploadRecord) {
-        console.log('🔍 Backup check: Image already uploaded, skipping backup');
-        return;
-      }
-
-      console.log('⚠️ === BACKUP UPLOAD TRIGGER ACTIVATED ===');
-      console.log('📊 Main upload may have failed, attempting backup upload...');
+    const uploadImmediately = async () => {
+      setUploading(true);
       
       try {
+        console.log('📤 Starting upload for new image...');
+        
         const uploadResult = await uploadPhoto(
           processedMedia,
-          config.global_prompt || 'AI Generated Image (Backup Upload)',
+          config.global_prompt || 'AI Generated Image',
           currentModelType
         );
-
+        
         if (uploadResult) {
-          console.log('🎉 === BACKUP UPLOAD SUCCESSFUL ===');
-          
-          // Mark as uploaded
-          sessionStorage.setItem(uploadedKey, JSON.stringify({
-            uploadedAt: new Date().toISOString(),
+          // Mark this specific image as uploaded
+          sessionStorage.setItem(uploadKey, JSON.stringify({
             photoId: uploadResult.id,
-            source: 'backup_upload'
+            imageHash,
+            uploadedAt: new Date().toISOString()
           }));
-
-          // Dispatch gallery events
+          
+          console.log('✅ Upload successful, dispatching gallery event:', uploadResult.id);
+          
+          // Single gallery event dispatch
           window.dispatchEvent(new CustomEvent('galleryUpdate', {
             detail: { 
               newPhoto: uploadResult,
-              source: 'backup_upload',
-              timestamp: new Date().toISOString()
+              source: 'immediate_single_upload'
             }
           }));
-
-          localStorage.setItem('galleryRefresh', JSON.stringify({
-            timestamp: Date.now(),
-            photoId: uploadResult.id,
-            source: 'backup_upload'
-          }));
-
-          console.log('✅ Backup upload completed successfully');
+          
+          setUploadSuccess(true);
+          setTimeout(() => setUploadSuccess(false), 2000);
+          
+        } else {
+          throw new Error('Upload returned null');
         }
-      } catch (backupError) {
-        console.error('❌ Backup upload also failed:', backupError);
-        console.error('🚨 Both primary and backup uploads failed - manual intervention may be needed');
+        
+      } catch (error) {
+        console.error('❌ Single upload failed:', error);
+      } finally {
+        setUploading(false);
       }
-    }, 5000); // 5 second delay
+    };
 
-    return () => clearTimeout(backupUploadTimer);
-  }, [processedMedia, config, currentModelType]);
+    uploadImmediately();
+
+  }, [processedMedia]); // Only depend on processedMedia changes
 
   // Enhanced resize function with validation
   const resizeImage = async (imageData: string): Promise<string> => {
