@@ -11,6 +11,8 @@ interface StabilityGenerationOptions {
   negativePrompt?: string;
   facePreservationMode?: 'preserve_face' | 'replace_face';
   steps?: number;
+  useControlNet?: boolean;
+  controlNetType?: string;
 }
 
 export async function generateWithStability({
@@ -22,7 +24,9 @@ export async function generateWithStability({
   cfgScale = 7,
   negativePrompt = 'blurry, low quality, distorted, deformed, ugly, bad anatomy',
   facePreservationMode = 'preserve_face',
-  steps = 25
+  steps = 25,
+  useControlNet = true,
+  controlNetType = 'auto'
 }: StabilityGenerationOptions): Promise<string> {
   try {
     console.log('🔄 Calling generate-stability-image Edge Function...');
@@ -33,7 +37,9 @@ export async function generateWithStability({
       cfgScale,
       steps,
       facePreservationMode,
-      hasMask: !!maskData
+      hasMask: !!maskData,
+      useControlNet,
+      controlNetType
     });
 
     // Call Supabase Edge Function with all parameters
@@ -47,7 +53,9 @@ export async function generateWithStability({
         cfgScale,
         negativePrompt,
         facePreservationMode,
-        steps
+        steps,
+        useControlNet,
+        controlNetType
       }
     });
 

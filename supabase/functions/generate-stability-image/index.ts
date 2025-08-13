@@ -14,6 +14,8 @@ interface StabilityRequest {
   strength?: number
   cfgScale?: number
   negativePrompt?: string
+  useControlNet?: boolean
+  controlNetType?: string
 }
 
 // Add request size limits to prevent stack overflow
@@ -103,7 +105,9 @@ serve(async (req) => {
       maskData, 
       strength = 0.8, 
       cfgScale = 7, 
-      negativePrompt = 'blurry, low quality, distorted, deformed, ugly, bad anatomy'
+      negativePrompt = 'blurry, low quality, distorted, deformed, ugly, bad anatomy',
+      useControlNet = true,
+      controlNetType = 'auto'
     } = body
 
     // Validate required fields
@@ -185,10 +189,22 @@ serve(async (req) => {
     formData.append('cfg_scale', Math.max(1, Math.min(20, cfgScale)).toString())
     formData.append('output_format', 'png')
 
+    // Add ControlNet parameters if enabled
+    if (useControlNet && controlNetType) {
+      formData.append('control_strength', '0.8') // How strongly to apply control guidance
+      if (controlNetType !== 'auto') {
+        formData.append('control_type', controlNetType)
+      }
+    }
     if (mode === 'inpaint' && maskData) {
       // Inpainting mode - requires image, mask, and strength
       formData.append('image', imageBlob, 'image.png')
       formData.append('strength', Math.max(0.1, Math.min(1.0, strength)).toString())
+      
+      // Add control image for ControlNet (same as input image for pose guidance)
+      if (useControlNet) {
+        formData.append('control_image', imageBlob, 'control.png')
+      }
       
       // Validate and process mask data
       if (!maskData.startsWith('data:image/')) {
@@ -232,9 +248,14 @@ serve(async (req) => {
       formData.append('mode', 'image-to-image')
       formData.append('image', imageBlob, 'image.png')
       formData.append('strength', Math.max(0.1, Math.min(1.0, strength)).toString())
+      
+      // Add control image for ControlNet
+      if (useControlNet) {
+        formData.append('control_image', imageBlob, 'control.png')
+      }
     }
 
-    console.log(`Making request to Stability AI: ${mode} mode, prompt length: ${sanitizedPrompt.length}`)
+    console.log(`Making request to Stability AI: ${mode} mode, prompt length: ${sanitizedPrompt.length}, ControlNet: ${useControlNet ? controlNetType : 'disabled'}`)
 
     // Make request to Stability AI with timeout
     const controller = new AbortController()

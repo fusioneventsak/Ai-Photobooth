@@ -57,6 +57,8 @@ export default function Admin() {
         model_type: config.model_type || 'image',
         video_duration: config.video_duration || 5,
         face_preservation_mode: config.face_preservation_mode || 'preserve_face',
+        use_controlnet: config.use_controlnet ?? true,
+        controlnet_type: config.controlnet_type || 'auto',
       });
     }
   }, [config]);
@@ -94,6 +96,8 @@ export default function Admin() {
       if (formData.model_type !== undefined) updates.model_type = formData.model_type;
       if (formData.video_duration !== undefined) updates.video_duration = formData.video_duration;
       if (formData.face_preservation_mode !== undefined) updates.face_preservation_mode = formData.face_preservation_mode;
+      if (formData.use_controlnet !== undefined) updates.use_controlnet = formData.use_controlnet;
+      if (formData.controlnet_type !== undefined) updates.controlnet_type = formData.controlnet_type;
 
       const result = await updateConfig(updates);
       
@@ -582,6 +586,51 @@ export default function Admin() {
                         </div>
                       </div>
 
+                      {/* ControlNet Settings */}
+                      <div className="mt-6 p-4 bg-blue-900/20 border border-blue-500/30 rounded-xl">
+                        <h3 className="text-lg font-medium text-blue-200 mb-4 flex items-center gap-2">
+                          <Eye className="w-5 h-5" />
+                          ControlNet (Advanced Pose & Structure Control)
+                        </h3>
+                        
+                        <div className="space-y-4">
+                          <label className="flex items-center gap-3">
+                            <input
+                              type="checkbox"
+                              name="use_controlnet"
+                              checked={formData.use_controlnet ?? true}
+                              onChange={handleChange}
+                              className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500"
+                            />
+                            <div>
+                              <span className="text-white font-medium">Enable ControlNet</span>
+                              <p className="text-sm text-gray-300">
+                                Improves pose preservation, face-to-body matching, and overall consistency
+                              </p>
+                            </div>
+                          </label>
+
+                          {formData.use_controlnet && (
+                            <div>
+                              <label className="block text-sm font-medium mb-2 text-gray-300">ControlNet Type</label>
+                              <select
+                                name="controlnet_type"
+                                value={formData.controlnet_type || 'auto'}
+                                onChange={handleChange}
+                                className="w-full bg-gray-700/50 border border-gray-600 rounded-xl px-4 py-3 text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition"
+                              >
+                                <option value="auto">Auto (Recommended)</option>
+                                <option value="openpose">OpenPose (Body & Face Pose)</option>
+                                <option value="canny">Canny Edge Detection</option>
+                                <option value="depth">Depth Map</option>
+                              </select>
+                              <p className="text-xs text-gray-400 mt-2">
+                                Auto mode automatically selects the best ControlNet type for your image
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
                       {formData.model_type === 'video' && (
                         <div className="mt-6">
                           <label className="block text-sm font-medium mb-2 text-gray-300">
@@ -800,6 +849,16 @@ export default function Admin() {
                       <span className="text-gray-400">Face Mode:</span>
                       <span className="capitalize">{(formData.face_preservation_mode || 'preserve_face').replace('_', ' ')}</span>
                     </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">ControlNet:</span>
+                      <span>{formData.use_controlnet ? 'Enabled' : 'Disabled'}</span>
+                    </div>
+                    {formData.use_controlnet && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-400">Control Type:</span>
+                        <span className="capitalize">{formData.controlnet_type || 'auto'}</span>
+                      </div>
+                    )}
                   </div>
                 </motion.div>
               </div>

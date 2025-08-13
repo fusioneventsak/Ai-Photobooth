@@ -420,7 +420,9 @@ export default function Photobooth() {
           facePreservationMode: faceMode,
           strength: faceMode === 'preserve_face' ? 0.4 : 0.7, // Optimized for SDXL
           cfgScale: 8.0,  // Good balance for SDXL
-          steps: 25       // Optimal for SDXL quality/speed
+          steps: 25,      // Optimal for SDXL quality/speed
+          useControlNet: config.use_controlnet ?? true,
+          controlNetType: config.controlnet_type || 'auto'
         });
 
         const timeoutPromise = new Promise<never>((_, reject) => {
@@ -788,6 +790,7 @@ export default function Photobooth() {
             <p><span className="text-pink-400 font-semibold">CFG Scale:</span> 8.0</p>
             <p><span className="text-cyan-400 font-semibold">Resolution:</span> 1024x1024 SDXL Native</p>
             <p><span className="text-orange-400 font-semibold">Steps:</span> 25 (SDXL Optimized)</p>
+            <p><span className="text-teal-400 font-semibold">ControlNet:</span> {config?.use_controlnet ? `Enabled (${config?.controlnet_type || 'auto'})` : 'Disabled'}</p>
             {debugInfo && (
               <div className="mt-2 p-2 bg-red-900/20 border border-red-500/30 rounded">
                 <p className="text-red-400 font-mono text-xs">
