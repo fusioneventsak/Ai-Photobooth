@@ -1,4 +1,6 @@
 // src/types/config.ts
+// Enhanced config types for SDXL Inpainting + ControlNet support
+
 export interface Config {
   id: string;
   created_at: string;
@@ -19,6 +21,19 @@ export interface Config {
   face_preservation_mode: 'preserve_face' | 'replace_face';
   gallery_images_per_page?: number;
   
+  // Enhanced SDXL Inpainting Settings
+  sdxl_strength?: number; // 0.1-1.0, lower preserves more of original
+  sdxl_cfg_scale?: number; // 1-20, guidance scale
+  sdxl_steps?: number; // 10-50, number of steps
+  sdxl_face_expansion?: number; // 1.0-2.0, how much to expand face mask
+  sdxl_feather_radius?: number; // 0-50, mask feathering for smooth blending
+  
+  // Advanced Settings
+  use_controlnet?: boolean; // Enable ControlNet for better composition
+  controlnet_type?: 'canny' | 'depth' | 'openpose' | 'auto';
+  auto_enhance_prompt?: boolean; // Automatically enhance prompts for better results
+  hd_upscaling?: boolean; // Enable post-processing upscaling
+  
   // Gallery Settings
   gallery_allow_downloads?: boolean;
   gallery_social_sharing?: boolean;
@@ -26,4 +41,16 @@ export interface Config {
   gallery_require_admin?: boolean;
   gallery_watermark_enabled?: boolean;
   gallery_public_access?: boolean;
+  
+  // Header/UI Customization
+  header_bg_color?: string;
+  show_model_badge?: boolean;
+  show_face_mode_badge?: boolean;
+  show_processing_details?: boolean;
+  
+  // Performance Settings
+  enable_debug_mode?: boolean;
+  max_generation_attempts?: number;
+  generation_timeout?: number; // milliseconds
+  enable_fallback_masking?: boolean;
 }
