@@ -16,7 +16,8 @@ import {
   Share2,
   Users,
   Lock,
-  Globe
+  Globe,
+  Wand2
 } from 'lucide-react';
 import { useConfigStore } from '../store/configStore';
 import type { Config } from '../types/config';
@@ -28,6 +29,9 @@ interface AdminFormData extends Partial<Config> {
   gallery_require_admin?: boolean;
   gallery_watermark_enabled?: boolean;
   gallery_social_sharing?: boolean;
+  model_type?: 'image' | 'video';
+  video_duration?: number;
+  face_preservation_mode?: 'preserve_face' | 'replace_face';
 }
 
 export default function Admin() {
@@ -50,6 +54,9 @@ export default function Admin() {
         gallery_require_admin: false,
         gallery_watermark_enabled: false,
         gallery_social_sharing: true,
+        model_type: config.model_type || 'image',
+        video_duration: config.video_duration || 5,
+        face_preservation_mode: config.face_preservation_mode || 'preserve_face',
       });
     }
   }, [config]);
@@ -84,6 +91,9 @@ export default function Admin() {
       if (formData.gallery_layout !== undefined) updates.gallery_layout = formData.gallery_layout;
       if (formData.stability_api_key !== undefined) updates.stability_api_key = formData.stability_api_key;
       if (formData.gallery_images_per_page !== undefined) updates.gallery_images_per_page = formData.gallery_images_per_page;
+      if (formData.model_type !== undefined) updates.model_type = formData.model_type;
+      if (formData.video_duration !== undefined) updates.video_duration = formData.video_duration;
+      if (formData.face_preservation_mode !== undefined) updates.face_preservation_mode = formData.face_preservation_mode;
 
       const result = await updateConfig(updates);
       
@@ -534,6 +544,72 @@ export default function Admin() {
                   >
                     <div className="bg-gray-800/50 backdrop-blur-sm rounded-2xl p-6">
                       <h2 className="text-2xl font-semibold mb-6 flex items-center gap-3">
+                        <Wand2 className="w-6 h-6 text-purple-400" />
+                        AI Model Configuration
+                      </h2>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                          <label className="block text-sm font-medium mb-2 text-gray-300">Model Type</label>
+                          <select
+                            name="model_type"
+                            value={formData.model_type || 'image'}
+                            onChange={handleChange}
+                            className="w-full bg-gray-700/50 border border-gray-600 rounded-xl px-4 py-3 text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition"
+                          >
+                            <option value="image">Image Generation (SDXL)</option>
+                            <option value="video">Video Generation</option>
+                          </select>
+                          <p className="text-xs text-gray-400 mt-2">
+                            Choose between AI image or video generation
+                          </p>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium mb-2 text-gray-300">Face Preservation Mode</label>
+                          <select
+                            name="face_preservation_mode"
+                            value={formData.face_preservation_mode || 'preserve_face'}
+                            onChange={handleChange}
+                            className="w-full bg-gray-700/50 border border-gray-600 rounded-xl px-4 py-3 text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition"
+                          >
+                            <option value="preserve_face">Preserve Face</option>
+                            <option value="replace_face">Replace Face</option>
+                          </select>
+                          <p className="text-xs text-gray-400 mt-2">
+                            Preserve original face or allow complete transformation
+                          </p>
+                        </div>
+                      </div>
+
+                      {formData.model_type === 'video' && (
+                        <div className="mt-6">
+                          <label className="block text-sm font-medium mb-2 text-gray-300">
+                            Video Duration: {formData.video_duration || 5} seconds
+                          </label>
+                          <input
+                            type="range"
+                            name="video_duration"
+                            value={formData.video_duration || 5}
+                            onChange={handleChange}
+                            min={1}
+                            max={5}
+                            step={1}
+                            className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                          />
+                          <div className="flex justify-between text-xs text-gray-400 mt-1">
+                            <span>1s</span>
+                            <span>2s</span>
+                            <span>3s</span>
+                            <span>4s</span>
+                            <span>5s</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="bg-gray-800/50 backdrop-blur-sm rounded-2xl p-6">
+                      <h2 className="text-2xl font-semibold mb-6 flex items-center gap-3">
                         <Settings className="w-6 h-6 text-gray-400" />
                         API Configuration
                       </h2>
@@ -715,6 +791,14 @@ export default function Admin() {
                     <div className="flex justify-between">
                       <span className="text-gray-400">Metadata:</span>
                       <span>{formData.gallery_show_metadata ? 'Shown' : 'Hidden'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Model:</span>
+                      <span className="capitalize">{formData.model_type || 'image'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Face Mode:</span>
+                      <span className="capitalize">{(formData.face_preservation_mode || 'preserve_face').replace('_', ' ')}</span>
                     </div>
                   </div>
                 </motion.div>
