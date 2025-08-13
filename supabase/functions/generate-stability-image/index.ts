@@ -335,11 +335,26 @@ serve(async (req) => {
     // Convert to base64 safely
     let base64Image: string
     try {
-      const uint8Array = new Uint8Array(imageBuffer)
-      base64Image = btoa(String.fromCharCode(...uint8Array))
+      const uint8Array = new Uint8Array(imageBuffer);
+      
+      // Use TextDecoder for more robust binary-to-string conversion
+      // This handles large images better than String.fromCharCode(...array)
+      const decoder = new TextDecoder('iso-8859-1');
+      const binaryString = decoder.decode(uint8Array);
+      base64Image = btoa(binaryString);
+      
+      console.log('✅ Base64 encoding successful, length:', base64Image.length);
     } catch (conversionError) {
+      console.error('❌ Base64 conversion failed:', conversionError);
+      console.error('Image buffer size:', imageBuffer.byteLength);
+      console.error('Uint8Array length:', imageBuffer.byteLength);
+      
       return new Response(
-        JSON.stringify({ error: 'Failed to encode response image' }),
+        JSON.stringify({ 
+          error: 'Failed to encode response image',
+          details: conversionError instanceof Error ? conversionError.message : 'Unknown conversion error',
+          bufferSize: imageBuffer.byteLength
+        }),
         { 
           status: 500, 
           headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
