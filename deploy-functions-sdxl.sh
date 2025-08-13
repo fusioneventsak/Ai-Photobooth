@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# SDXL Inpainting Edge Functions Deployment Script
-# This script deploys the enhanced SDXL Inpainting Edge Functions
+# Enhanced Supabase Edge Functions Deployment Script
+# Deploys SDXL Inpainting + ControlNet enabled Edge Functions
 
 echo "🚀 Starting SDXL Inpainting Edge Functions deployment..."
 
@@ -33,18 +33,27 @@ fi
 
 echo "✅ Project linked successfully"
 
-# Deploy SDXL Inpainting Edge Functions
-echo "📦 Deploying SDXL Inpainting Edge Functions..."
+# Deploy Database Migration First
+echo "📊 Deploying SDXL database migration..."
+if supabase db push; then
+    echo "✅ Database migration deployed successfully"
+else
+    echo "❌ Failed to deploy database migration"
+    exit 1
+fi
 
-echo "🔄 Deploying generate-stability-image function (SDXL Inpainting)..."
+# Deploy Enhanced Edge Functions
+echo "📦 Deploying Enhanced Edge Functions..."
+
+echo "🎨 Deploying SDXL Inpainting function..."
 if supabase functions deploy generate-stability-image; then
-    echo "✅ generate-stability-image deployed successfully"
+    echo "✅ generate-stability-image (SDXL Inpainting) deployed successfully"
 else
     echo "❌ Failed to deploy generate-stability-image"
     exit 1
 fi
 
-echo "🔄 Deploying generate-replicate-content function (Fallback)..."
+echo "🔄 Deploying enhanced Replicate function..."
 if supabase functions deploy generate-replicate-content; then
     echo "✅ generate-replicate-content deployed successfully"
 else
@@ -62,5 +71,13 @@ echo "   STABILITY_API_KEY=your_stability_ai_key_here"
 echo "   REPLICATE_API_KEY=your_replicate_key_here"
 echo "3. Test your SDXL Inpainting photobooth application"
 echo ""
-echo "🔒 Your API keys are now secure and hidden from the frontend!"
-echo "🎨 SDXL Inpainting with superior face preservation is ready!"
+echo "🎭 SDXL Inpainting Features Now Available:"
+echo "   ✅ Superior face preservation with smart masking"
+echo "   ✅ ControlNet integration for better composition"
+echo "   ✅ Enhanced prompt engineering for face quality"
+echo "   ✅ Optimized 1024x1024 native resolution"
+echo "   ✅ Advanced feathering and blending"
+echo "   ✅ Fallback masking for edge cases"
+echo ""
+echo "🔒 Your API keys are secure and hidden from the frontend!"
+echo "🚀 Ready to create amazing AI portraits with SDXL Inpainting!"
