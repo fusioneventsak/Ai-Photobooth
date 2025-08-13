@@ -6,7 +6,8 @@ import Webcam from 'react-webcam';
 import { Camera, ImageIcon, Wand2, AlertCircle, Video, RefreshCw, Users, UserX, Lightbulb, Eye, User } from 'lucide-react';
 import { useConfigStore } from '../store/configStore';
 import { uploadPhoto } from '../lib/supabase';
-import { generateWithStability } from '../lib/stableDiffusion';
+import { generateWithStability } from '../lib/stabilityService';
+import { generateWithReplicate } from '../lib/replicateService';
 import { 
   loadFaceApiModels, 
   generateSmartFaceMask, 
@@ -385,8 +386,23 @@ export default function Photobooth() {
       let aiContent: string;
 
       if (currentModelType === 'video') {
-        // For video, we'd need to use Replicate or another service
-        throw new Error('Video generation with SDXL Inpainting not supported. Please use image mode or switch to Replicate provider.');
+        // Use Replicate for video generation via Edge Function
+        console.log('🎬 Starting video generation with Replicate...');
+        
+        const videoPromise = generateWithReplicate({
+          prompt: enhancedPrompt,
+          inputData: processedContent,
+          type: 'video',
+          duration: config.video_duration || 5,
+          preserveFace: faceMode === 'preserve_face'
+        });
+
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error('Video generation timed out. Please try again.')), 300000); // 5 minutes for video
+        });
+
+        setProcessingState({ stage: 'generating', progress: 70, message: 'Generating video with Replicate...' });
+        aiContent = await Promise.race([videoPromise, timeoutPromise]);
       } else {
         // Enhanced prompting for SDXL Inpainting
         const enhancedPrompt = faceMode === 'preserve_face' 
