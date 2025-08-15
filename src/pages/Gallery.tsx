@@ -1,4 +1,4 @@
-// src/pages/Gallery.tsx - Complete Gallery Component with Animated Masonry
+// src/pages/Gallery.tsx - Enhanced Working Gallery with Persistence
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useConfigStore } from '../store/configStore';
@@ -65,15 +65,16 @@ export default function Gallery() {
     });
   }, [config]);
 
-  // Load photos function
+  // ENHANCED: Load photos function with better persistence
   const loadPhotos = async (showLoading = true, source = 'manual') => {
     try {
       if (showLoading) setLoading(true);
       setError(null);
       
-      console.log(`Loading gallery photos (${source})`);
+      console.log(`🔄 Loading gallery photos (${source})`);
       
       const fetchedPhotos = await getPublicPhotos();
+      console.log(`📊 Fetched ${fetchedPhotos.length} photos from database`);
       
       // Apply pagination from config (except for masonry which shows all)
       const perPage = config?.gallery_layout === 'masonry' ? fetchedPhotos.length : (config?.gallery_images_per_page || 12);
@@ -83,7 +84,10 @@ export default function Gallery() {
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       );
       
+      // ENHANCED: Better new photo detection
       if (!showLoading && photos.length > 0 && sortedPhotos.length > photos.length) {
+        const newCount = sortedPhotos.length - photos.length;
+        console.log(`🔔 Detected ${newCount} new photos!`);
         setNewPhotoAlert(true);
         setTimeout(() => setNewPhotoAlert(false), 3000);
       }
@@ -91,10 +95,10 @@ export default function Gallery() {
       setPhotos(sortedPhotos);
       setLastRefresh(new Date());
       
-      console.log(`Gallery loaded: ${sortedPhotos.length} photos (${config?.gallery_layout === 'masonry' ? 'all photos for masonry' : `limited to ${perPage} per page`})`);
+      console.log(`✅ Gallery loaded: ${sortedPhotos.length} photos (${config?.gallery_layout === 'masonry' ? 'all photos for masonry' : `limited to ${perPage} per page`})`);
       
     } catch (err) {
-      console.error('Failed to load gallery photos:', err);
+      console.error('❌ Failed to load gallery photos:', err);
       setError(err instanceof Error ? err.message : 'Failed to load photos');
     } finally {
       if (showLoading) setLoading(false);
@@ -106,12 +110,12 @@ export default function Gallery() {
     setDeleting(true);
     
     try {
-      console.log('Deleting photo:', photoId);
+      console.log('🗑️ Deleting photo:', photoId);
       
       const success = await deletePhoto(photoId);
       
       if (success) {
-        console.log('Photo deleted successfully');
+        console.log('✅ Photo deleted successfully');
         setPhotos(prevPhotos => prevPhotos.filter(photo => photo.id !== photoId));
         setShowDeleteConfirm(null);
         setShowPhotoModal(false);
@@ -121,7 +125,7 @@ export default function Gallery() {
       }
       
     } catch (error) {
-      console.error('Failed to delete photo:', error);
+      console.error('❌ Failed to delete photo:', error);
       setError(error instanceof Error ? error.message : 'Failed to delete photo');
     } finally {
       setDeleting(false);
@@ -133,12 +137,12 @@ export default function Gallery() {
     setDeleting(true);
     
     try {
-      console.log('Deleting all photos...');
+      console.log('🗑️ Deleting all photos...');
       
       const success = await deleteAllPhotos();
       
       if (success) {
-        console.log('All photos deleted successfully');
+        console.log('✅ All photos deleted successfully');
         setPhotos([]);
         setShowDeleteAllConfirm(false);
         setError(null);
@@ -147,7 +151,7 @@ export default function Gallery() {
       }
       
     } catch (error) {
-      console.error('Failed to delete all photos:', error);
+      console.error('❌ Failed to delete all photos:', error);
       setError(error instanceof Error ? error.message : 'Failed to delete all photos');
     } finally {
       setDeleting(false);
@@ -332,23 +336,42 @@ export default function Gallery() {
     return () => window.removeEventListener('keydown', handleKeyPress);
   }, [adminMode]);
 
-  // Load photos on mount
+  // ENHANCED: Load photos on mount with better persistence
   React.useEffect(() => {
-    loadPhotos(true, 'initial');
+    console.log('🚀 Gallery component mounted - loading photos from database...');
+    loadPhotos(true, 'initial-mount');
   }, []);
 
-  // Reload when config changes (for pagination)
+  // ENHANCED: Reload when config changes (for pagination)
   React.useEffect(() => {
-    if (config) {
+    if (config && photos.length > 0) {
+      console.log('⚙️ Config changed, checking if reload needed...');
       loadPhotos(false, 'config-change');
     }
-  }, [config?.gallery_images_per_page]);
+  }, [config?.gallery_images_per_page, config?.gallery_layout]);
 
-  // Gallery update events
+  // ENHANCED: Gallery update events from photobooth
   React.useEffect(() => {
     const handleGalleryUpdate = (event: CustomEvent) => {
-      console.log('Gallery update event received');
-      setTimeout(() => loadPhotos(false, 'event-triggered'), 1000);
+      console.log('📢 Gallery update event received:', event.detail);
+      
+      // If there's a new photo in the event, add it immediately
+      if (event.detail?.newPhoto) {
+        setPhotos(prevPhotos => {
+          const exists = prevPhotos.some(p => p.id === event.detail.newPhoto.id);
+          if (!exists) {
+            console.log('➕ Adding new photo from event');
+            const newPhotos = [event.detail.newPhoto, ...prevPhotos];
+            setNewPhotoAlert(true);
+            setTimeout(() => setNewPhotoAlert(false), 3000);
+            return newPhotos;
+          }
+          return prevPhotos;
+        });
+      } else {
+        // Fallback: refresh from database
+        setTimeout(() => loadPhotos(false, 'event-triggered'), 1000);
+      }
     };
 
     window.addEventListener('galleryUpdate', handleGalleryUpdate as EventListener);
@@ -358,11 +381,27 @@ export default function Gallery() {
     };
   }, []);
 
-  // Auto-refresh
+  // ENHANCED: Cross-tab synchronization
+  React.useEffect(() => {
+    const handleStorageChange = (event: StorageEvent) => {
+      if (event.key === 'galleryRefresh') {
+        console.log('💾 Cross-tab gallery refresh triggered');
+        loadPhotos(false, 'cross-tab-sync');
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
+
+  // ENHANCED: Auto-refresh from database every 30 seconds
   React.useEffect(() => {
     const interval = setInterval(() => {
-      loadPhotos(false, 'auto-refresh');
-    }, 15000); // Refresh every 15 seconds
+      if (document.visibilityState === 'visible') {
+        console.log('🔄 Auto-refresh from database');
+        loadPhotos(false, 'auto-refresh');
+      }
+    }, 30000); // Refresh every 30 seconds when tab is visible
 
     return () => clearInterval(interval);
   }, []);
@@ -372,6 +411,7 @@ export default function Gallery() {
   };
 
   const forceRefresh = () => {
+    console.log('🔄 Force refresh triggered by user');
     loadPhotos(true, 'force-refresh');
   };
 
@@ -391,7 +431,7 @@ export default function Gallery() {
         <div className="container mx-auto">
           <div className="flex items-center justify-center py-12">
             <RefreshCw className="w-8 h-8 animate-spin text-blue-500 mr-3" />
-            <span>Loading gallery...</span>
+            <span>Loading gallery from database...</span>
           </div>
         </div>
       </div>
@@ -754,7 +794,8 @@ export default function Gallery() {
             Captured moments from {config?.brand_name || 'Virtual Photobooth'}
           </p>
           <div className="mt-4 text-sm text-gray-400">
-            Last updated: {formatDate(lastRefresh.toISOString())}
+            {/* ENHANCED: Better status info */}
+            Last updated: {formatDate(lastRefresh.toISOString())} • {photos.length} photos
           </div>
         </motion.div>
 
@@ -816,7 +857,7 @@ export default function Gallery() {
               className="fixed top-4 right-4 z-50 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-3"
             >
               <Bell className="w-5 h-5" />
-              <span>New photo added!</span>
+              <span>New photos added to gallery!</span>
             </motion.div>
           )}
         </AnimatePresence>
@@ -857,7 +898,7 @@ export default function Gallery() {
             </button>
           </div>
         ) : config?.gallery_layout === 'carousel' ? (
-          /* Animated Carousel */
+          /* Your existing Carousel Layout */
           <div className="max-w-4xl mx-auto">
             <div className="relative bg-gray-800 rounded-2xl overflow-hidden shadow-2xl">
               {/* Carousel Container */}
@@ -1068,7 +1109,7 @@ export default function Gallery() {
             </div>
           </div>
         ) : config?.gallery_layout === 'masonry' ? (
-          /* Animated Masonry Grid */
+          /* Your existing Masonry Layout */
           <div className="relative">
             {/* Masonry Controls */}
             <div className="mb-6 flex justify-between items-center">
@@ -1213,7 +1254,7 @@ export default function Gallery() {
             </div>
           </div>
         ) : (
-          /* Grid Layout */
+          /* Your existing Grid Layout */
           <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
             {photos.map((photo, index) => (
               <motion.div
@@ -1345,6 +1386,7 @@ export default function Gallery() {
           </div>
         )}
 
+        {/* All your existing modals remain the same */}
         {/* Delete Confirmation Modal */}
         {showDeleteConfirm && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowDeleteConfirm(null)}>
