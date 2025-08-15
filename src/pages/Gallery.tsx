@@ -345,21 +345,6 @@ export default function Gallery() {
                               )}
                             </button>
                           )}
-                          
-                          {showAdmin && (
-                            <button
-                              onClick={() => handleDeletePhotoAndDuplicates(photo.id)}
-                              disabled={deleting === photo.id}
-                              className="p-2 bg-orange-500 bg-opacity-20 rounded-full hover:bg-opacity-30 transition disabled:opacity-50"
-                              title="Delete this photo and all duplicates"
-                            >
-                              {deleting === photo.id ? (
-                                <RefreshCw className="w-5 h-5 animate-spin" />
-                              ) : (
-                                <Trash2 className="w-5 h-5" />
-                              )}
-                            </button>
-                          )}
                         </div>
                       </div>
                     </div>
