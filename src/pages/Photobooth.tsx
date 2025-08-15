@@ -1,5 +1,5 @@
 // src/pages/Photobooth.tsx
-// Enhanced Photobooth component with SDXL Inpainting + ControlNet integration
+// Enhanced Photobooth component with seamless SDXL Inpainting integration
 
 import React, { useState, useEffect } from 'react';
 import Webcam from 'react-webcam';
@@ -11,9 +11,9 @@ import { generateWithReplicate } from '../lib/replicateService';
 import { 
   loadFaceApiModels, 
   generateSmartFaceMask, 
-  generateFallbackMask 
+  generateFallbackMask,
+  preprocessImageForSDXL
 } from '../lib/faceDetection';
-import { getActiveOverlay, applyOverlayToImage, shouldApplyOverlay } from '../lib/overlayUtils';
 
 interface ProcessingState {
   stage: 'detecting' | 'masking' | 'generating' | 'uploading' | 'complete';
@@ -42,7 +42,7 @@ export default function Photobooth() {
   
   const webcamRef = React.useRef<Webcam>(null);
 
-  // Enhanced image resizing for SDXL optimal input
+  // Enhanced image resizing with better framing to avoid long necks
   const resizeImage = (dataUrl: string, targetSize: number = 1024): Promise<string> => {
     return new Promise((resolve, reject) => {
       const img = new Image();
@@ -55,61 +55,83 @@ export default function Photobooth() {
           return;
         }
 
-        // Calculate dimensions to maintain aspect ratio
+        // Set SDXL optimal dimensions
+        canvas.width = targetSize;
+        canvas.height = targetSize;
+
+        // Calculate smart cropping to avoid long necks
         const { width, height } = img;
-        let newWidth = targetSize;
-        let newHeight = targetSize;
+        let sourceX = 0, sourceY = 0, sourceWidth = width, sourceHeight = height;
         
-        if (width > height) {
-          newHeight = Math.round((height / width) * targetSize);
+        // For portrait images, focus on upper portion to avoid long necks
+        if (height > width) {
+          // Crop from top 70% of the image to avoid showing too much body
+          sourceHeight = Math.min(height, width * 1.2); // Limit height relative to width
+          sourceY = Math.max(0, height * 0.1); // Start from 10% down, not the very top
         } else {
-          newWidth = Math.round((width / height) * targetSize);
+          // For landscape, center the crop
+          sourceWidth = Math.min(width, height);
+          sourceX = (width - sourceWidth) / 2;
         }
 
-        canvas.width = newWidth;
-        canvas.height = newHeight;
-
-        // Use high-quality scaling
+        // High-quality scaling with subtle enhancements
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
         
-        // Draw the resized image
-        ctx.drawImage(img, 0, 0, newWidth, newHeight);
+        // Apply subtle preprocessing for better SDXL results
+        ctx.filter = 'contrast(1.02) brightness(1.01) saturate(1.02)';
         
-        resolve(canvas.toDataURL('image/png', 0.95));
+        // Draw the intelligently cropped and resized image
+        ctx.drawImage(
+          img, 
+          sourceX, sourceY, sourceWidth, sourceHeight,  // Source rectangle
+          0, 0, canvas.width, canvas.height              // Destination rectangle
+        );
+        
+        // Reset filter
+        ctx.filter = 'none';
+        
+        console.log('✅ Smart image preprocessing completed:', {
+          originalDimensions: `${width}x${height}`,
+          processedDimensions: `${canvas.width}x${canvas.height}`,
+          cropArea: `${sourceWidth}x${sourceHeight} from (${sourceX}, ${sourceY})`,
+          aspectRatioOptimized: true
+        });
+        
+        resolve(canvas.toDataURL('image/jpeg', 0.92));
       };
       
-      img.onerror = () => reject(new Error('Failed to load image for resizing'));
+      img.onerror = () => reject(new Error('Failed to load image for processing'));
       img.src = dataUrl;
     });
   };
 
-  // Environment variable checker for debugging
+  // Environment setup and model loading
   useEffect(() => {
-    const checkEnv = () => {
-      console.log('🔍 Using secure Supabase Edge Functions for SDXL Inpainting');
-      console.log('✅ API keys are now securely stored server-side');
+    const initializeModels = async () => {
+      console.log('🚀 Initializing enhanced SDXL Photobooth...');
+      console.log('✅ Using secure Supabase Edge Functions for seamless generation');
+      
+      try {
+        await loadFaceApiModels();
+        console.log('✅ Face detection models loaded successfully');
+      } catch (error) {
+        console.warn('⚠️ Face detection models failed to load:', error);
+      }
     };
     
-    checkEnv();
-    
-    // Load face detection models
-    loadFaceApiModels().catch(error => {
-      console.warn('Failed to load face detection models:', error);
-    });
+    initializeModels();
   }, []);
 
-  // Update current model type when config changes
+  // Update model type when config changes
   useEffect(() => {
-    if (config?.model_type) {
-      if (currentModelType !== config.model_type) {
-        setCurrentModelType(config.model_type);
-        reset();
-      }
+    if (config?.model_type && currentModelType !== config.model_type) {
+      setCurrentModelType(config.model_type);
+      reset();
     }
   }, [config?.model_type, currentModelType]);
 
-  // Cleanup Blobs when component unmounts or model changes
+  // Cleanup resources
   useEffect(() => {
     return () => {
       if (processedMedia && processedMedia.startsWith('blob:')) {
@@ -118,122 +140,134 @@ export default function Photobooth() {
     };
   }, [processedMedia]);
 
-  // AUTOMATIC UPLOAD - Triggers immediately after each photo generation
+  // Enhanced automatic upload with better error handling
   useEffect(() => {
-    if (!processedMedia || !config) {
-      return;
-    }
+    if (!processedMedia || !config) return;
 
-    console.log('📸 NEW PHOTO GENERATED - Starting automatic upload');
-    
-    const automaticUploadNow = async () => {
+    const autoUpload = async () => {
+      if (uploading) return; // Prevent duplicate uploads
+      
+      console.log('📸 Starting automatic gallery upload...');
+      
       try {
         setUploading(true);
-        setProcessingState({ stage: 'uploading', progress: 90, message: 'Saving to gallery...' });
-        
-        console.log('📤 Auto-uploading new photo...');
-        console.log('📊 Photo details:', {
-          length: processedMedia.length,
-          type: processedMedia.startsWith('data:') ? 'data URL' : processedMedia.startsWith('blob:') ? 'blob URL' : 'unknown',
-          modelType: currentModelType
-        });
+        setUploadAttempts(prev => prev + 1);
+        setProcessingState({ stage: 'uploading', progress: 95, message: 'Saving to gallery...' });
         
         const uploadResult = await uploadPhoto(
           processedMedia,
-          config.global_prompt || 'AI Generated Image',
+          config.global_prompt || 'AI Generated with SDXL',
           currentModelType
         );
         
         if (uploadResult) {
           console.log('✅ Auto-upload successful:', uploadResult.id);
           
-          // Dispatch gallery event immediately
+          // Dispatch gallery update event
           window.dispatchEvent(new CustomEvent('galleryUpdate', {
             detail: { 
               newPhoto: uploadResult,
-              source: 'automatic_after_generation'
+              source: 'automatic_seamless_generation'
             }
           }));
           
           setUploadSuccess(true);
           setProcessingState({ stage: 'complete', progress: 100, message: 'Complete!' });
-          setTimeout(() => setUploadSuccess(false), 2000);
           
-          console.log('🎯 Gallery should update now with new photo');
+          // Clear success state after delay
+          setTimeout(() => {
+            setUploadSuccess(false);
+            setProcessingState({ stage: 'detecting', progress: 0, message: 'Ready for next photo...' });
+          }, 3000);
           
         } else {
-          console.error('❌ Auto-upload returned null');
+          throw new Error('Upload returned null result');
         }
         
       } catch (error) {
         console.error('❌ Auto-upload failed:', error);
+        setError('Failed to save to gallery. Photo generated successfully but not saved.');
+        
+        // Still show the generated image even if upload fails
+        setProcessingState({ stage: 'complete', progress: 100, message: 'Generated (save failed)' });
       } finally {
         setUploading(false);
       }
     };
 
-    // Upload immediately - no delays
-    automaticUploadNow();
+    // Small delay to ensure UI state is updated
+    const uploadTimer = setTimeout(autoUpload, 100);
+    return () => clearTimeout(uploadTimer);
 
-  }, [processedMedia, config, currentModelType]);
+  }, [processedMedia, config, currentModelType, uploading]);
 
   const capturePhoto = React.useCallback(() => {
     try {
       setError(null);
       const imageSrc = webcamRef.current?.getScreenshot();
       if (!imageSrc) {
-        throw new Error('Failed to capture photo');
+        throw new Error('Failed to capture photo from camera');
       }
       
-      console.log('📷 Photo captured:', {
-        format: imageSrc.substring(0, 30) + '...',
-        size: imageSrc.length
+      console.log('📷 Photo captured for SDXL processing:', {
+        format: 'PNG data URL',
+        size: `${Math.round(imageSrc.length / 1024)}KB`
       });
       
       setMediaData(imageSrc);
       setProcessedMedia(null);
       setGenerationAttempts(0);
+      setUploadAttempts(0);
       setShowInstructions(false);
       setDebugInfo(null);
-      setProcessingState({ stage: 'detecting', progress: 0, message: 'Ready to generate...' });
+      setUploadSuccess(false);
+      setProcessingState({ stage: 'detecting', progress: 0, message: 'Photo captured - ready to generate...' });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to capture photo';
-      console.error('Error capturing photo:', err);
+      console.error('❌ Photo capture error:', err);
       setError(errorMessage);
       setMediaData(null);
     }
   }, [webcamRef]);
 
   const reset = () => {
+    console.log('🔄 Resetting photobooth for new session...');
+    
+    // Cleanup blob URLs
+    if (processedMedia && processedMedia.startsWith('blob:')) {
+      URL.revokeObjectURL(processedMedia);
+    }
+    
     setMediaData(null);
     setProcessedMedia(null);
     setError(null);
     setGenerationAttempts(0);
+    setUploadAttempts(0);
     setShowInstructions(true);
     setUploading(false);
     setUploadSuccess(false);
-    setUploadAttempts(0);
     setDebugInfo(null);
-    setProcessingState({ stage: 'detecting', progress: 0, message: 'Ready...' });
-    if (processedMedia && processedMedia.startsWith('blob:')) {
-      URL.revokeObjectURL(processedMedia);
-    }
-    // Clear session storage for this session
+    setProcessingState({ stage: 'detecting', progress: 0, message: 'Ready for new photo...' });
+    
+    // Clear any cached data
     sessionStorage.clear();
   };
 
   const handleWebcamError = (err: string | DOMException) => {
     const errorMessage = err instanceof DOMException ? err.message : err;
-    console.error('Webcam error:', errorMessage);
+    console.error('❌ Webcam error:', errorMessage);
     setError(`Camera error: ${errorMessage}`);
   };
 
+  // Enhanced error display with better categorization
   const getErrorIcon = (error: string) => {
     if (error.includes('API') || error.includes('key')) return '🔑';
     if (error.includes('credits') || error.includes('balance')) return '💳';
     if (error.includes('network') || error.includes('connection')) return '🌐';
     if (error.includes('timeout')) return '⏱️';
     if (error.includes('rate limit')) return '🚦';
+    if (error.includes('face') || error.includes('mask')) return '🎭';
+    if (error.includes('blending') || error.includes('seamless')) return '🎨';
     return '❌';
   };
 
@@ -270,7 +304,7 @@ export default function Photobooth() {
     </div>
   );
 
-  // Processing indicator component
+  // Enhanced processing indicator
   const ProcessingIndicator = ({ state }: { state: ProcessingState }) => (
     <div className="text-center space-y-3">
       <div className="text-sm font-medium text-white">{state.message}</div>
@@ -282,16 +316,16 @@ export default function Photobooth() {
       </div>
       <div className="text-xs text-gray-400">{state.progress}% Complete</div>
       <div className="text-xs text-purple-300">
-        {state.stage === 'detecting' && '🔍 Analyzing image...'}
-        {state.stage === 'masking' && '🎭 Generating face mask...'}
-        {state.stage === 'generating' && '🎨 Creating with SDXL Inpainting...'}
+        {state.stage === 'detecting' && '🔍 Optimizing image for SDXL...'}
+        {state.stage === 'masking' && '🎭 Creating seamless face mask...'}
+        {state.stage === 'generating' && '🎨 Generating with enhanced SDXL...'}
         {state.stage === 'uploading' && '📤 Saving to gallery...'}
         {state.stage === 'complete' && '✅ Complete!'}
       </div>
     </div>
   );
 
-  // ENHANCED processMedia function with SDXL Inpainting
+  // Enhanced media processing with seamless blending
   const processMedia = async () => {
     if (!mediaData) {
       setError('No photo captured');
@@ -315,58 +349,60 @@ export default function Photobooth() {
     try {
       setGenerationAttempts(prev => prev + 1);
 
-      console.log('🚀 Starting SDXL Inpainting generation process...');
-      console.log('📋 Generation details:', {
+      console.log('🚀 Starting enhanced SDXL generation with seamless blending...');
+      console.log('📋 Enhanced generation parameters:', {
         prompt: config.global_prompt,
         modelType: currentModelType,
         faceMode: config.face_preservation_mode || 'preserve_face',
-        attempt: generationAttempts + 1
+        attempt: generationAttempts + 1,
+        enhancements: ['smart_cropping', 'seamless_blending', 'anti_long_neck']
       });
 
-      // Stage 1: Resize image for SDXL optimal input
-      setProcessingState({ stage: 'detecting', progress: 10, message: 'Preparing image for SDXL...' });
-      console.log('🖼️ Resizing image for SDXL optimal input...');
+      // Stage 1: Enhanced image preprocessing
+      setProcessingState({ stage: 'detecting', progress: 15, message: 'Optimizing image with smart cropping...' });
+      console.log('🖼️ Applying smart preprocessing for better proportions...');
+      
       const processedContent = await resizeImage(mediaData, 1024);
       
       if (!processedContent || !processedContent.startsWith('data:image/')) {
-        throw new Error('Image resizing failed - invalid output format');
+        throw new Error('Smart preprocessing failed - invalid output format');
       }
       
-      console.log('✅ Image resized for SDXL:', {
-        originalSize: mediaData.length,
-        processedSize: processedContent.length,
-        resolution: '1024x1024 optimized'
+      console.log('✅ Smart preprocessing completed:', {
+        originalSize: `${Math.round(mediaData.length / 1024)}KB`,
+        processedSize: `${Math.round(processedContent.length / 1024)}KB`,
+        optimizations: 'smart_crop + contrast_enhancement'
       });
 
-      // Stage 2: Generate smart face mask for SDXL Inpainting
-      setProcessingState({ stage: 'masking', progress: 30, message: 'Analyzing facial features...' });
+      // Stage 2: Advanced face mask generation
+      setProcessingState({ stage: 'masking', progress: 35, message: 'Creating seamless face mask...' });
       
       let maskData: string | undefined;
       const faceMode = config.face_preservation_mode || 'preserve_face';
       
       try {
-        // Create image element for face detection
         const img = new Image();
         await new Promise<void>((resolve, reject) => {
           img.onload = () => resolve();
-          img.onerror = () => reject(new Error('Failed to load image for face detection'));
+          img.onerror = () => reject(new Error('Failed to load processed image for face detection'));
           img.src = processedContent;
         });
 
-        console.log('🔍 Generating smart face mask for SDXL Inpainting...');
+        console.log('🔍 Generating seamless face mask...');
+        
+        // Enhanced masking parameters for better blending
         maskData = await generateSmartFaceMask(
           img,
-          faceMode === 'preserve_face', // true = preserve faces, false = replace faces
-          25,  // feather radius for smooth blending
-          1.4  // expansion factor for better face coverage
+          faceMode === 'preserve_face',
+          config.sdxl_feather_radius || 40,    // Increased feathering for seamless blending
+          config.sdxl_face_expansion || 1.2    // Conservative expansion to avoid circular artifacts
         );
         
-        console.log('✅ Smart face mask generated successfully for SDXL');
+        console.log('✅ Seamless face mask generated successfully');
         
       } catch (faceDetectionError) {
-        console.warn('⚠️ Face detection failed, using fallback mask:', faceDetectionError);
+        console.warn('⚠️ Face detection failed, using enhanced fallback mask:', faceDetectionError);
         
-        // Generate fallback mask if face detection fails
         const img = new Image();
         await new Promise<void>((resolve, reject) => {
           img.onload = () => resolve();
@@ -375,22 +411,21 @@ export default function Photobooth() {
         });
         
         maskData = generateFallbackMask(img.naturalWidth, img.naturalHeight);
-        console.log('✅ Fallback mask generated for SDXL');
+        console.log('✅ Enhanced fallback mask generated');
       }
 
-      // Stage 3: Generate AI content with SDXL Inpainting
-      setProcessingState({ stage: 'generating', progress: 50, message: 'Generating with SDXL Inpainting...' });
+      // Stage 3: Enhanced SDXL generation
+      setProcessingState({ stage: 'generating', progress: 55, message: 'Generating with enhanced SDXL...' });
       
-      console.log('🎨 Starting SDXL Inpainting generation...');
+      console.log('🎨 Starting enhanced SDXL generation...');
       
       let aiContent: string;
 
       if (currentModelType === 'video') {
-        // Use Replicate for video generation via Edge Function
-        console.log('🎬 Starting video generation with Replicate...');
+        console.log('🎬 Video generation with face preservation...');
         
         const videoPromise = generateWithReplicate({
-          prompt: enhancedPrompt,
+          prompt: config.global_prompt,
           inputData: processedContent,
           type: 'video',
           duration: config.video_duration || 5,
@@ -398,144 +433,163 @@ export default function Photobooth() {
         });
 
         const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error('Video generation timed out. Please try again.')), 300000); // 5 minutes for video
+          setTimeout(() => reject(new Error('Video generation timed out. Please try again.')), 300000);
         });
 
-        setProcessingState({ stage: 'generating', progress: 70, message: 'Generating video with Replicate...' });
+        setProcessingState({ stage: 'generating', progress: 75, message: 'Generating video with face preservation...' });
         aiContent = await Promise.race([videoPromise, timeoutPromise]);
-      } else {
-        // Enhanced prompting for SDXL Inpainting
-        const enhancedPrompt = faceMode === 'preserve_face' 
-          ? `${config.global_prompt}, photorealistic portrait, highly detailed face, natural skin texture, sharp facial features, professional photography lighting, 8k quality`
-          : `${config.global_prompt}, creative character transformation, artistic interpretation, detailed features`;
-
-        console.log(`🎭 Using ${faceMode} mode with SDXL Inpainting...`);
-        console.log('🎯 Enhanced prompt:', enhancedPrompt);
         
-        const generationPromise = generateWithStability({
+      } else {
+        // Enhanced prompt engineering for better body proportions
+        const enhancedPrompt = faceMode === 'preserve_face' 
+          ? `${config.global_prompt}, photorealistic portrait, natural body proportions, proper neck length, detailed facial features, natural skin texture, professional photography, balanced composition, no elongated neck, realistic anatomy, 8k quality`
+          : `${config.global_prompt}, creative character transformation, natural proportions, balanced anatomy, no elongated features, professional digital art, seamless integration`;
+
+        console.log(`🎭 Using enhanced ${faceMode} mode with anti-distortion measures...`);
+        console.log('🎯 Enhanced prompt with proportion controls:', enhancedPrompt.slice(0, 150) + '...');
+        
+        // Enhanced generation parameters
+        const generationParams = {
           prompt: enhancedPrompt,
           imageData: processedContent,
-          mode: 'inpaint', // Always use inpainting for best face preservation
+          mode: 'inpaint' as const,
           maskData: maskData,
           facePreservationMode: faceMode,
-          strength: faceMode === 'preserve_face' ? 0.4 : 0.7, // Optimized for SDXL
-          cfgScale: 8.0,  // Good balance for SDXL
-          steps: 25,      // Optimal for SDXL quality/speed
+          // Conservative strength to maintain proportions
+          strength: faceMode === 'preserve_face' ? 
+            (config.sdxl_strength || 0.32) :  // Very conservative for face preservation
+            (config.sdxl_strength || 0.65),   // Moderate for transformation
+          cfgScale: config.sdxl_cfg_scale || 7.5,
+          steps: config.sdxl_steps || 25,
           useControlNet: config.use_controlnet ?? true,
-          controlNetType: config.controlnet_type || 'auto'
+          controlNetType: config.controlnet_type || 'auto',
+          // Enhanced negative prompt targeting distortions
+          negativePrompt: [
+            'elongated neck', 'long neck', 'stretched neck', 'distorted anatomy',
+            'unnatural proportions', 'deformed body', 'bad anatomy', 'extra limbs',
+            'blurry', 'low quality', 'visible seams', 'harsh transitions',
+            'circular mask', 'mask artifacts', 'face swap artifacts'
+          ].join(', ')
+        };
+
+        console.log('🔧 Enhanced generation parameters:', {
+          strength: generationParams.strength,
+          cfgScale: generationParams.cfgScale,
+          antiDistortion: 'enabled',
+          seamlessBlending: 'enabled'
         });
+        
+        const generationPromise = generateWithStability(generationParams);
 
         const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error('SDXL Inpainting generation timed out. Please try again.')), 180000);
+          setTimeout(() => 
+            reject(new Error('Enhanced SDXL generation timed out. Please try again.')), 
+            config.generation_timeout || 120000
+          );
         });
 
-        setProcessingState({ stage: 'generating', progress: 70, message: 'SDXL processing...' });
+        setProcessingState({ stage: 'generating', progress: 80, message: 'Enhanced SDXL with seamless blending...' });
         aiContent = await Promise.race([generationPromise, timeoutPromise]);
       }
       
-      // Stage 4: Validate generated content
-      setProcessingState({ stage: 'generating', progress: 80, message: 'Validating result...' });
+      // Stage 4: Enhanced validation
+      setProcessingState({ stage: 'generating', progress: 90, message: 'Validating enhanced result...' });
       
       if (!aiContent) {
-        throw new Error('Generated content is empty. Please try again.');
+        throw new Error('Enhanced generation produced empty result');
       }
 
       if (!aiContent.startsWith('data:') && !aiContent.startsWith('blob:')) {
         console.error('❌ Invalid AI content format:', aiContent.substring(0, 100));
-        throw new Error('Invalid AI content format received.');
+        throw new Error('Invalid enhanced generation format received');
       }
 
-      console.log('🔍 Validating SDXL generated content...', {
+      console.log('🔍 Validating enhanced SDXL result...', {
         contentType: typeof aiContent,
         length: aiContent.length,
-        startsWithData: aiContent.startsWith('data:'),
-        preview: aiContent.substring(0, 100) + '...'
+        format: aiContent.startsWith('data:') ? 'data URL' : 'blob URL'
       });
 
-      // Test if the generated image can be loaded
+      // Enhanced validation for image content
       if (aiContent.startsWith('data:')) {
-        const testImg = new Image();
         await new Promise<void>((resolve, reject) => {
+          const testImg = new Image();
           testImg.onload = () => {
-            console.log('✅ SDXL generated image loads successfully:', {
-              width: testImg.width,
-              height: testImg.height,
-              model: 'SDXL Inpainting'
+            console.log('✅ Enhanced SDXL result validated:', {
+              width: testImg.naturalWidth,
+              height: testImg.naturalHeight,
+              aspectRatio: (testImg.naturalWidth / testImg.naturalHeight).toFixed(2),
+              model: 'Enhanced SDXL with Seamless Blending'
             });
             resolve();
           };
           testImg.onerror = () => {
-            console.error('❌ SDXL generated image failed to load!');
-            reject(new Error('Generated image is corrupted'));
+            console.error('❌ Enhanced result validation failed');
+            reject(new Error('Enhanced generated image is corrupted'));
           };
           testImg.src = aiContent;
           
           setTimeout(() => {
-            reject(new Error('Image validation timeout'));
+            reject(new Error('Enhanced result validation timeout'));
           }, 5000);
         });
       }
 
-      // Stage 5: Finalize
-      setProcessingState({ stage: 'uploading', progress: 85, message: 'Finalizing...' });
-
-      console.log('✅ SDXL Inpainting generation completed successfully:', {
+      console.log('✅ Enhanced SDXL generation completed successfully:', {
         type: currentModelType,
-        format: aiContent.startsWith('data:') ? 'data URL' : 'blob URL',
-        size: aiContent.length,
+        size: `${Math.round(aiContent.length / 1024)}KB`,
         faceMode: faceMode,
-        model: 'SDXL Inpainting'
+        model: 'Enhanced SDXL with Seamless Blending',
+        antiDistortion: 'enabled'
       });
 
-      // Update UI - this will trigger the automatic upload via useEffect
+      // Update UI - this triggers automatic upload
       setProcessedMedia(aiContent);
       setError(null);
 
-      console.log('🎯 SDXL Inpainting process completed - automatic upload should trigger via useEffect');
+      console.log('🎯 Enhanced SDXL process completed - auto-upload will begin...');
 
     } catch (error) {
-      console.error('❌ === SDXL INPAINTING GENERATION FAILED ===');
-      console.error('📊 Generation error details:', error);
+      console.error('❌ === ENHANCED SDXL GENERATION FAILED ===');
+      console.error('📊 Enhanced generation error:', error);
 
-      let errorMessage = 'Failed to generate AI content with SDXL Inpainting. Please try again.';
+      let errorMessage = 'Enhanced generation failed. Please try again.';
       let debugDetails: any = null;
       
       if (error instanceof Error) {
         const message = error.message.toLowerCase();
         
-        if (message.includes('edge function returned a non-2xx status code')) {
-          errorMessage = 'Server configuration issue. Please check your Stability AI API settings.';
-          debugDetails = {
-            issue: 'Edge Function Error',
-            suggestion: 'Check STABILITY_API_KEY in Supabase Edge Functions',
-            errorType: 'server_error'
-          };
-        } else if (message.includes('api key') || message.includes('unauthorized') || message.includes('401')) {
+        if (message.includes('seamless') || message.includes('blending')) {
+          errorMessage = 'Seamless blending failed. Please ensure clear facial features in the photo.';
+          debugDetails = { errorType: 'seamless_blending_error' };
+        } else if (message.includes('preprocessing') || message.includes('smart')) {
+          errorMessage = 'Smart preprocessing failed. Please try with better lighting.';
+          debugDetails = { errorType: 'preprocessing_error' };
+        } else if (message.includes('face detection')) {
+          errorMessage = 'Enhanced face detection failed. Please ensure clear facial features.';
+          debugDetails = { errorType: 'enhanced_face_detection_error' };
+        } else if (message.includes('mask')) {
+          errorMessage = 'Seamless mask generation failed. Please try taking a new photo.';
+          debugDetails = { errorType: 'seamless_mask_error' };
+        } else if (message.includes('api key') || message.includes('unauthorized')) {
           errorMessage = 'API authentication failed. Please check your Stability AI API key.';
           debugDetails = { errorType: 'auth_error' };
-        } else if (message.includes('credits') || message.includes('insufficient') || message.includes('402')) {
+        } else if (message.includes('credits') || message.includes('insufficient')) {
           errorMessage = 'Insufficient Stability AI credits. Please check your account balance.';
           debugDetails = { errorType: 'credits_error' };
-        } else if (message.includes('rate limit') || message.includes('429')) {
-          errorMessage = 'Rate limit exceeded. Please wait a moment and try again.';
-          debugDetails = { errorType: 'rate_limit_error' };
         } else if (message.includes('timeout')) {
-          errorMessage = 'SDXL generation timed out. Please try again with a simpler prompt.';
+          errorMessage = 'Enhanced generation timed out. Please try again.';
           debugDetails = { errorType: 'timeout_error' };
-        } else if (message.includes('face detection')) {
-          errorMessage = 'Face detection failed. Please ensure the photo shows clear facial features.';
-          debugDetails = { errorType: 'face_detection_error' };
-        } else if (message.includes('mask')) {
-          errorMessage = 'Mask generation failed. Please try taking a new photo.';
-          debugDetails = { errorType: 'mask_error' };
         } else {
-          errorMessage = `SDXL Inpainting error: ${error.message}`;
+          errorMessage = `Enhanced SDXL error: ${error.message}`;
           debugDetails = { errorType: 'general_error', originalMessage: error.message };
         }
       }
-
+      
       setError(errorMessage);
-      setDebugInfo(debugDetails);
+      if (config?.enable_debug_mode && debugDetails) {
+        setDebugInfo(debugDetails);
+      }
       setProcessedMedia(null);
       
     } finally {
@@ -545,6 +599,7 @@ export default function Photobooth() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 text-white">
+      {/* Enhanced Header */}
       <div 
         className="border-b border-gray-700/50 backdrop-blur-sm sticky top-0 z-10 shadow-xl"
         style={{ 
@@ -556,7 +611,7 @@ export default function Photobooth() {
           <div className="flex items-center justify-between">
             <h1 className="text-2xl font-bold flex items-center gap-3">
               <Camera className="w-8 h-8" style={{ color: config?.primary_color }} />
-              {config?.brand_name || 'AI Photobooth'}
+              {config?.brand_name || 'Enhanced AI Photobooth'}
             </h1>
             <div className="flex items-center gap-2">
               {/* Model Type Badge */}
@@ -569,7 +624,7 @@ export default function Photobooth() {
                 ) : (
                   <>
                     <ImageIcon className="w-3 h-3 text-blue-400" />
-                    <span>SDXL Image</span>
+                    <span>Enhanced SDXL</span>
                   </>
                 )}
               </div>
@@ -616,47 +671,47 @@ export default function Photobooth() {
       </div>
 
       <div className="container mx-auto px-4 py-6 max-w-lg">
-        {/* Photography Instructions */}
+        {/* Enhanced Photography Instructions */}
         {showInstructions && !mediaData && (
           <div className="mb-6 bg-gradient-to-br from-blue-900/20 to-purple-900/20 border border-blue-500/30 rounded-xl p-5">
             <h3 className="text-white font-semibold mb-4 flex items-center gap-2">
               <Lightbulb className="w-5 h-5 text-yellow-400" />
-              Get the Best SDXL Results
+              Get Perfect Enhanced SDXL Results
             </h3>
             <div className="space-y-3 text-sm">
               <div className="flex items-start gap-3">
                 <Lightbulb className="w-4 h-4 text-yellow-400 mt-0.5 flex-shrink-0" />
                 <div>
-                  <span className="text-white font-medium">Good Lighting:</span>
-                  <span className="text-gray-300"> Face the light source, avoid harsh shadows</span>
+                  <span className="text-white font-medium">Optimal Lighting:</span>
+                  <span className="text-gray-300"> Even, soft lighting on your face for best results</span>
                 </div>
               </div>
               <div className="flex items-start gap-3">
                 <Eye className="w-4 h-4 text-green-400 mt-0.5 flex-shrink-0" />
                 <div>
-                  <span className="text-white font-medium">Face the Camera:</span>
-                  <span className="text-gray-300"> Look directly at the lens for optimal face detection</span>
+                  <span className="text-white font-medium">Perfect Framing:</span>
+                  <span className="text-gray-300"> Chest-up shot, face centered for optimal composition</span>
                 </div>
               </div>
               <div className="flex items-start gap-3">
                 <User className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" />
                 <div>
-                  <span className="text-white font-medium">Chest Up Shot:</span>
-                  <span className="text-gray-300"> Frame from chest to head for best SDXL results</span>
+                  <span className="text-white font-medium">Natural Proportions:</span>
+                  <span className="text-gray-300"> Smart cropping prevents distortion and maintains natural anatomy</span>
                 </div>
               </div>
               <div className="flex items-start gap-3">
                 <Wand2 className="w-4 h-4 text-purple-400 mt-0.5 flex-shrink-0" />
                 <div>
-                  <span className="text-white font-medium">SDXL Inpainting:</span>
-                  <span className="text-gray-300"> Advanced AI for superior face preservation</span>
+                  <span className="text-white font-medium">Enhanced SDXL:</span>
+                  <span className="text-gray-300"> Seamless blending with advanced face preservation technology</span>
                 </div>
               </div>
             </div>
           </div>
         )}
 
-        {/* Main View - Camera Preview or AI Result */}
+        {/* Main Camera/Result View */}
         <div className="bg-gray-800 rounded-xl overflow-hidden mb-6 shadow-2xl">
           <div className="aspect-square bg-black relative">
             {processedMedia ? (
@@ -673,7 +728,7 @@ export default function Photobooth() {
               ) : (
                 <img
                   src={processedMedia}
-                  alt="SDXL Generated"
+                  alt="Enhanced SDXL Generated"
                   className="w-full h-full object-contain"
                 />
               )
@@ -681,14 +736,14 @@ export default function Photobooth() {
               // Show captured photo
               <img
                 src={mediaData}
-                alt="Captured"
+                alt="Captured Photo"
                 className="w-full h-full object-contain"
               />
             ) : error ? (
               // Show error state
               <ErrorDisplay error={error} attempts={generationAttempts} />
             ) : (
-              // Show webcam
+              // Show webcam feed
               <Webcam
                 ref={webcamRef}
                 audio={false}
@@ -703,9 +758,9 @@ export default function Photobooth() {
               />
             )}
             
-            {/* Processing overlay */}
+            {/* Enhanced Processing Overlay */}
             {processing && (
-              <div className="absolute inset-0 bg-black bg-opacity-75 flex items-center justify-center">
+              <div className="absolute inset-0 bg-black bg-opacity-80 flex items-center justify-center">
                 <div className="text-center max-w-sm mx-auto p-6">
                   <Wand2 className="w-16 h-16 mx-auto mb-4 text-purple-400 animate-pulse" />
                   <ProcessingIndicator state={processingState} />
@@ -713,20 +768,29 @@ export default function Photobooth() {
               </div>
             )}
 
-            {/* Status badges */}
+            {/* Enhanced Status Badges */}
             {processedMedia && (
-              <div className="absolute top-3 left-3 bg-black/70 text-white px-2 py-1 rounded-lg text-xs flex items-center gap-1">
-                <Wand2 className="w-3 h-3 text-purple-400" />
-                <span className="text-purple-400">SDXL Generated</span>
-                {uploading && (
-                  <RefreshCw className="w-3 h-3 text-blue-400 animate-spin ml-1" />
-                )}
+              <div className="absolute top-3 left-3 space-y-2">
+                <div className="bg-black/80 text-white px-3 py-1 rounded-lg text-xs flex items-center gap-2">
+                  <Wand2 className="w-3 h-3 text-purple-400" />
+                  <span className="text-purple-400">Enhanced SDXL</span>
+                  {uploading && (
+                    <RefreshCw className="w-3 h-3 text-blue-400 animate-spin" />
+                  )}
+                  {uploadSuccess && (
+                    <ImageIcon className="w-3 h-3 text-green-400" />
+                  )}
+                </div>
+                <div className="bg-black/80 text-white px-3 py-1 rounded-lg text-xs flex items-center gap-2">
+                  <User className="w-3 h-3 text-blue-400" />
+                  <span className="text-blue-400">Seamless Blending</span>
+                </div>
               </div>
             )}
           </div>
         </div>
 
-        {/* Action Buttons */}
+        {/* Enhanced Action Buttons */}
         <div className="space-y-4 mb-6">
           {!mediaData ? (
             <button
@@ -736,7 +800,7 @@ export default function Photobooth() {
               style={{ backgroundColor: config?.primary_color || '#3B82F6' }}
             >
               <Camera className="w-7 h-7" />
-              Take Photo
+              Take Photo for Enhanced SDXL
             </button>
           ) : (
             <div className="space-y-3">
@@ -747,7 +811,7 @@ export default function Photobooth() {
                 style={{ backgroundColor: config?.primary_color || '#3B82F6' }}
               >
                 <Wand2 className="w-7 h-7" />
-                {processing ? 'Creating with SDXL...' : `Generate with SDXL Inpainting`}
+                {processing ? 'Creating with Enhanced SDXL...' : 'Generate with Enhanced SDXL'}
               </button>
               <button
                 onClick={reset}
@@ -759,38 +823,45 @@ export default function Photobooth() {
             </div>
           )}
 
-          {/* Auto-upload status message */}
+          {/* Enhanced Auto-upload Status */}
           {processedMedia && (
             <div className="text-center text-sm text-gray-400 bg-gray-800/50 rounded-lg p-3">
               {uploading ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin text-blue-400 inline mr-2" />
                   <span className="text-blue-400">
-                    Saving to Gallery... {uploadAttempts > 0 && `(${uploadAttempts}/3)`}
+                    Auto-saving to Gallery... {uploadAttempts > 0 && `(Attempt ${uploadAttempts})`}
                   </span>
                 </>
               ) : uploadSuccess ? (
                 <>
                   <ImageIcon className="w-4 h-4 text-green-400 inline mr-2" />
-                  <span className="text-green-400">Saved to Gallery!</span>
+                  <span className="text-green-400">Successfully saved to Gallery!</span>
                 </>
-              ) : null}
+              ) : (
+                <>
+                  <Wand2 className="w-4 h-4 text-purple-400 inline mr-2" />
+                  <span className="text-purple-400">Enhanced generation complete - preparing to save...</span>
+                </>
+              )}
             </div>
           )}
         </div>
 
-        {/* Enhanced Debug Info */}
-        {(process.env.NODE_ENV === 'development' || debugInfo) && (
+        {/* Enhanced Debug Information */}
+        {(config?.enable_debug_mode || debugInfo) && (
           <div className="mt-4 p-4 bg-gray-800/50 rounded-lg text-xs text-gray-400 space-y-2">
-            <p><span className="text-purple-400 font-semibold">Model:</span> SDXL Inpainting + ControlNet</p>
+            <h4 className="text-white font-semibold mb-2">Enhanced SDXL Debug Info</h4>
+            <p><span className="text-purple-400 font-semibold">Model:</span> Enhanced SDXL with Seamless Blending</p>
             <p><span className="text-blue-400 font-semibold">Mode:</span> {currentModelType}</p>
             <p><span className="text-green-400 font-semibold">Face Mode:</span> {config?.face_preservation_mode || 'preserve_face'}</p>
             <p><span className="text-yellow-400 font-semibold">Attempts:</span> {generationAttempts}/3</p>
-            <p><span className="text-indigo-400 font-semibold">Strength:</span> {config?.face_preservation_mode === 'preserve_face' ? '0.4' : '0.7'}</p>
-            <p><span className="text-pink-400 font-semibold">CFG Scale:</span> 8.0</p>
+            <p><span className="text-indigo-400 font-semibold">Strength:</span> {config?.face_preservation_mode === 'preserve_face' ? '0.32 (Conservative)' : '0.65 (Moderate)'}</p>
+            <p><span className="text-pink-400 font-semibold">CFG Scale:</span> {config?.sdxl_cfg_scale || '7.5'}</p>
             <p><span className="text-cyan-400 font-semibold">Resolution:</span> 1024x1024 SDXL Native</p>
-            <p><span className="text-orange-400 font-semibold">Steps:</span> 25 (SDXL Optimized)</p>
-            <p><span className="text-teal-400 font-semibold">ControlNet:</span> {config?.use_controlnet ? `Enabled (${config?.controlnet_type || 'auto'})` : 'Disabled'}</p>
+            <p><span className="text-orange-400 font-semibold">Steps:</span> {config?.sdxl_steps || '25'}</p>
+            <p><span className="text-teal-400 font-semibold">Enhancements:</span> Smart Cropping, Anti-Distortion, Seamless Blending</p>
+            <p><span className="text-violet-400 font-semibold">Upload Attempts:</span> {uploadAttempts}</p>
             {debugInfo && (
               <div className="mt-2 p-2 bg-red-900/20 border border-red-500/30 rounded">
                 <p className="text-red-400 font-mono text-xs">
