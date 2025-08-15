@@ -54,7 +54,7 @@ export async function generateWithStability(params: StabilityGenerationParams): 
     });
 
     // Call the Supabase Edge Function
-    const { supabase } = await import('../supabaseClient');
+    const { supabase } = await import('./supabase');
     
     const { data, error } = await supabase.functions.invoke('generate-stability-image', {
       body: JSON.stringify({
