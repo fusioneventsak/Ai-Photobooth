@@ -466,12 +466,12 @@ export default function Photobooth() {
 
         console.log('🔍 Generating seamless face mask...');
         
-        // Precise face-only masking that preserves background
+        // Properly sized face masking for proportional results
         maskData = await generateSmartFaceMask(
           img,
           faceMode === 'preserve_face',
-          config.sdxl_feather_radius || 35,    // Moderate feathering for natural transitions
-          config.sdxl_face_expansion || 1.05   // Minimal expansion - face only, not head/neck
+          config.sdxl_feather_radius || 40,    // Good feathering for natural transitions
+          config.sdxl_face_expansion || 1.3    // Larger expansion to match character body proportions
         );
         
         console.log('✅ Seamless face mask generated successfully');
@@ -516,39 +516,42 @@ export default function Photobooth() {
         aiContent = await Promise.race([videoPromise, timeoutPromise]);
         
       } else {
-        // Refined prompt engineering for face-only preservation
+        // Balanced prompt engineering for proportional face-to-body ratio
         const enhancedPrompt = faceMode === 'preserve_face' 
-          ? `${config.global_prompt}, photorealistic portrait, preserve original facial features, natural skin texture, detailed eyes and expression, maintain facial identity, seamless integration with generated background, professional quality, 8k details`
-          : `${config.global_prompt}, creative character transformation, artistic interpretation, detailed features, seamless integration with background environment`;
+          ? `${config.global_prompt}, photorealistic portrait, preserve facial features and head size, natural face-to-body proportions, detailed facial expression, maintain head scale relative to body, seamless integration, professional quality, 8k details`
+          : `${config.global_prompt}, creative character transformation, artistic interpretation, detailed features, natural proportions, seamless integration with background environment`;
 
-        console.log(`🎭 Using refined ${faceMode} mode with face-only preservation...`);
-        console.log('🎯 Refined prompt for face preservation:', enhancedPrompt.slice(0, 150) + '...');
+        console.log(`🎭 Using balanced ${faceMode} mode with proportional scaling...`);
+        console.log('🎯 Proportional prompt for natural face size:', enhancedPrompt.slice(0, 150) + '...');
         
-        // Balanced generation parameters for face-only processing
+        // Optimized generation parameters for natural proportions
         const generationParams = {
           prompt: enhancedPrompt,
           imageData: processedContent,
           mode: 'inpaint' as const,
           maskData: maskData,
           facePreservationMode: faceMode,
-          // Moderate strength for good face preservation without distortion
+          // Moderate strength for good face preservation with natural sizing
           strength: faceMode === 'preserve_face' ? 
-            (config.sdxl_strength || 0.35) :  // Balanced for face preservation
+            (config.sdxl_strength || 0.4) :   // Slightly higher for better integration
             (config.sdxl_strength || 0.65),   // Standard for transformation
           cfgScale: config.sdxl_cfg_scale || 7.5, // Standard SDXL CFG
-          steps: config.sdxl_steps || 25, // Standard steps for good quality/speed
+          steps: config.sdxl_steps || 25, // Standard steps
           useControlNet: config.use_controlnet ?? true,
           controlNetType: config.controlnet_type || 'auto',
-          // Focused negative prompt for face quality only
+          // Refined negative prompt focusing on proportion issues
           negativePrompt: [
+            // Proportion issues
+            'tiny face', 'oversized body', 'disproportionate head', 'head too small for body',
+            'mismatched scale', 'unnatural face size', 'miniature face', 'giant body',
             // Face quality issues
             'blurry face', 'distorted facial features', 'asymmetrical face', 'deformed face',
-            'extra eyes', 'missing eyes', 'malformed mouth', 'bad teeth', 'plastic skin',
+            'plastic skin', 'artificial looking face',
             // Technical quality
-            'low quality', 'blurry', 'pixelated', 'jpeg artifacts', 'oversaturated',
+            'low quality', 'blurry', 'pixelated', 'jpeg artifacts',
             // Mask artifacts
-            'visible mask edges', 'harsh transitions around face', 'circular mask artifacts',
-            'unnatural face boundaries', 'face swap artifacts'
+            'visible mask edges', 'harsh transitions', 'circular mask artifacts',
+            'face swap artifacts', 'unnatural boundaries'
           ].join(', ')
         };
 
@@ -776,8 +779,8 @@ export default function Photobooth() {
               <div className="flex items-start gap-3">
                 <User className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" />
                 <div>
-                  <span className="text-white font-medium">Precise Face Preservation:</span>
-                  <span className="text-gray-300"> Only your face is preserved, background remains AI-generated</span>
+                  <span className="text-white font-medium">Proportional Face Scale:</span>
+                  <span className="text-gray-300"> Face size automatically matches the generated character's body proportions</span>
                 </div>
               </div>
               <div className="flex items-start gap-3">
@@ -940,12 +943,12 @@ export default function Photobooth() {
             <p><span className="text-blue-400 font-semibold">Mode:</span> {currentModelType}</p>
             <p><span className="text-green-400 font-semibold">Face Mode:</span> {config?.face_preservation_mode || 'preserve_face'}</p>
             <p><span className="text-yellow-400 font-semibold">Attempts:</span> {generationAttempts}/3</p>
-            <p><span className="text-indigo-400 font-semibold">Strength:</span> {config?.face_preservation_mode === 'preserve_face' ? '0.35 (Balanced)' : '0.65 (Standard)'}</p>
+            <p><span className="text-indigo-400 font-semibold">Strength:</span> {config?.face_preservation_mode === 'preserve_face' ? '0.4 (Proportional)' : '0.65 (Standard)'}</p>
             <p><span className="text-pink-400 font-semibold">CFG Scale:</span> {config?.sdxl_cfg_scale || '7.5'}</p>
             <p><span className="text-cyan-400 font-semibold">Resolution:</span> 1024x1024 SDXL Native</p>
             <p><span className="text-orange-400 font-semibold">Steps:</span> {config?.sdxl_steps || '25'}</p>
-            <p><span className="text-teal-400 font-semibold">Approach:</span> Face-Only Preservation, Background Untouched</p>
-            <p><span className="text-violet-400 font-semibold">Mask Expansion:</span> {config?.sdxl_face_expansion || '1.05x'} (Minimal)</p>
+            <p><span className="text-teal-400 font-semibold">Approach:</span> Proportional Face Preservation</p>
+            <p><span className="text-violet-400 font-semibold">Mask Expansion:</span> {config?.sdxl_face_expansion || '1.3x'} (Natural Scale)</p>
             <p><span className="text-violet-400 font-semibold">Upload Attempts:</span> {uploadAttempts}</p>
             {debugInfo && (
               <div className="mt-2 p-2 bg-red-900/20 border border-red-500/30 rounded">
