@@ -496,6 +496,19 @@ export default function Gallery() {
                             <Trash2 className="w-5 h-5" />
                           )}
                         </button>
+                        
+                        <button
+                          onClick={() => handleDeletePhotoAndDuplicates(photos[carouselIndex]?.id)}
+                          disabled={deleting === photos[carouselIndex]?.id}
+                          className="p-2 bg-orange-500 bg-opacity-50 rounded-full hover:bg-opacity-70 transition disabled:opacity-50"
+                          title="Delete this photo and all duplicates"
+                        >
+                          {deleting === photos[carouselIndex]?.id ? (
+                            <RefreshCw className="w-5 h-5 animate-spin" />
+                          ) : (
+                            <Trash2 className="w-5 h-5" />
+                          )}
+                        </button>
                       </div>
                     )}
                   </div>

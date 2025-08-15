@@ -701,6 +701,180 @@ export async function deleteAllPhotos(): Promise<boolean> {
   }
 }
 
+// Delete all photos with the same image content (including duplicates)
+export async function deletePhotoAndAllDuplicates(photoId: string): Promise<{ deletedCount: number; errors: string[] }> {
+  try {
+    console.log('🗑️ Starting deletion of photo and all duplicates for ID:', photoId);
+    
+    // First, get the target photo details
+    const { data: targetPhoto, error: fetchError } = await supabase
+      .from('photos')
+      .select('*')
+      .eq('id', photoId)
+      .single();
+
+    if (fetchError) {
+      console.error('❌ Error fetching target photo:', fetchError);
+      throw new Error(`Failed to find target photo: ${fetchError.message}`);
+    }
+
+    if (!targetPhoto) {
+      throw new Error('Target photo not found');
+    }
+
+    console.log('📋 Target photo found:', {
+      id: targetPhoto.id.substring(0, 8),
+      prompt: targetPhoto.prompt.substring(0, 50),
+      url: targetPhoto.processed_url
+    });
+
+    // Find all photos with the same prompt (likely duplicates)
+    const { data: duplicatePhotos, error: duplicatesError } = await supabase
+      .from('photos')
+      .select('*')
+      .eq('prompt', targetPhoto.prompt)
+      .eq('public', true);
+
+    if (duplicatesError) {
+      console.error('❌ Error finding duplicate photos:', duplicatesError);
+      throw new Error(`Failed to find duplicates: ${duplicatesError.message}`);
+    }
+
+    if (!duplicatePhotos || duplicatePhotos.length === 0) {
+      console.log('ℹ️ No duplicates found, deleting single photo');
+      await deletePhoto(photoId);
+      return { deletedCount: 1, errors: [] };
+    }
+
+    console.log(`📊 Found ${duplicatePhotos.length} photos with same prompt (including original)`);
+
+    const errors: string[] = [];
+    let deletedCount = 0;
+
+    // Delete each photo individually to handle errors gracefully
+    for (const photo of duplicatePhotos) {
+      try {
+        await deletePhoto(photo.id);
+        deletedCount++;
+        console.log(`✅ Deleted duplicate: ${photo.id.substring(0, 8)}`);
+      } catch (error) {
+        const errorMsg = `Failed to delete ${photo.id}: ${error instanceof Error ? error.message : 'Unknown error'}`;
+        errors.push(errorMsg);
+        console.warn(`⚠️ ${errorMsg}`);
+      }
+    }
+
+    console.log(`📊 Bulk deletion completed: ${deletedCount}/${duplicatePhotos.length} deleted, ${errors.length} errors`);
+    
+    // Trigger gallery refresh
+    window.dispatchEvent(new CustomEvent('galleryUpdate', {
+      detail: { 
+        action: 'bulkDeleteDuplicates',
+        originalPhotoId: photoId,
+        deletedCount,
+        errors: errors.length
+      }
+    }));
+    
+    return { deletedCount, errors };
+
+  } catch (error) {
+    console.error('❌ Bulk duplicate deletion failed:', error);
+    throw error;
+  }
+}
+
+// Get storage files for duplicate analysis
+export async function getStorageFiles(): Promise<any[]> {
+  try {
+    console.log('📁 Fetching all storage files...');
+    
+    const { data, error } = await supabase.storage
+      .from('photos')
+      .list('', {
+        limit: 1000,
+        sortBy: { column: 'created_at', order: 'desc' }
+      });
+
+    if (error) {
+      console.error('❌ Error fetching storage files:', error);
+      throw new Error(`Failed to fetch storage files: ${error.message}`);
+    }
+
+    console.log('📊 Storage files loaded:', data?.length || 0);
+    return data || [];
+
+  } catch (error) {
+    console.error('❌ Error in getStorageFiles:', error);
+    throw error;
+  }
+}
+
+// Delete files from storage by filename
+export async function deleteStorageFiles(filenames: string[]): Promise<{ deletedCount: number; errors: string[] }> {
+  try {
+    console.log('🗑️ Deleting storage files:', filenames.length);
+    
+    const errors: string[] = [];
+    let deletedCount = 0;
+
+    // Process in batches of 100 (Supabase storage limit)
+    const batchSize = 100;
+    
+    for (let i = 0; i < filenames.length; i += batchSize) {
+      const batch = filenames.slice(i, i + batchSize);
+      console.log(`🔄 Deleting storage batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(filenames.length / batchSize)}...`);
+      
+      const { error: storageError } = await supabase.storage
+        .from('photos')
+        .remove(batch);
+
+      if (storageError) {
+        const errorMsg = `Storage batch deletion failed: ${storageError.message}`;
+        errors.push(errorMsg);
+        console.warn(`⚠️ ${errorMsg}`);
+      } else {
+        deletedCount += batch.length;
+        console.log(`✅ Storage batch deleted successfully (${deletedCount}/${filenames.length})`);
+      }
+    }
+    
+    // Also delete corresponding database records
+    for (const filename of filenames) {
+      try {
+        // Find database records that reference this file
+        const { data: matchingPhotos } = await supabase
+          .from('photos')
+          .select('id')
+          .or(`original_url.like.%${filename},processed_url.like.%${filename}`);
+
+        if (matchingPhotos && matchingPhotos.length > 0) {
+          for (const photo of matchingPhotos) {
+            const { error: dbError } = await supabase
+              .from('photos')
+              .delete()
+              .eq('id', photo.id);
+
+            if (dbError) {
+              console.warn(`⚠️ Failed to delete database record for ${filename}:`, dbError);
+            }
+          }
+        }
+      } catch (dbError) {
+        console.warn(`⚠️ Error cleaning up database records for ${filename}:`, dbError);
+      }
+    }
+
+    console.log(`📊 Storage deletion completed: ${deletedCount}/${filenames.length} files deleted, ${errors.length} errors`);
+    
+    return { deletedCount, errors };
+
+  } catch (error) {
+    console.error('❌ Storage file deletion failed:', error);
+    throw error;
+  }
+}
+
 // Optional: Delete photos older than X days
 export async function deleteOldPhotos(daysOld: number = 30): Promise<{ deletedCount: number; errors: string[] }> {
   try {
