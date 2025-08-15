@@ -42,7 +42,32 @@ export default function Photobooth() {
   
   const webcamRef = React.useRef<Webcam>(null);
 
-  // Enhanced image resizing with better framing to avoid long necks
+  // Add CSS for gradient animation
+  React.useEffect(() => {
+    const style = document.createElement('style');
+    style.textContent = `
+      @keyframes gradient-x {
+        0%, 100% {
+          background-size: 200% 200%;
+          background-position: left center;
+        }
+        50% {
+          background-size: 200% 200%;
+          background-position: right center;
+        }
+      }
+      .animate-gradient-x {
+        animation: gradient-x 3s ease infinite;
+      }
+    `;
+    document.head.appendChild(style);
+    
+    return () => {
+      document.head.removeChild(style);
+    };
+  }, []);
+
+  // Enhanced image resizing with aggressive neck distortion prevention
   const resizeImage = (dataUrl: string, targetSize: number = 1024): Promise<string> => {
     return new Promise((resolve, reject) => {
       const img = new Image();
@@ -59,46 +84,53 @@ export default function Photobooth() {
         canvas.width = targetSize;
         canvas.height = targetSize;
 
-        // Calculate smart cropping to avoid long necks
+        // Aggressive anti-neck-stretching cropping strategy
         const { width, height } = img;
         let sourceX = 0, sourceY = 0, sourceWidth = width, sourceHeight = height;
         
-        // For portrait images, focus on upper portion to avoid long necks
+        // For any image, focus on upper 60% to prevent body/neck issues
         if (height > width) {
-          // Crop from top 70% of the image to avoid showing too much body
-          sourceHeight = Math.min(height, width * 1.2); // Limit height relative to width
-          sourceY = Math.max(0, height * 0.1); // Start from 10% down, not the very top
-        } else {
-          // For landscape, center the crop
-          sourceWidth = Math.min(width, height);
+          // Portrait: Crop to show head and minimal shoulders only
+          sourceHeight = Math.min(height, width * 1.1); // Very tight height limit
+          sourceY = Math.max(0, height * 0.05); // Start very close to top
+          sourceWidth = width;
+        } else if (width > height) {
+          // Landscape: Center crop to square, focus on upper portion
+          sourceWidth = height;
+          sourceHeight = height * 0.9; // Crop even tighter for landscape
           sourceX = (width - sourceWidth) / 2;
+          sourceY = 0;
+        } else {
+          // Square: Crop top 85% to eliminate lower body
+          sourceHeight = height * 0.85;
+          sourceY = 0;
         }
 
-        // High-quality scaling with subtle enhancements
+        // High-quality scaling with enhanced preprocessing
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
         
-        // Apply subtle preprocessing for better SDXL results
-        ctx.filter = 'contrast(1.02) brightness(1.01) saturate(1.02)';
+        // Apply enhanced preprocessing for better SDXL face results
+        ctx.filter = 'contrast(1.03) brightness(1.02) saturate(1.05) sharpen(0.1)';
         
-        // Draw the intelligently cropped and resized image
+        // Draw the aggressively cropped image focused on head/face area
         ctx.drawImage(
           img, 
-          sourceX, sourceY, sourceWidth, sourceHeight,  // Source rectangle
-          0, 0, canvas.width, canvas.height              // Destination rectangle
+          sourceX, sourceY, sourceWidth, sourceHeight,  // Source: head-focused crop
+          0, 0, canvas.width, canvas.height              // Destination: full canvas
         );
         
         // Reset filter
         ctx.filter = 'none';
         
-        console.log('✅ Smart image preprocessing completed:', {
+        console.log('✅ Anti-neck-stretch preprocessing completed:', {
           originalDimensions: `${width}x${height}`,
           processedDimensions: `${canvas.width}x${canvas.height}`,
-          cropArea: `${sourceWidth}x${sourceHeight} from (${sourceX}, ${sourceY})`,
-          aspectRatioOptimized: true
+          cropArea: `${Math.round(sourceWidth)}x${Math.round(sourceHeight)} from (${Math.round(sourceX)}, ${Math.round(sourceY)})`,
+          neckPrevention: 'aggressive_head_focus'
         });
         
-        resolve(canvas.toDataURL('image/jpeg', 0.92));
+        resolve(canvas.toDataURL('image/jpeg', 0.95));
       };
       
       img.onerror = () => reject(new Error('Failed to load image for processing'));
@@ -140,14 +172,12 @@ export default function Photobooth() {
     };
   }, [processedMedia]);
 
-  // Enhanced automatic upload with better error handling
+  // Enhanced automatic upload with proper state management
   useEffect(() => {
-    if (!processedMedia || !config) return;
+    if (!processedMedia || !config || uploading) return;
 
     const autoUpload = async () => {
-      if (uploading) return; // Prevent duplicate uploads
-      
-      console.log('📸 Starting automatic gallery upload...');
+      console.log('📸 Starting controlled gallery upload...');
       
       try {
         setUploading(true);
@@ -156,7 +186,7 @@ export default function Photobooth() {
         
         const uploadResult = await uploadPhoto(
           processedMedia,
-          config.global_prompt || 'AI Generated with SDXL',
+          config.global_prompt || 'AI Generated with Enhanced SDXL',
           currentModelType
         );
         
@@ -167,18 +197,18 @@ export default function Photobooth() {
           window.dispatchEvent(new CustomEvent('galleryUpdate', {
             detail: { 
               newPhoto: uploadResult,
-              source: 'automatic_seamless_generation'
+              source: 'enhanced_seamless_generation'
             }
           }));
           
           setUploadSuccess(true);
-          setProcessingState({ stage: 'complete', progress: 100, message: 'Complete!' });
+          setProcessingState({ stage: 'complete', progress: 100, message: 'Saved to Gallery!' });
           
           // Clear success state after delay
           setTimeout(() => {
             setUploadSuccess(false);
-            setProcessingState({ stage: 'detecting', progress: 0, message: 'Ready for next photo...' });
-          }, 3000);
+            setProcessingState({ stage: 'detecting', progress: 0, message: 'Ready for next magical creation...' });
+          }, 4000);
           
         } else {
           throw new Error('Upload returned null result');
@@ -187,19 +217,17 @@ export default function Photobooth() {
       } catch (error) {
         console.error('❌ Auto-upload failed:', error);
         setError('Failed to save to gallery. Photo generated successfully but not saved.');
-        
-        // Still show the generated image even if upload fails
         setProcessingState({ stage: 'complete', progress: 100, message: 'Generated (save failed)' });
       } finally {
         setUploading(false);
       }
     };
 
-    // Small delay to ensure UI state is updated
-    const uploadTimer = setTimeout(autoUpload, 100);
+    // Controlled upload timing
+    const uploadTimer = setTimeout(autoUpload, 500);
     return () => clearTimeout(uploadTimer);
 
-  }, [processedMedia, config, currentModelType, uploading]);
+  }, [processedMedia, config, currentModelType]); // Removed uploading from deps to prevent loops
 
   const capturePhoto = React.useCallback(() => {
     try {
@@ -316,23 +344,70 @@ export default function Photobooth() {
     </div>
   );
 
-  // Enhanced processing indicator
+  // Enhanced processing indicator with smooth animations
   const ProcessingIndicator = ({ state }: { state: ProcessingState }) => (
-    <div className="text-center space-y-3">
-      <div className="text-sm font-medium text-white">{state.message}</div>
-      <div className="w-full bg-gray-700 rounded-full h-3">
+    <div className="text-center space-y-4">
+      {/* Animated Magic Wand */}
+      <div className="relative">
+        <Wand2 className="w-20 h-20 mx-auto text-purple-400 animate-pulse" />
+        <div className="absolute inset-0 w-20 h-20 mx-auto">
+          <div className="w-full h-full rounded-full border-4 border-purple-500/30 animate-ping"></div>
+        </div>
+        <div className="absolute inset-2 w-16 h-16 mx-auto">
+          <div className="w-full h-full rounded-full border-2 border-blue-400/50 animate-spin"></div>
+        </div>
+        {/* Floating sparkles */}
+        <div className="absolute -top-2 -right-2 w-3 h-3 bg-yellow-400 rounded-full animate-bounce"></div>
+        <div className="absolute -bottom-2 -left-2 w-2 h-2 bg-pink-400 rounded-full animate-bounce" style={{ animationDelay: '0.5s' }}></div>
+        <div className="absolute top-4 -left-4 w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '1s' }}></div>
+      </div>
+      
+      {/* Message with typewriter effect */}
+      <div className="text-lg font-medium text-white animate-pulse">{state.message}</div>
+      
+      {/* Enhanced progress bar */}
+      <div className="w-full bg-gray-700 rounded-full h-4 overflow-hidden">
         <div 
-          className="bg-gradient-to-r from-purple-500 to-blue-500 h-3 rounded-full transition-all duration-500" 
+          className="h-4 rounded-full transition-all duration-1000 ease-out bg-gradient-to-r from-purple-500 via-pink-500 to-blue-500 animate-gradient-x" 
           style={{ width: `${state.progress}%` }}
         />
       </div>
-      <div className="text-xs text-gray-400">{state.progress}% Complete</div>
-      <div className="text-xs text-purple-300">
-        {state.stage === 'detecting' && '🔍 Optimizing image for SDXL...'}
-        {state.stage === 'masking' && '🎭 Creating seamless face mask...'}
-        {state.stage === 'generating' && '🎨 Generating with enhanced SDXL...'}
-        {state.stage === 'uploading' && '📤 Saving to gallery...'}
-        {state.stage === 'complete' && '✅ Complete!'}
+      
+      {/* Progress percentage */}
+      <div className="text-sm text-gray-300">{state.progress}% Complete</div>
+      
+      {/* Stage-specific animations */}
+      <div className="text-sm text-purple-300 flex items-center justify-center gap-2">
+        {state.stage === 'detecting' && (
+          <>
+            <div className="w-2 h-2 bg-purple-400 rounded-full animate-pulse"></div>
+            <span>🔍 Preparing your photo with AI magic...</span>
+          </>
+        )}
+        {state.stage === 'masking' && (
+          <>
+            <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce"></div>
+            <span>🎭 Crafting the perfect face blend...</span>
+          </>
+        )}
+        {state.stage === 'generating' && (
+          <>
+            <div className="w-2 h-2 bg-pink-400 rounded-full animate-spin"></div>
+            <span>✨ Creating AI magic with advanced SDXL...</span>
+          </>
+        )}
+        {state.stage === 'uploading' && (
+          <>
+            <div className="w-2 h-2 bg-green-400 rounded-full animate-ping"></div>
+            <span>📤 Adding to your gallery...</span>
+          </>
+        )}
+        {state.stage === 'complete' && (
+          <>
+            <div className="w-2 h-2 bg-green-400 rounded-full"></div>
+            <span>🎉 Magic complete!</span>
+          </>
+        )}
       </div>
     </div>
   );
@@ -402,12 +477,12 @@ export default function Photobooth() {
 
         console.log('🔍 Generating seamless face mask...');
         
-        // Enhanced masking parameters for better blending
+        // Enhanced masking parameters for better face-body blending
         maskData = await generateSmartFaceMask(
           img,
           faceMode === 'preserve_face',
-          config.sdxl_feather_radius || 40,    // Increased feathering for seamless blending
-          config.sdxl_face_expansion || 1.2    // Conservative expansion to avoid circular artifacts
+          config.sdxl_feather_radius || 50,    // Increased feathering for better blending
+          config.sdxl_face_expansion || 1.1    // Reduced expansion to focus on face only
         );
         
         console.log('✅ Seamless face mask generated successfully');
@@ -452,35 +527,41 @@ export default function Photobooth() {
         aiContent = await Promise.race([videoPromise, timeoutPromise]);
         
       } else {
-        // Enhanced prompt engineering for better body proportions
+        // Enhanced prompt engineering for better body proportions and blending
         const enhancedPrompt = faceMode === 'preserve_face' 
-          ? `${config.global_prompt}, photorealistic portrait, natural body proportions, proper neck length, detailed facial features, natural skin texture, professional photography, balanced composition, no elongated neck, realistic anatomy, 8k quality`
-          : `${config.global_prompt}, creative character transformation, natural proportions, balanced anatomy, no elongated features, professional digital art, seamless integration`;
+          ? `${config.global_prompt}, photorealistic portrait, natural facial features, seamless neck and shoulder transition, proper body proportions, no neck stretching, natural skin tone continuity, detailed facial features, professional headshot, balanced composition, realistic anatomy, smooth blending between face and body, 8k quality`
+          : `${config.global_prompt}, creative character transformation, natural proportions, seamless integration, balanced anatomy, no distorted features, professional digital art, smooth transitions between original and generated elements`;
 
-        console.log(`🎭 Using enhanced ${faceMode} mode with anti-distortion measures...`);
-        console.log('🎯 Enhanced prompt with proportion controls:', enhancedPrompt.slice(0, 150) + '...');
+        console.log(`🎭 Using enhanced ${faceMode} mode with advanced blending controls...`);
+        console.log('🎯 Enhanced prompt with blending controls:', enhancedPrompt.slice(0, 150) + '...');
         
-        // Enhanced generation parameters
+        // Enhanced generation parameters for better blending
         const generationParams = {
           prompt: enhancedPrompt,
           imageData: processedContent,
           mode: 'inpaint' as const,
           maskData: maskData,
           facePreservationMode: faceMode,
-          // Conservative strength to maintain proportions
+          // More conservative strength to prevent distortion
           strength: faceMode === 'preserve_face' ? 
-            (config.sdxl_strength || 0.32) :  // Very conservative for face preservation
-            (config.sdxl_strength || 0.65),   // Moderate for transformation
-          cfgScale: config.sdxl_cfg_scale || 7.5,
-          steps: config.sdxl_steps || 25,
+            (config.sdxl_strength || 0.28) :  // Very conservative for face preservation
+            (config.sdxl_strength || 0.55),   // Moderate for transformation
+          cfgScale: config.sdxl_cfg_scale || 7.0, // Slightly lower for better blending
+          steps: config.sdxl_steps || 30, // More steps for quality
           useControlNet: config.use_controlnet ?? true,
           controlNetType: config.controlnet_type || 'auto',
-          // Enhanced negative prompt targeting distortions
+          // Enhanced negative prompt targeting all distortion issues
           negativePrompt: [
-            'elongated neck', 'long neck', 'stretched neck', 'distorted anatomy',
-            'unnatural proportions', 'deformed body', 'bad anatomy', 'extra limbs',
-            'blurry', 'low quality', 'visible seams', 'harsh transitions',
-            'circular mask', 'mask artifacts', 'face swap artifacts'
+            // Neck and anatomy issues
+            'elongated neck', 'long neck', 'stretched neck', 'distorted anatomy', 'giraffe neck',
+            'unnatural proportions', 'deformed body', 'bad anatomy', 'extra limbs', 'twisted neck',
+            // Blending issues
+            'visible seams', 'harsh transitions', 'poor blending', 'color mismatch', 'texture discontinuity',
+            'circular mask', 'mask artifacts', 'face swap artifacts', 'artificial boundaries',
+            'mismatched skin tone', 'inconsistent lighting', 'jarring transitions',
+            // Quality issues
+            'blurry', 'low quality', 'pixelated', 'oversaturated', 'plastic skin',
+            'fake looking', 'uncanny valley', 'overprocessed'
           ].join(', ')
         };
 
@@ -777,9 +858,8 @@ export default function Photobooth() {
             
             {/* Enhanced Processing Overlay */}
             {processing && (
-              <div className="absolute inset-0 bg-black bg-opacity-80 flex items-center justify-center">
-                <div className="text-center max-w-sm mx-auto p-6">
-                  <Wand2 className="w-16 h-16 mx-auto mb-4 text-purple-400 animate-pulse" />
+              <div className="absolute inset-0 bg-black bg-opacity-85 flex items-center justify-center">
+                <div className="text-center max-w-sm mx-auto p-8">
                   <ProcessingIndicator state={processingState} />
                 </div>
               </div>
@@ -828,7 +908,7 @@ export default function Photobooth() {
                 style={{ backgroundColor: config?.primary_color || '#3B82F6' }}
               >
                 <Wand2 className="w-7 h-7" />
-                {processing ? 'Creating with Enhanced SDXL...' : 'Generate with Enhanced SDXL'}
+                {processing ? 'Creating AI Magic...' : 'Create AI Magic'}
               </button>
               <button
                 onClick={reset}
@@ -873,11 +953,12 @@ export default function Photobooth() {
             <p><span className="text-blue-400 font-semibold">Mode:</span> {currentModelType}</p>
             <p><span className="text-green-400 font-semibold">Face Mode:</span> {config?.face_preservation_mode || 'preserve_face'}</p>
             <p><span className="text-yellow-400 font-semibold">Attempts:</span> {generationAttempts}/3</p>
-            <p><span className="text-indigo-400 font-semibold">Strength:</span> {config?.face_preservation_mode === 'preserve_face' ? '0.32 (Conservative)' : '0.65 (Moderate)'}</p>
-            <p><span className="text-pink-400 font-semibold">CFG Scale:</span> {config?.sdxl_cfg_scale || '7.5'}</p>
+            <p><span className="text-indigo-400 font-semibold">Strength:</span> {config?.face_preservation_mode === 'preserve_face' ? '0.28 (Ultra Conservative)' : '0.55 (Moderate)'}</p>
+            <p><span className="text-pink-400 font-semibold">CFG Scale:</span> {config?.sdxl_cfg_scale || '7.0'}</p>
             <p><span className="text-cyan-400 font-semibold">Resolution:</span> 1024x1024 SDXL Native</p>
-            <p><span className="text-orange-400 font-semibold">Steps:</span> {config?.sdxl_steps || '25'}</p>
-            <p><span className="text-teal-400 font-semibold">Enhancements:</span> Smart Cropping, Anti-Distortion, Seamless Blending</p>
+            <p><span className="text-orange-400 font-semibold">Steps:</span> {config?.sdxl_steps || '30'}</p>
+            <p><span className="text-teal-400 font-semibold">Enhancements:</span> Aggressive Crop, Anti-Neck-Stretch, Seamless Blending</p>
+            <p><span className="text-violet-400 font-semibold">Feathering:</span> {config?.sdxl_feather_radius || '50px'} for smooth transitions</p>
             <p><span className="text-violet-400 font-semibold">Upload Attempts:</span> {uploadAttempts}</p>
             {debugInfo && (
               <div className="mt-2 p-2 bg-red-900/20 border border-red-500/30 rounded">
