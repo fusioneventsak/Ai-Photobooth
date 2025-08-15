@@ -2,7 +2,7 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useConfigStore } from '../store/configStore';
-import { getPublicPhotos, deletePhoto, deleteAllPhotos } from '../lib/supabase';
+import { getPublicPhotos, deletePhoto, deleteAllPhotos, supabase } from '../lib/supabase';
 import type { Photo } from '../types/supabase';
 import { 
   RefreshCw, 
@@ -653,7 +653,10 @@ export default function Gallery() {
               </div>
               {duplicateReport && (
                 <div className="text-xs space-y-1">
-                  {duplicateReport.duplicates.map((group: any, i: number) => (
+                  <div className="text-red-400 mb-2">
+                    Found {duplicateReport.duplicates.length} duplicate groups with {duplicateReport.totalDuplicates} extra copies
+                  </div>
+                  {duplicateReport.duplicates.slice(0, 5).map((group: any, i: number) => (
                     <div key={i} className="bg-gray-900 p-2 rounded">
                       <div className="text-yellow-400">
                         {group.count}x: {group.prompt}
@@ -668,8 +671,66 @@ export default function Gallery() {
                       )}
                     </div>
                   ))}
+                  {duplicateReport.duplicates.length > 5 && (
+                    <div className="text-gray-400">...and {duplicateReport.duplicates.length - 5} more groups</div>
+                  )}
                 </div>
               )}
+            </div>
+
+            {/* Emergency Cleanup */}
+            <div className="mb-4">
+              <h4 className="text-sm font-medium text-red-300 mb-2">⚠️ Emergency Actions</h4>
+              <div className="space-y-2">
+                <button
+                  onClick={async () => {
+                    if (confirm('Delete ALL 230 photos? This cannot be undone!')) {
+                      addDebugLog('🗑️ EMERGENCY: Deleting all photos...');
+                      try {
+                        await deleteAllPhotos();
+                        loadPhotos(true, 'emergency-cleanup');
+                        addDebugLog('✅ All photos deleted');
+                      } catch (error) {
+                        addDebugLog(`❌ Emergency cleanup failed: ${error}`);
+                      }
+                    }
+                  }}
+                  className="text-xs px-2 py-1 bg-red-700 rounded hover:bg-red-800 block"
+                >
+                  🚨 Delete ALL 230 Photos
+                </button>
+                <button
+                  onClick={async () => {
+                    if (confirm('Keep only the 12 newest photos and delete the rest?')) {
+                      addDebugLog('🧹 Keeping only 12 newest photos...');
+                      try {
+                        // Get all photos, sort by date, keep only newest 12
+                        const { data: allPhotos } = await supabase
+                          .from('photos')
+                          .select('id, created_at')
+                          .order('created_at', { ascending: false });
+                        
+                        if (allPhotos && allPhotos.length > 12) {
+                          const photosToDelete = allPhotos.slice(12); // Skip first 12, delete the rest
+                          addDebugLog(`🗑️ Deleting ${photosToDelete.length} old photos...`);
+                          
+                          for (const photo of photosToDelete) {
+                            await supabase.from('photos').delete().eq('id', photo.id);
+                          }
+                          
+                          loadPhotos(true, 'cleanup-old-photos');
+                          addDebugLog(`✅ Cleanup complete, kept 12 newest photos`);
+                        }
+                      } catch (error) {
+                        addDebugLog(`❌ Cleanup failed: ${error}`);
+                      }
+                    }
+                  }}
+                  className="text-xs px-2 py-1 bg-orange-600 rounded hover:bg-orange-700 block"
+                >
+                  🧹 Keep Only 12 Newest
+                </button>
+              </div>
             </div>
 
             <div className="mb-4">
