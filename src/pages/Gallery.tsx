@@ -54,6 +54,11 @@ export default function Gallery() {
   const [isFullscreen, setIsFullscreen] = React.useState(false);
   const [masonryPhotoOrder, setMasonryPhotoOrder] = React.useState<number[]>([]);
   const [masonryGridSize, setMasonryGridSize] = React.useState({ rows: 6, cols: 8 });
+  const [showStorageManager, setShowStorageManager] = React.useState(false);
+  const [storageFiles, setStorageFiles] = React.useState<any[]>([]);
+  const [loadingStorage, setLoadingStorage] = React.useState(false);
+  const [selectedForDeletion, setSelectedForDeletion] = React.useState<Set<string>>(new Set());
+  const [duplicateGroups, setDuplicateGroups] = React.useState<any[]>([]);
 
   // DEBUG: Add debug state
   const [debugInfo, setDebugInfo] = React.useState<string>('');
@@ -123,6 +128,149 @@ export default function Gallery() {
 
     } catch (error) {
       addDebugLog(`❌ Duplicate search failed: ${error}`);
+    }
+  };
+
+  // Load all files from Supabase storage
+  const loadStorageFiles = async () => {
+    try {
+      setLoadingStorage(true);
+      addDebugLog('📁 Loading all files from Supabase storage...');
+      
+      const { data: files, error } = await supabase.storage
+        .from('photos')
+        .list('', {
+          limit: 1000,
+          sortBy: { column: 'created_at', order: 'desc' }
+        });
+
+      if (error) {
+        addDebugLog(`❌ Storage list error: ${error.message}`);
+        setError(`Failed to load storage files: ${error.message}`);
+        return;
+      }
+
+      // Get public URLs for all files
+      const filesWithUrls = files?.map(file => {
+        const { data: urlData } = supabase.storage
+          .from('photos')
+          .getPublicUrl(file.name);
+        
+        return {
+          ...file,
+          publicUrl: urlData.publicUrl,
+          selected: false
+        };
+      }) || [];
+
+      setStorageFiles(filesWithUrls);
+      addDebugLog(`📊 Loaded ${filesWithUrls.length} files from storage`);
+      
+      // Analyze for duplicates based on file size
+      const sizeGroups: { [key: string]: any[] } = {};
+      filesWithUrls.forEach(file => {
+        const sizeKey = file.metadata?.size?.toString() || 'unknown';
+        if (!sizeGroups[sizeKey]) {
+          sizeGroups[sizeKey] = [];
+        }
+        sizeGroups[sizeKey].push(file);
+      });
+
+      const duplicates = Object.entries(sizeGroups)
+        .filter(([size, files]) => files.length > 1)
+        .map(([size, files]) => ({
+          size: parseInt(size),
+          count: files.length,
+          files: files
+        }))
+        .sort((a, b) => b.count - a.count);
+
+      setDuplicateGroups(duplicates);
+      addDebugLog(`🔍 Found ${duplicates.length} potential duplicate groups`);
+      
+    } catch (error) {
+      addDebugLog(`❌ Storage loading failed: ${error}`);
+      setError('Failed to load storage files');
+    } finally {
+      setLoadingStorage(false);
+    }
+  };
+
+  // Toggle file selection for deletion
+  const toggleFileSelection = (fileName: string) => {
+    setSelectedForDeletion(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(fileName)) {
+        newSet.delete(fileName);
+      } else {
+        newSet.add(fileName);
+      }
+      return newSet;
+    });
+  };
+
+  // Select all files in a duplicate group
+  const selectDuplicateGroup = (files: any[], keepOne: boolean = true) => {
+    setSelectedForDeletion(prev => {
+      const newSet = new Set(prev);
+      const filesToSelect = keepOne ? files.slice(1) : files; // Keep first one if keepOne is true
+      filesToSelect.forEach(file => newSet.add(file.name));
+      return newSet;
+    });
+  };
+
+  // Delete selected files from storage
+  const deleteSelectedFiles = async () => {
+    if (selectedForDeletion.size === 0) {
+      setError('No files selected for deletion');
+      return;
+    }
+
+    if (!confirm(`Delete ${selectedForDeletion.size} selected files? This cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      setDeleting(true);
+      addDebugLog(`🗑️ Deleting ${selectedForDeletion.size} selected files...`);
+
+      // Delete from storage
+      const filesToDelete = Array.from(selectedForDeletion);
+      const { error: storageError } = await supabase.storage
+        .from('photos')
+        .remove(filesToDelete);
+
+      if (storageError) {
+        throw new Error(`Storage deletion failed: ${storageError.message}`);
+      }
+
+      // Delete corresponding database records
+      for (const fileName of filesToDelete) {
+        const fileUrl = storageFiles.find(f => f.name === fileName)?.publicUrl;
+        if (fileUrl) {
+          const { error: dbError } = await supabase
+            .from('photos')
+            .delete()
+            .eq('processed_url', fileUrl);
+          
+          if (dbError) {
+            addDebugLog(`⚠️ DB deletion failed for ${fileName}: ${dbError.message}`);
+          }
+        }
+      }
+
+      addDebugLog(`✅ Deleted ${selectedForDeletion.size} files successfully`);
+      setSelectedForDeletion(new Set());
+      
+      // Reload storage and gallery
+      await loadStorageFiles();
+      loadPhotos(false, 'after-bulk-delete');
+      
+    } catch (error) {
+      addDebugLog(`❌ Bulk deletion failed: ${error}`);
+      setError(`Failed to delete files: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -683,6 +831,12 @@ export default function Gallery() {
               <h4 className="text-sm font-medium text-red-300 mb-2">⚠️ Emergency Actions</h4>
               <div className="space-y-2">
                 <button
+                  onClick={() => setShowStorageManager(!showStorageManager)}
+                  className="text-xs px-2 py-1 bg-blue-600 rounded hover:bg-blue-700 block"
+                >
+                  📁 Storage Manager
+                </button>
+                <button
                   onClick={async () => {
                     if (confirm('Delete ALL 230 photos? This cannot be undone!')) {
                       addDebugLog('🗑️ EMERGENCY: Deleting all photos...');
@@ -747,6 +901,140 @@ export default function Gallery() {
                 {debugInfo || 'No debug info yet...'}
               </pre>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Storage Manager Modal */}
+      {showStorageManager && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-800 rounded-xl p-6 max-w-6xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-xl font-semibold text-white flex items-center gap-2">
+                <Database className="w-6 h-6 text-blue-400" />
+                Supabase Storage Manager
+              </h3>
+              <button
+                onClick={() => setShowStorageManager(false)}
+                className="text-gray-400 hover:text-white"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="mb-4 flex gap-3">
+              <button
+                onClick={loadStorageFiles}
+                disabled={loadingStorage}
+                className="px-4 py-2 bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                <RefreshCw className={`w-4 h-4 ${loadingStorage ? 'animate-spin' : ''}`} />
+                Load Storage Files
+              </button>
+              
+              {selectedForDeletion.size > 0 && (
+                <button
+                  onClick={deleteSelectedFiles}
+                  disabled={deleting}
+                  className="px-4 py-2 bg-red-600 rounded hover:bg-red-700 disabled:opacity-50 flex items-center gap-2"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Delete Selected ({selectedForDeletion.size})
+                </button>
+              )}
+            </div>
+
+            {/* Duplicate Groups */}
+            {duplicateGroups.length > 0 && (
+              <div className="mb-6">
+                <h4 className="text-lg font-medium text-yellow-400 mb-3">🔍 Duplicate Groups Found</h4>
+                <div className="space-y-3 max-h-40 overflow-y-auto">
+                  {duplicateGroups.map((group, index) => (
+                    <div key={index} className="bg-gray-700 p-3 rounded-lg">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-white">
+                          {group.count} files with size {(group.size / 1024).toFixed(1)}KB
+                        </span>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => selectDuplicateGroup(group.files, true)}
+                            className="text-xs px-2 py-1 bg-orange-600 rounded hover:bg-orange-700"
+                          >
+                            Select Duplicates (Keep 1)
+                          </button>
+                          <button
+                            onClick={() => selectDuplicateGroup(group.files, false)}
+                            className="text-xs px-2 py-1 bg-red-600 rounded hover:bg-red-700"
+                          >
+                            Select All
+                          </button>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-6 gap-2">
+                        {group.files.slice(0, 6).map((file: any) => (
+                          <img
+                            key={file.name}
+                            src={file.publicUrl}
+                            alt="Duplicate"
+                            className="w-full h-16 object-cover rounded border-2 border-gray-600"
+                          />
+                        ))}
+                        {group.files.length > 6 && (
+                          <div className="w-full h-16 bg-gray-600 rounded flex items-center justify-center text-xs">
+                            +{group.files.length - 6}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Storage Files Grid */}
+            {storageFiles.length > 0 && (
+              <div>
+                <h4 className="text-lg font-medium text-blue-400 mb-3">
+                  📁 All Storage Files ({storageFiles.length})
+                </h4>
+                <div className="grid grid-cols-6 gap-3 max-h-96 overflow-y-auto">
+                  {storageFiles.map((file) => (
+                    <div
+                      key={file.name}
+                      className={`relative group cursor-pointer border-2 rounded-lg overflow-hidden ${
+                        selectedForDeletion.has(file.name)
+                          ? 'border-red-500 bg-red-900/20'
+                          : 'border-gray-600 hover:border-gray-400'
+                      }`}
+                      onClick={() => toggleFileSelection(file.name)}
+                    >
+                      <img
+                        src={file.publicUrl}
+                        alt={file.name}
+                        className="w-full h-24 object-cover"
+                      />
+                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <div className="text-center text-white text-xs">
+                          <div className="font-medium">{file.name.substring(0, 15)}...</div>
+                          <div>{(file.metadata?.size / 1024 || 0).toFixed(1)}KB</div>
+                        </div>
+                      </div>
+                      {selectedForDeletion.has(file.name) && (
+                        <div className="absolute top-1 right-1 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center">
+                          <X className="w-3 h-3 text-white" />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {storageFiles.length === 0 && !loadingStorage && (
+              <div className="text-center py-8 text-gray-400">
+                Click "Load Storage Files" to view all files in Supabase storage
+              </div>
+            )}
           </div>
         </div>
       )}
