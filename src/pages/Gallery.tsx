@@ -59,12 +59,114 @@ export default function Gallery() {
   const [debugInfo, setDebugInfo] = React.useState<string>('');
   const [showDebugPanel, setShowDebugPanel] = React.useState(false);
   const [allPhotosData, setAllPhotosData] = React.useState<any[]>([]);
+  const [duplicateReport, setDuplicateReport] = React.useState<any>(null);
 
   // DEBUG: Function to add debug logs
   const addDebugLog = (message: string) => {
     const timestamp = new Date().toLocaleTimeString();
     setDebugInfo(prev => `${prev}\n[${timestamp}] ${message}`);
     console.log(`[DEBUG] ${message}`);
+  };
+
+  // DEBUG: Find duplicate photos
+  const findDuplicates = async () => {
+    try {
+      addDebugLog('🔍 Searching for duplicate photos...');
+      
+      const { data: allPhotos, error } = await supabase
+        .from('photos')
+        .select('id, created_at, prompt, public, processed_url, original_url')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        addDebugLog(`❌ Error: ${error.message}`);
+        return;
+      }
+
+      addDebugLog(`📊 Found ${allPhotos?.length || 0} total photos`);
+
+      // Group by prompt to find duplicates
+      const promptGroups: { [key: string]: any[] } = {};
+      
+      allPhotos?.forEach(photo => {
+        const prompt = photo.prompt || 'NO_PROMPT';
+        if (!promptGroups[prompt]) {
+          promptGroups[prompt] = [];
+        }
+        promptGroups[prompt].push(photo);
+      });
+
+      // Find duplicates
+      const duplicates = Object.entries(promptGroups)
+        .filter(([prompt, photos]) => photos.length > 1)
+        .map(([prompt, photos]) => ({
+          prompt: prompt.length > 60 ? prompt.substring(0, 60) + '...' : prompt,
+          count: photos.length,
+          photos: photos
+        }))
+        .sort((a, b) => b.count - a.count);
+
+      const totalDuplicates = duplicates.reduce((sum, group) => sum + (group.count - 1), 0);
+      
+      setDuplicateReport({ duplicates, totalDuplicates });
+      
+      addDebugLog(`🔍 Found ${duplicates.length} duplicate groups with ${totalDuplicates} total duplicates`);
+      
+      // Log the professional headshot specifically
+      const headshotGroup = duplicates.find(d => d.prompt.includes('professional head shot'));
+      if (headshotGroup) {
+        addDebugLog(`👔 Professional headshot found: ${headshotGroup.count} copies`);
+        headshotGroup.photos.forEach((photo: any, i: number) => {
+          addDebugLog(`  Copy ${i + 1}: ID=${photo.id.substring(0, 8)}, created=${new Date(photo.created_at).toLocaleString()}, public=${photo.public}`);
+        });
+      }
+
+    } catch (error) {
+      addDebugLog(`❌ Duplicate search failed: ${error}`);
+    }
+  };
+
+  // DEBUG: Delete all copies of professional headshot
+  const deleteAllHeadshots = async () => {
+    try {
+      addDebugLog('🗑️ Deleting ALL professional headshot photos...');
+      
+      const { data: headshotPhotos, error: findError } = await supabase
+        .from('photos')
+        .select('*')
+        .ilike('prompt', '%professional head shot%');
+
+      if (findError) {
+        addDebugLog(`❌ Find error: ${findError.message}`);
+        return;
+      }
+
+      addDebugLog(`📋 Found ${headshotPhotos?.length || 0} headshot photos to delete`);
+
+      if (!headshotPhotos || headshotPhotos.length === 0) {
+        addDebugLog('ℹ️ No headshot photos found');
+        return;
+      }
+
+      // Delete all headshot photos
+      const { error: deleteError, count } = await supabase
+        .from('photos')
+        .delete()
+        .ilike('prompt', '%professional head shot%');
+
+      if (deleteError) {
+        addDebugLog(`❌ Delete error: ${deleteError.message}`);
+        return;
+      }
+
+      addDebugLog(`✅ Deleted ${count} headshot photos`);
+      
+      // Refresh gallery
+      loadPhotos(false, 'after-headshot-cleanup');
+      
+    } catch (error) {
+      addDebugLog(`❌ Headshot deletion failed: ${error}`);
+    }
   };
 
   // Debug log for config
@@ -532,8 +634,44 @@ export default function Gallery() {
                 <div>Public Photos: {allPhotosData.filter(p => p.public).length}</div>
                 <div>Private Photos: {allPhotosData.filter(p => !p.public).length}</div>
                 <div>Displayed: {photos.length}</div>
+                {duplicateReport && (
+                  <div className="text-red-400">Duplicates: {duplicateReport.totalDuplicates}</div>
+                )}
               </div>
             </div>
+            
+            {/* Duplicate Detection */}
+            <div className="mb-4">
+              <div className="flex items-center gap-2 mb-2">
+                <h4 className="text-sm font-medium text-gray-300">Duplicate Photos</h4>
+                <button
+                  onClick={findDuplicates}
+                  className="text-xs px-2 py-1 bg-blue-600 rounded hover:bg-blue-700"
+                >
+                  Find Duplicates
+                </button>
+              </div>
+              {duplicateReport && (
+                <div className="text-xs space-y-1">
+                  {duplicateReport.duplicates.map((group: any, i: number) => (
+                    <div key={i} className="bg-gray-900 p-2 rounded">
+                      <div className="text-yellow-400">
+                        {group.count}x: {group.prompt}
+                      </div>
+                      {group.prompt.includes('professional head shot') && (
+                        <button
+                          onClick={deleteAllHeadshots}
+                          className="mt-1 text-xs px-2 py-1 bg-red-600 rounded hover:bg-red-700"
+                        >
+                          Delete All Headshots
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <div className="mb-4">
               <div className="flex items-center gap-2 mb-2">
                 <h4 className="text-sm font-medium text-gray-300">Debug Log</h4>
