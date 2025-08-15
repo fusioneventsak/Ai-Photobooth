@@ -35,22 +35,43 @@ export default function Gallery() {
   // Carousel state
   const [carouselIndex, setCarouselIndex] = useState(0);
   const [carouselPlaying, setCarouselPlaying] = useState(true);
+  const [debugMode, setDebugMode] = useState(false);
+  const [forceRefresh, setForceRefresh] = useState(0);
 
   // Load photos
   const loadPhotos = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
+      
+      // Force cache bust
+      const timestamp = Date.now();
+      console.log(`🔄 Loading photos with cache bust: ${timestamp}`);
+      
       const fetchedPhotos = await getPublicPhotos();
+      
+      // Log detailed photo info for debugging
+      console.log('📊 Detailed photo analysis:', {
+        totalPhotos: fetchedPhotos.length,
+        uniquePrompts: new Set(fetchedPhotos.map(p => p.prompt)).size,
+        duplicateGroups: Object.entries(
+          fetchedPhotos.reduce((acc, photo) => {
+            acc[photo.prompt] = (acc[photo.prompt] || 0) + 1;
+            return acc;
+          }, {} as Record<string, number>)
+        ).filter(([_, count]) => count > 1),
+        photoIds: fetchedPhotos.map(p => ({ id: p.id.substring(0, 8), prompt: p.prompt.substring(0, 30) }))
+      });
+      
       setPhotos(fetchedPhotos);
-      console.log('📸 Gallery loaded:', fetchedPhotos.length, 'photos');
+      console.log('📸 Gallery loaded:', fetchedPhotos.length, 'photos at', new Date().toISOString());
     } catch (err) {
       console.error('❌ Failed to load photos:', err);
       setError(err instanceof Error ? err.message : 'Failed to load photos');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [forceRefresh]);
 
   // Initial load
   useEffect(() => {
@@ -61,7 +82,8 @@ export default function Gallery() {
   useEffect(() => {
     const handleGalleryUpdate = (event: CustomEvent) => {
       console.log('🔄 Gallery update event received:', event.detail);
-      loadPhotos();
+      // Force a complete refresh
+      setForceRefresh(prev => prev + 1);
     };
 
     window.addEventListener('galleryUpdate', handleGalleryUpdate as EventListener);
@@ -69,7 +91,7 @@ export default function Gallery() {
     return () => {
       window.removeEventListener('galleryUpdate', handleGalleryUpdate as EventListener);
     };
-  }, [loadPhotos]);
+  }, []);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -78,11 +100,19 @@ export default function Gallery() {
         e.preventDefault();
         setShowAdmin(!showAdmin);
       }
+      if (e.ctrlKey && e.shiftKey && e.key === 'D') {
+        e.preventDefault();
+        setDebugMode(!debugMode);
+      }
+      if (e.ctrlKey && e.shiftKey && e.key === 'R') {
+        e.preventDefault();
+        handleForceRefresh();
+      }
     };
 
     window.addEventListener('keydown', handleKeyPress);
     return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [showAdmin]);
+  }, [showAdmin, debugMode]);
 
   // Carousel auto-play
   useEffect(() => {
