@@ -204,14 +204,26 @@ export default function Photobooth() {
   const capturePhoto = React.useCallback(() => {
     try {
       setError(null);
-      const imageSrc = webcamRef.current?.getScreenshot();
+      
+      // Check if webcam ref exists and is ready
+      if (!webcamRef.current) {
+        throw new Error('Camera not ready. Please wait a moment and try again.');
+      }
+      
+      const imageSrc = webcamRef.current.getScreenshot();
       if (!imageSrc) {
-        throw new Error('Failed to capture photo from camera');
+        throw new Error('Failed to capture photo. Please ensure camera permissions are granted and try again.');
+      }
+      
+      // Validate the captured image data
+      if (!imageSrc.startsWith('data:image/')) {
+        throw new Error('Invalid image format captured. Please try again.');
       }
       
       console.log('📷 Photo captured for SDXL processing:', {
         format: 'PNG data URL',
-        size: `${Math.round(imageSrc.length / 1024)}KB`
+        size: `${Math.round(imageSrc.length / 1024)}KB`,
+        dataLength: imageSrc.length
       });
       
       setMediaData(imageSrc);
@@ -228,7 +240,7 @@ export default function Photobooth() {
       setError(errorMessage);
       setMediaData(null);
     }
-  }, [webcamRef]);
+  }, []);
 
   const reset = () => {
     console.log('🔄 Resetting photobooth for new session...');
@@ -748,13 +760,18 @@ export default function Photobooth() {
                 ref={webcamRef}
                 audio={false}
                 screenshotFormat="image/png"
+                screenshotQuality={0.92}
                 className="w-full h-full object-cover"
                 videoConstraints={{
                   width: 1280,
                   height: 720,
                   facingMode: "user"
                 }}
+                onUserMedia={() => {
+                  console.log('✅ Webcam initialized successfully');
+                }}
                 onUserMediaError={handleWebcamError}
+                style={{ filter: 'none' }}
               />
             )}
             
@@ -795,12 +812,12 @@ export default function Photobooth() {
           {!mediaData ? (
             <button
               onClick={capturePhoto}
-              disabled={!!error}
+              disabled={!!error || !webcamRef.current}
               className="w-full flex items-center justify-center gap-3 py-5 rounded-xl hover:opacity-90 transition disabled:opacity-50 text-lg font-semibold shadow-lg"
               style={{ backgroundColor: config?.primary_color || '#3B82F6' }}
             >
               <Camera className="w-7 h-7" />
-              Take Photo for Enhanced SDXL
+              {!webcamRef.current ? 'Initializing Camera...' : 'Take Photo for Enhanced SDXL'}
             </button>
           ) : (
             <div className="space-y-3">
