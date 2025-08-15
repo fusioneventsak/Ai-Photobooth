@@ -231,26 +231,6 @@ export default function Gallery() {
               >
                 {showAdmin ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
               </button>
-              
-              {/* Debug toggle */}
-              <button
-                onClick={() => setDebugMode(!debugMode)}
-                className={`p-2 rounded-lg transition ${
-                  debugMode ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-300 hover:text-white'
-                }`}
-                title="Toggle debug mode (Ctrl+Shift+D)"
-              >
-                <Settings className="w-5 h-5" />
-              </button>
-              
-              {/* Force refresh */}
-              <button
-                onClick={handleForceRefresh}
-                className="p-2 rounded-lg bg-gray-700 text-gray-300 hover:text-white transition"
-                title="Force refresh (Ctrl+Shift+R)"
-              >
-                <RefreshCw className="w-5 h-5" />
-              </button>
             </div>
           </div>
 
@@ -275,13 +255,6 @@ export default function Gallery() {
                     <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
                     Refresh
                   </button>
-                  <button
-                    onClick={handleForceRefresh}
-                    className="flex items-center gap-2 px-3 py-1 bg-purple-600 rounded hover:bg-purple-700 transition"
-                  >
-                    <RefreshCw className="w-4 h-4" />
-                    Force Refresh
-                  </button>
                 </div>
                 
                 {photos.length > 0 && (
@@ -293,62 +266,6 @@ export default function Gallery() {
                     Delete All
                   </button>
                 )}
-              </div>
-            </motion.div>
-          )}
-          
-          {/* Debug Panel */}
-          {debugMode && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              className="mt-4 p-4 bg-purple-900/20 border border-purple-500/30 rounded-lg"
-            >
-              <h3 className="text-purple-400 font-semibold mb-3">🐛 Debug Information</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                <div>
-                  <div className="text-purple-300 font-medium">Gallery Stats:</div>
-                  <div className="text-gray-300 space-y-1">
-                    <div>Total Photos: {photos.length}</div>
-                    <div>Unique Prompts: {new Set(photos.map(p => p.prompt)).size}</div>
-                    <div>Force Refresh Count: {forceRefresh}</div>
-                    <div>Last Load: {new Date().toLocaleTimeString()}</div>
-                  </div>
-                </div>
-                <div>
-                  <div className="text-purple-300 font-medium">Duplicate Analysis:</div>
-                  <div className="text-gray-300 space-y-1">
-                    {Object.entries(
-                      photos.reduce((acc, photo) => {
-                        acc[photo.prompt] = (acc[photo.prompt] || 0) + 1;
-                        return acc;
-                      }, {} as Record<string, number>)
-                    )
-                      .filter(([_, count]) => count > 1)
-                      .slice(0, 3)
-                      .map(([prompt, count]) => (
-                        <div key={prompt}>
-                          {count}x: {prompt.substring(0, 30)}...
-                        </div>
-                      ))}
-                  </div>
-                </div>
-              </div>
-              
-              <div className="mt-4 flex gap-2">
-                <button
-                  onClick={() => console.log('📊 Full photo data:', photos)}
-                  className="px-3 py-1 bg-purple-600 rounded hover:bg-purple-700 transition text-sm"
-                >
-                  Log Full Data
-                </button>
-                <button
-                  onClick={handleForceRefresh}
-                  className="px-3 py-1 bg-purple-600 rounded hover:bg-purple-700 transition text-sm"
-                >
-                  Clear All Caches
-                </button>
               </div>
             </motion.div>
           )}
@@ -420,6 +337,21 @@ export default function Gallery() {
                               onClick={() => handleDeletePhoto(photo.id)}
                               disabled={deleting === photo.id}
                               className="p-2 bg-red-500 bg-opacity-20 rounded-full hover:bg-opacity-30 transition disabled:opacity-50"
+                            >
+                              {deleting === photo.id ? (
+                                <RefreshCw className="w-5 h-5 animate-spin" />
+                              ) : (
+                                <Trash2 className="w-5 h-5" />
+                              )}
+                            </button>
+                          )}
+                          
+                          {showAdmin && (
+                            <button
+                              onClick={() => handleDeletePhotoAndDuplicates(photo.id)}
+                              disabled={deleting === photo.id}
+                              className="p-2 bg-orange-500 bg-opacity-20 rounded-full hover:bg-opacity-30 transition disabled:opacity-50"
+                              title="Delete this photo and all duplicates"
                             >
                               {deleting === photo.id ? (
                                 <RefreshCw className="w-5 h-5 animate-spin" />
