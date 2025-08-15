@@ -67,7 +67,7 @@ export default function Photobooth() {
     };
   }, []);
 
-  // Enhanced image resizing with aggressive neck distortion prevention
+  // Gentler image resizing that preserves the full composition
   const resizeImage = (dataUrl: string, targetSize: number = 1024): Promise<string> => {
     return new Promise((resolve, reject) => {
       const img = new Image();
@@ -84,50 +84,39 @@ export default function Photobooth() {
         canvas.width = targetSize;
         canvas.height = targetSize;
 
-        // Aggressive anti-neck-stretching cropping strategy
+        // Gentle resizing that maintains the full composition
         const { width, height } = img;
-        let sourceX = 0, sourceY = 0, sourceWidth = width, sourceHeight = height;
+        const scale = Math.min(targetSize / width, targetSize / height);
+        const scaledWidth = width * scale;
+        const scaledHeight = height * scale;
         
-        // For any image, focus on upper 60% to prevent body/neck issues
-        if (height > width) {
-          // Portrait: Crop to show head and minimal shoulders only
-          sourceHeight = Math.min(height, width * 1.1); // Very tight height limit
-          sourceY = Math.max(0, height * 0.05); // Start very close to top
-          sourceWidth = width;
-        } else if (width > height) {
-          // Landscape: Center crop to square, focus on upper portion
-          sourceWidth = height;
-          sourceHeight = height * 0.9; // Crop even tighter for landscape
-          sourceX = (width - sourceWidth) / 2;
-          sourceY = 0;
-        } else {
-          // Square: Crop top 85% to eliminate lower body
-          sourceHeight = height * 0.85;
-          sourceY = 0;
-        }
+        // Center the image in the canvas
+        const x = (targetSize - scaledWidth) / 2;
+        const y = (targetSize - scaledHeight) / 2;
 
-        // High-quality scaling with enhanced preprocessing
+        // Fill with neutral background
+        ctx.fillStyle = '#f5f5f5';
+        ctx.fillRect(0, 0, targetSize, targetSize);
+
+        // High-quality scaling with minimal preprocessing
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
         
-        // Apply enhanced preprocessing for better SDXL face results
-        ctx.filter = 'contrast(1.03) brightness(1.02) saturate(1.05) sharpen(0.1)';
+        // Very gentle enhancement that preserves natural look
+        ctx.filter = 'contrast(1.01) brightness(1.005) saturate(1.01)';
         
-        // Draw the aggressively cropped image focused on head/face area
-        ctx.drawImage(
-          img, 
-          sourceX, sourceY, sourceWidth, sourceHeight,  // Source: head-focused crop
-          0, 0, canvas.width, canvas.height              // Destination: full canvas
-        );
+        // Draw the full image maintaining aspect ratio and composition
+        ctx.drawImage(img, x, y, scaledWidth, scaledHeight);
         
         // Reset filter
         ctx.filter = 'none';
         
-        console.log('✅ Anti-neck-stretch preprocessing completed:', {
+        console.log('✅ Gentle preprocessing completed:', {
           originalDimensions: `${width}x${height}`,
           processedDimensions: `${canvas.width}x${canvas.height}`,
-          cropArea: `${Math.round(sourceWidth)}x${Math.round(sourceHeight)} from (${Math.round(sourceX)}, ${Math.round(sourceY)})`,
-          neckPrevention: 'aggressive_head_focus'
+          scaledDimensions: `${Math.round(scaledWidth)}x${Math.round(scaledHeight)}`,
+          positioning: `centered at (${Math.round(x)}, ${Math.round(y)})`,
+          approach: 'full_composition_preserved'
         });
         
         resolve(canvas.toDataURL('image/jpeg', 0.95));
@@ -477,12 +466,12 @@ export default function Photobooth() {
 
         console.log('🔍 Generating seamless face mask...');
         
-        // Enhanced masking parameters for better face-body blending
+        // Precise face-only masking that preserves background
         maskData = await generateSmartFaceMask(
           img,
           faceMode === 'preserve_face',
-          config.sdxl_feather_radius || 50,    // Increased feathering for better blending
-          config.sdxl_face_expansion || 1.1    // Reduced expansion to focus on face only
+          config.sdxl_feather_radius || 35,    // Moderate feathering for natural transitions
+          config.sdxl_face_expansion || 1.05   // Minimal expansion - face only, not head/neck
         );
         
         console.log('✅ Seamless face mask generated successfully');
@@ -527,41 +516,39 @@ export default function Photobooth() {
         aiContent = await Promise.race([videoPromise, timeoutPromise]);
         
       } else {
-        // Enhanced prompt engineering for better body proportions and blending
+        // Refined prompt engineering for face-only preservation
         const enhancedPrompt = faceMode === 'preserve_face' 
-          ? `${config.global_prompt}, photorealistic portrait, natural facial features, seamless neck and shoulder transition, proper body proportions, no neck stretching, natural skin tone continuity, detailed facial features, professional headshot, balanced composition, realistic anatomy, smooth blending between face and body, 8k quality`
-          : `${config.global_prompt}, creative character transformation, natural proportions, seamless integration, balanced anatomy, no distorted features, professional digital art, smooth transitions between original and generated elements`;
+          ? `${config.global_prompt}, photorealistic portrait, preserve original facial features, natural skin texture, detailed eyes and expression, maintain facial identity, seamless integration with generated background, professional quality, 8k details`
+          : `${config.global_prompt}, creative character transformation, artistic interpretation, detailed features, seamless integration with background environment`;
 
-        console.log(`🎭 Using enhanced ${faceMode} mode with advanced blending controls...`);
-        console.log('🎯 Enhanced prompt with blending controls:', enhancedPrompt.slice(0, 150) + '...');
+        console.log(`🎭 Using refined ${faceMode} mode with face-only preservation...`);
+        console.log('🎯 Refined prompt for face preservation:', enhancedPrompt.slice(0, 150) + '...');
         
-        // Enhanced generation parameters for better blending
+        // Balanced generation parameters for face-only processing
         const generationParams = {
           prompt: enhancedPrompt,
           imageData: processedContent,
           mode: 'inpaint' as const,
           maskData: maskData,
           facePreservationMode: faceMode,
-          // More conservative strength to prevent distortion
+          // Moderate strength for good face preservation without distortion
           strength: faceMode === 'preserve_face' ? 
-            (config.sdxl_strength || 0.28) :  // Very conservative for face preservation
-            (config.sdxl_strength || 0.55),   // Moderate for transformation
-          cfgScale: config.sdxl_cfg_scale || 7.0, // Slightly lower for better blending
-          steps: config.sdxl_steps || 30, // More steps for quality
+            (config.sdxl_strength || 0.35) :  // Balanced for face preservation
+            (config.sdxl_strength || 0.65),   // Standard for transformation
+          cfgScale: config.sdxl_cfg_scale || 7.5, // Standard SDXL CFG
+          steps: config.sdxl_steps || 25, // Standard steps for good quality/speed
           useControlNet: config.use_controlnet ?? true,
           controlNetType: config.controlnet_type || 'auto',
-          // Enhanced negative prompt targeting all distortion issues
+          // Focused negative prompt for face quality only
           negativePrompt: [
-            // Neck and anatomy issues
-            'elongated neck', 'long neck', 'stretched neck', 'distorted anatomy', 'giraffe neck',
-            'unnatural proportions', 'deformed body', 'bad anatomy', 'extra limbs', 'twisted neck',
-            // Blending issues
-            'visible seams', 'harsh transitions', 'poor blending', 'color mismatch', 'texture discontinuity',
-            'circular mask', 'mask artifacts', 'face swap artifacts', 'artificial boundaries',
-            'mismatched skin tone', 'inconsistent lighting', 'jarring transitions',
-            // Quality issues
-            'blurry', 'low quality', 'pixelated', 'oversaturated', 'plastic skin',
-            'fake looking', 'uncanny valley', 'overprocessed'
+            // Face quality issues
+            'blurry face', 'distorted facial features', 'asymmetrical face', 'deformed face',
+            'extra eyes', 'missing eyes', 'malformed mouth', 'bad teeth', 'plastic skin',
+            // Technical quality
+            'low quality', 'blurry', 'pixelated', 'jpeg artifacts', 'oversaturated',
+            // Mask artifacts
+            'visible mask edges', 'harsh transitions around face', 'circular mask artifacts',
+            'unnatural face boundaries', 'face swap artifacts'
           ].join(', ')
         };
 
@@ -789,15 +776,15 @@ export default function Photobooth() {
               <div className="flex items-start gap-3">
                 <User className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" />
                 <div>
-                  <span className="text-white font-medium">Natural Proportions:</span>
-                  <span className="text-gray-300"> Smart cropping prevents distortion and maintains natural anatomy</span>
+                  <span className="text-white font-medium">Precise Face Preservation:</span>
+                  <span className="text-gray-300"> Only your face is preserved, background remains AI-generated</span>
                 </div>
               </div>
               <div className="flex items-start gap-3">
                 <Wand2 className="w-4 h-4 text-purple-400 mt-0.5 flex-shrink-0" />
                 <div>
                   <span className="text-white font-medium">Enhanced SDXL:</span>
-                  <span className="text-gray-300"> Seamless blending with advanced face preservation technology</span>
+                  <span className="text-gray-300"> Precise face-only inpainting that preserves the generated background</span>
                 </div>
               </div>
             </div>
@@ -953,12 +940,12 @@ export default function Photobooth() {
             <p><span className="text-blue-400 font-semibold">Mode:</span> {currentModelType}</p>
             <p><span className="text-green-400 font-semibold">Face Mode:</span> {config?.face_preservation_mode || 'preserve_face'}</p>
             <p><span className="text-yellow-400 font-semibold">Attempts:</span> {generationAttempts}/3</p>
-            <p><span className="text-indigo-400 font-semibold">Strength:</span> {config?.face_preservation_mode === 'preserve_face' ? '0.28 (Ultra Conservative)' : '0.55 (Moderate)'}</p>
-            <p><span className="text-pink-400 font-semibold">CFG Scale:</span> {config?.sdxl_cfg_scale || '7.0'}</p>
+            <p><span className="text-indigo-400 font-semibold">Strength:</span> {config?.face_preservation_mode === 'preserve_face' ? '0.35 (Balanced)' : '0.65 (Standard)'}</p>
+            <p><span className="text-pink-400 font-semibold">CFG Scale:</span> {config?.sdxl_cfg_scale || '7.5'}</p>
             <p><span className="text-cyan-400 font-semibold">Resolution:</span> 1024x1024 SDXL Native</p>
-            <p><span className="text-orange-400 font-semibold">Steps:</span> {config?.sdxl_steps || '30'}</p>
-            <p><span className="text-teal-400 font-semibold">Enhancements:</span> Aggressive Crop, Anti-Neck-Stretch, Seamless Blending</p>
-            <p><span className="text-violet-400 font-semibold">Feathering:</span> {config?.sdxl_feather_radius || '50px'} for smooth transitions</p>
+            <p><span className="text-orange-400 font-semibold">Steps:</span> {config?.sdxl_steps || '25'}</p>
+            <p><span className="text-teal-400 font-semibold">Approach:</span> Face-Only Preservation, Background Untouched</p>
+            <p><span className="text-violet-400 font-semibold">Mask Expansion:</span> {config?.sdxl_face_expansion || '1.05x'} (Minimal)</p>
             <p><span className="text-violet-400 font-semibold">Upload Attempts:</span> {uploadAttempts}</p>
             {debugInfo && (
               <div className="mt-2 p-2 bg-red-900/20 border border-red-500/30 rounded">
