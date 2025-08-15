@@ -435,12 +435,12 @@ export default function Photobooth() {
           img.src = processedContent;
         });
 
-        console.log('🔍 Generating smart face mask for SDXL Inpainting...');
+        console.log('🔍 Generating face-only mask (excluding clothing)...');
         maskData = await generateSmartFaceMask(
           img,
           faceMode === 'preserve_face', // true = preserve faces, false = replace faces
-          25,  // feather radius for smooth blending
-          1.4  // expansion factor for better face coverage
+          20,  // Reduced feather radius for sharper clothing exclusion
+          1.2  // Reduced expansion to focus on face only, not neck/collar
         );
         
         console.log('✅ Smart face mask generated successfully for SDXL');
@@ -486,13 +486,13 @@ export default function Photobooth() {
         setProcessingState({ stage: 'generating', progress: 70, message: 'Generating video with Replicate...' });
         aiContent = await Promise.race([videoPromise, timeoutPromise]);
       } else {
-        // Enhanced prompting for SDXL Inpainting
+        // Enhanced prompting for SDXL Inpainting with clothing exclusion
         const enhancedPrompt = faceMode === 'preserve_face' 
-          ? `${config.global_prompt}, photorealistic portrait, highly detailed face, natural skin texture, sharp facial features, professional photography lighting, 8k quality`
-          : `${config.global_prompt}, creative character transformation, artistic interpretation, detailed features`;
+          ? `${config.global_prompt}, photorealistic portrait, preserve facial features only, exclude clothing and collars, natural skin texture, detailed eyes and mouth, face-focused composition, no shirts or ties visible, professional headshot style, 8k quality`
+          : `${config.global_prompt}, creative character transformation, artistic interpretation, detailed facial features, no clothing elements from original`;
 
-        console.log(`🎭 Using ${faceMode} mode with SDXL Inpainting...`);
-        console.log('🎯 Enhanced prompt:', enhancedPrompt);
+        console.log(`🎭 Using ${faceMode} mode with clothing-free SDXL Inpainting...`);
+        console.log('🎯 Enhanced prompt (clothing exclusion):', enhancedPrompt);
         
         const generationPromise = generateWithStability({
           prompt: enhancedPrompt,
@@ -723,8 +723,8 @@ export default function Photobooth() {
               <div className="flex items-start gap-3">
                 <User className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" />
                 <div>
-                  <span className="text-white font-medium">Chest Up Shot:</span>
-                  <span className="text-gray-300"> Frame from chest to head for best SDXL results</span>
+                  <span className="text-white font-medium">Face-Only Preservation:</span>
+                  <span className="text-gray-300"> Only facial features preserved, clothing like collars and ties excluded</span>
                 </div>
               </div>
               <div className="flex items-start gap-3">
@@ -875,7 +875,8 @@ export default function Photobooth() {
             <p><span className="text-pink-400 font-semibold">CFG Scale:</span> 8.0</p>
             <p><span className="text-cyan-400 font-semibold">Resolution:</span> 1024x1024 SDXL Native</p>
             <p><span className="text-orange-400 font-semibold">Steps:</span> 25 (SDXL Optimized)</p>
-            <p><span className="text-teal-400 font-semibold">ControlNet:</span> {config?.use_controlnet ? `Enabled (${config?.controlnet_type || 'auto'})` : 'Disabled'}</p>
+            <p><span className="text-teal-400 font-semibold">Approach:</span> Face-Only (No Clothing)</p>
+            <p><span className="text-violet-400 font-semibold">Mask Settings:</span> 20px feather, 1.2x expansion, clothing excluded</p>
             {debugInfo && (
               <div className="mt-2 p-2 bg-red-900/20 border border-red-500/30 rounded">
                 <p className="text-red-400 font-mono text-xs">
