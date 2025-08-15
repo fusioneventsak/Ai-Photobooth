@@ -466,12 +466,12 @@ export default function Photobooth() {
 
         console.log('🔍 Generating seamless face mask...');
         
-        // Properly sized face masking for proportional results
+        // Larger face masking for proper character proportions
         maskData = await generateSmartFaceMask(
           img,
           faceMode === 'preserve_face',
-          config.sdxl_feather_radius || 40,    // Good feathering for natural transitions
-          config.sdxl_face_expansion || 1.3    // Larger expansion to match character body proportions
+          config.sdxl_feather_radius || 45,    // More feathering for larger mask
+          config.sdxl_face_expansion || 1.6    // Much larger expansion to include full head area
         );
         
         console.log('✅ Seamless face mask generated successfully');
@@ -516,34 +516,35 @@ export default function Photobooth() {
         aiContent = await Promise.race([videoPromise, timeoutPromise]);
         
       } else {
-        // Balanced prompt engineering for proportional face-to-body ratio
+        // Enhanced prompt engineering for larger head preservation
         const enhancedPrompt = faceMode === 'preserve_face' 
-          ? `${config.global_prompt}, photorealistic portrait, preserve facial features and head size, natural face-to-body proportions, detailed facial expression, maintain head scale relative to body, seamless integration, professional quality, 8k details`
+          ? `${config.global_prompt}, photorealistic portrait, preserve full head and facial features, natural head size for character body, maintain original head scale, detailed facial expression, proper head-to-body ratio, seamless head integration, professional quality, 8k details`
           : `${config.global_prompt}, creative character transformation, artistic interpretation, detailed features, natural proportions, seamless integration with background environment`;
 
-        console.log(`🎭 Using balanced ${faceMode} mode with proportional scaling...`);
-        console.log('🎯 Proportional prompt for natural face size:', enhancedPrompt.slice(0, 150) + '...');
+        console.log(`🎭 Using enhanced ${faceMode} mode with full head preservation...`);
+        console.log('🎯 Enhanced prompt for proper head size:', enhancedPrompt.slice(0, 150) + '...');
         
-        // Optimized generation parameters for natural proportions
+        // Stronger generation parameters for larger head area
         const generationParams = {
           prompt: enhancedPrompt,
           imageData: processedContent,
           mode: 'inpaint' as const,
           maskData: maskData,
           facePreservationMode: faceMode,
-          // Moderate strength for good face preservation with natural sizing
+          // Higher strength needed for larger head preservation
           strength: faceMode === 'preserve_face' ? 
-            (config.sdxl_strength || 0.4) :   // Slightly higher for better integration
+            (config.sdxl_strength || 0.45) :  // Higher strength for full head integration
             (config.sdxl_strength || 0.65),   // Standard for transformation
-          cfgScale: config.sdxl_cfg_scale || 7.5, // Standard SDXL CFG
-          steps: config.sdxl_steps || 25, // Standard steps
+          cfgScale: config.sdxl_cfg_scale || 7.5,
+          steps: config.sdxl_steps || 25,
           useControlNet: config.use_controlnet ?? true,
           controlNetType: config.controlnet_type || 'auto',
-          // Refined negative prompt focusing on proportion issues
+          // Negative prompt focusing on head size issues
           negativePrompt: [
-            // Proportion issues
-            'tiny face', 'oversized body', 'disproportionate head', 'head too small for body',
-            'mismatched scale', 'unnatural face size', 'miniature face', 'giant body',
+            // Head size issues
+            'tiny head', 'small head', 'shrunken face', 'miniature head', 'pinhead',
+            'oversized body', 'disproportionate head', 'head too small for body',
+            'mismatched head scale', 'unnatural head size', 'micro head',
             // Face quality issues
             'blurry face', 'distorted facial features', 'asymmetrical face', 'deformed face',
             'plastic skin', 'artificial looking face',
@@ -779,8 +780,8 @@ export default function Photobooth() {
               <div className="flex items-start gap-3">
                 <User className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" />
                 <div>
-                  <span className="text-white font-medium">Proportional Face Scale:</span>
-                  <span className="text-gray-300"> Face size automatically matches the generated character's body proportions</span>
+                  <span className="text-white font-medium">Full Head Preservation:</span>
+                  <span className="text-gray-300"> Complete head area preserved to match character body size</span>
                 </div>
               </div>
               <div className="flex items-start gap-3">
@@ -943,12 +944,12 @@ export default function Photobooth() {
             <p><span className="text-blue-400 font-semibold">Mode:</span> {currentModelType}</p>
             <p><span className="text-green-400 font-semibold">Face Mode:</span> {config?.face_preservation_mode || 'preserve_face'}</p>
             <p><span className="text-yellow-400 font-semibold">Attempts:</span> {generationAttempts}/3</p>
-            <p><span className="text-indigo-400 font-semibold">Strength:</span> {config?.face_preservation_mode === 'preserve_face' ? '0.4 (Proportional)' : '0.65 (Standard)'}</p>
+            <p><span className="text-indigo-400 font-semibold">Strength:</span> {config?.face_preservation_mode === 'preserve_face' ? '0.45 (Full Head)' : '0.65 (Standard)'}</p>
             <p><span className="text-pink-400 font-semibold">CFG Scale:</span> {config?.sdxl_cfg_scale || '7.5'}</p>
             <p><span className="text-cyan-400 font-semibold">Resolution:</span> 1024x1024 SDXL Native</p>
             <p><span className="text-orange-400 font-semibold">Steps:</span> {config?.sdxl_steps || '25'}</p>
-            <p><span className="text-teal-400 font-semibold">Approach:</span> Proportional Face Preservation</p>
-            <p><span className="text-violet-400 font-semibold">Mask Expansion:</span> {config?.sdxl_face_expansion || '1.3x'} (Natural Scale)</p>
+            <p><span className="text-teal-400 font-semibold">Approach:</span> Full Head Preservation</p>
+            <p><span className="text-violet-400 font-semibold">Mask Expansion:</span> {config?.sdxl_face_expansion || '1.6x'} (Large Scale)</p>
             <p><span className="text-violet-400 font-semibold">Upload Attempts:</span> {uploadAttempts}</p>
             {debugInfo && (
               <div className="mt-2 p-2 bg-red-900/20 border border-red-500/30 rounded">
