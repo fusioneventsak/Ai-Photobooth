@@ -508,7 +508,7 @@ export async function deletePhoto(photoId: string): Promise<boolean> {
     // Delete from database
     console.log('🗑️ Deleting photo record from database...');
     
-    const { error: dbError } = await supabase
+    const { error: dbError, count } = await supabase
       .from('photos')
       .delete()
       .eq('id', photoId);
@@ -518,8 +518,30 @@ export async function deletePhoto(photoId: string): Promise<boolean> {
       throw new Error(`Failed to delete photo record: ${dbError.message}`);
     }
 
-    console.log('✅ Photo deleted successfully from database');
+    // Verify deletion actually occurred
+    if (count === 0) {
+      console.error('❌ Database deletion returned 0 affected rows - photo may not have been deleted');
+      throw new Error('Photo deletion failed - no rows were affected. This may be due to permissions or the photo may have already been deleted.');
+    }
+
+    console.log('✅ Photo deleted successfully from database - affected rows:', count);
     
+    // Double-check that the photo is actually gone
+    console.log('🔍 Verifying photo deletion...');
+    const { data: verifyPhoto, error: verifyError } = await supabase
+      .from('photos')
+      .select('id')
+      .eq('id', photoId)
+      .maybeSingle();
+
+    if (verifyError) {
+      console.warn('⚠️ Could not verify deletion (but deletion likely succeeded):', verifyError);
+    } else if (verifyPhoto) {
+      console.error('❌ CRITICAL: Photo still exists after deletion!', verifyPhoto);
+      throw new Error('Photo deletion verification failed - photo still exists in database');
+    } else {
+      console.log('✅ Deletion verified - photo no longer exists in database');
+    }
     // Trigger gallery refresh event
     window.dispatchEvent(new CustomEvent('galleryUpdate', {
       detail: { 
@@ -632,11 +654,33 @@ export async function deleteAllPhotos(): Promise<boolean> {
       throw new Error(`Failed to delete photo records: ${dbError.message}`);
     }
 
+    // Verify deletion actually occurred
+    if (count === 0 && photos.length > 0) {
+      console.error('❌ Database bulk deletion returned 0 affected rows despite having photos to delete');
+      throw new Error('Bulk photo deletion failed - no rows were affected. This may be due to permissions issues.');
+    }
+
     console.log('✅ All photos deleted successfully from database:', {
       recordsDeleted: count || photos.length,
       filesDeleted: filePaths.length
     });
     
+    // Double-check that all photos are actually gone
+    console.log('🔍 Verifying bulk deletion...');
+    const { data: remainingPhotos, error: verifyError } = await supabase
+      .from('photos')
+      .select('id')
+      .eq('public', true)
+      .limit(1);
+
+    if (verifyError) {
+      console.warn('⚠️ Could not verify bulk deletion (but deletion likely succeeded):', verifyError);
+    } else if (remainingPhotos && remainingPhotos.length > 0) {
+      console.error('❌ CRITICAL: Photos still exist after bulk deletion!', remainingPhotos.length);
+      throw new Error('Bulk deletion verification failed - some photos still exist in database');
+    } else {
+      console.log('✅ Bulk deletion verified - no photos remain in database');
+    }
     // Trigger gallery refresh event
     window.dispatchEvent(new CustomEvent('galleryUpdate', {
       detail: { 
