@@ -47,7 +47,10 @@ export default function Admin() {
     if (config) {
       setFormData({
         ...config,
-        // Default gallery settings
+        // Ensure gallery layout options are always available
+        gallery_animation: config.gallery_animation ?? 'fade',
+        gallery_layout: config.gallery_layout ?? 'grid',
+        gallery_speed: config.gallery_speed ?? 3000,
         gallery_public_access: true,
         gallery_allow_downloads: true,
         gallery_show_metadata: false,
@@ -88,6 +91,7 @@ export default function Admin() {
       if (formData.primary_color !== undefined) updates.primary_color = formData.primary_color;
       if (formData.secondary_color !== undefined) updates.secondary_color = formData.secondary_color;
       if (formData.global_prompt !== undefined) updates.global_prompt = formData.global_prompt;
+      // Ensure gallery layout options are always saved
       if (formData.gallery_animation !== undefined) updates.gallery_animation = formData.gallery_animation;
       if (formData.gallery_speed !== undefined) updates.gallery_speed = formData.gallery_speed;
       if (formData.gallery_layout !== undefined) updates.gallery_layout = formData.gallery_layout;
