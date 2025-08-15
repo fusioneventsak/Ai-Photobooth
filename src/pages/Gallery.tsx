@@ -4,35 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useConfigStore } from '../store/configStore';
 import { getPublicPhotos, deletePhoto, deleteAllPhotos, supabase } from '../lib/supabase';
 import type { Photo } from '../types/supabase';
-import { 
-  RefreshCw, 
-  ImageIcon, 
-  Video, 
-  Calendar, 
-  Bell, 
-  Trash2, 
-  AlertTriangle,
-  X,
-  Download,
-  Share2,
-  Facebook,
-  Twitter,
-  Copy,
-  Eye,
-  Settings,
-  MoreHorizontal,
-  ChevronLeft,
-  ChevronRight,
-  Play,
-  Pause,
-  Circle,
-  Dot,
-  Maximize,
-  Minimize,
-  Escape,
-  Bug,
-  Database
-} from 'lucide-react';
+import { RefreshCw, ImageIcon, Video, Calendar, Bell, Trash2, AlertTriangle, X, Download, Share2, Facebook, Twitter, Copy, Eye, Settings, MoreHorizontal, ChevronLeft, ChevronRight, Play, Pause, Circle, Dot, Maximize, Minimize, Grape as Escape, Bug, Database } from 'lucide-react';
 
 export default function Gallery() {
   const { config } = useConfigStore();
