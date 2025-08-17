@@ -47,24 +47,38 @@ export async function generateSmartFaceMask(
   imageElement: HTMLImageElement | HTMLCanvasElement,
   preserveFaces: boolean = true,
   featherRadius: number = 40,
-  expansionFactor: number = 1.2
+  expansionFactor: number = 1.2,
+  isMobile: boolean = false
 ): Promise<string> {
   try {
     console.log('🎭 Generating smart face mask for SDXL...', {
       preserveFaces,
       featherRadius,
-      expansionFactor
+      expansionFactor,
+      isMobile,
+      imageSize: `${imageElement.width}x${imageElement.height}`
     });
 
-    // Detect faces in the image
-    const detections = await detectFaces(imageElement);
+    // Use higher resolution for face detection on mobile
+    const detectionInputSize = isMobile ? 640 : 512;
+    
+    const detections = await faceapi
+      .detectAllFaces(imageElement, new faceapi.TinyFaceDetectorOptions({
+        inputSize: detectionInputSize, // Higher resolution for mobile
+        scoreThreshold: isMobile ? 0.4 : 0.5 // Lower threshold for mobile faces
+      }))
+      .withFaceLandmarks();
     
     if (detections.length === 0) {
-      console.warn('⚠️ No faces detected, generating fallback mask');
-      return generateFallbackMask(imageElement.width || 512, imageElement.height || 512);
+      console.warn('⚠️ No faces detected, generating mobile fallback mask');
+      return generateFallbackMask(
+        imageElement.width || 512, 
+        imageElement.height || 512,
+        isMobile
+      );
     }
 
-    console.log(`✅ Detected ${detections.length} face(s), generating seamless mask...`);
+    console.log(`✅ Detected ${detections.length} face(s) on ${isMobile ? 'mobile' : 'desktop'} device`);
 
     // Create high-resolution canvas for mask generation
     const canvas = document.createElement('canvas');
@@ -92,7 +106,7 @@ export async function generateSmartFaceMask(
       const box = detection.detection.box;
       const landmarks = detection.landmarks;
       
-      console.log(`🎭 Processing face ${index + 1} with seamless blending:`, {
+      console.log(`🎭 Processing face ${index + 1} with ${isMobile ? 'mobile' : 'desktop'} blending:`, {
         x: Math.round(box.x),
         y: Math.round(box.y),
         width: Math.round(box.width),
@@ -103,9 +117,12 @@ export async function generateSmartFaceMask(
       const centerX = box.x + box.width / 2;
       const centerY = box.y + box.height / 2;
       
-      // Use more conservative expansion to avoid circular artifacts
-      const faceWidth = box.width * expansionFactor;
-      const faceHeight = box.height * expansionFactor;
+      // Mobile-specific adjustments
+      const mobileExpansion = isMobile ? expansionFactor * 0.9 : expansionFactor;
+      const mobileFeather = isMobile ? featherRadius * 0.8 : featherRadius;
+      
+      const faceWidth = box.width * mobileExpansion;
+      const faceHeight = box.height * mobileExpansion;
       
       // Create multiple gradient layers for seamless blending
       const createSeamlessGradient = (innerRadius: number, outerRadius: number, opacity: number) => {
@@ -149,7 +166,7 @@ export async function generateSmartFaceMask(
       
       // Layer 2: Extended face area with heavy feathering
       const extendedRadius = Math.min(faceWidth, faceHeight) * 0.5;
-      const featheredRadius = extendedRadius + featherRadius;
+      const featheredRadius = extendedRadius + mobileFeather;
       ctx.fillStyle = createSeamlessGradient(midRadius, featheredRadius, 0.6);
       
       ctx.beginPath();
@@ -161,8 +178,8 @@ export async function generateSmartFaceMask(
       ctx.fill();
 
       // Enhanced landmark-based detail preservation
-      if (preserveFaces && landmarks) {
-        const enhanceFeature = (points: any[], featureName: string, scale: number = 1.0) => {
+      if (preserveFaces && landmarks && isMobile) {
+        const enhanceMobileFeature = (points: any[], featureName: string, scale: number = 1.0) => {
           if (points.length === 0) return;
           
           const featureCenter = points.reduce((acc, point) => ({
@@ -179,8 +196,8 @@ export async function generateSmartFaceMask(
           const minY = Math.min(...points.map(p => p.y));
           const maxY = Math.max(...points.map(p => p.y));
           
-          const featureWidth = (maxX - minX) * scale;
-          const featureHeight = (maxY - minY) * scale;
+          const featureWidth = (maxX - minX) * scale * 0.8; // Tighter for mobile
+          const featureHeight = (maxY - minY) * scale * 0.8;
           
           // Apply precise feature preservation
           const featureGradient = ctx.createRadialGradient(
@@ -204,32 +221,45 @@ export async function generateSmartFaceMask(
           console.log(`🎯 Enhanced ${featureName} preservation at (${Math.round(featureCenter.x)}, ${Math.round(featureCenter.y)})`);
         };
         
-        // Enhance key facial features with precise preservation
-        enhanceFeature(landmarks.getLeftEye(), 'left eye', 1.3);
-        enhanceFeature(landmarks.getRightEye(), 'right eye', 1.3);
-        enhanceFeature(landmarks.getNose(), 'nose', 1.2);
-        enhanceFeature(landmarks.getMouth(), 'mouth', 1.1);
+        // Enhanced feature preservation for mobile faces
+        enhanceMobileFeature(landmarks.getLeftEye(), 'left eye', 1.2);
+        enhanceMobileFeature(landmarks.getRightEye(), 'right eye', 1.2);
+        enhanceMobileFeature(landmarks.getNose(), 'nose', 1.1);
+        enhanceMobileFeature(landmarks.getMouth(), 'mouth', 1.0);
       }
     });
 
-    // Apply post-processing blur for even smoother transitions
-    ctx.filter = 'blur(2px)';
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.drawImage(canvas, 0, 0);
-    ctx.filter = 'none';
+    // Mobile-specific post-processing
+    if (isMobile) {
+      ctx.filter = 'blur(1.5px)'; // Lighter blur for mobile
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.drawImage(canvas, 0, 0);
+      ctx.filter = 'none';
+    } else {
+      // Apply post-processing blur for even smoother transitions
+      ctx.filter = 'blur(2px)';
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.drawImage(canvas, 0, 0);
+      ctx.filter = 'none';
+    }
 
     const maskDataUrl = canvas.toDataURL('image/png');
-    console.log('✅ Seamless face mask generated successfully');
+    
+    console.log('✅ Face mask generated successfully:', {
+      faces: detections.length,
+      maskSize: maskDataUrl.length,
+      optimizedForMobile: isMobile
+    });
     
     return maskDataUrl;
   } catch (error) {
-    console.error('❌ Mask generation failed:', error);
-    throw error;
+    console.error('❌ Face mask generation failed:', error);
+    return generateFallbackMask(512, 512, isMobile);
   }
 }
 
 // Enhanced fallback mask with natural blending
-export function generateFallbackMask(width: number, height: number): string {
+export function generateFallbackMask(width: number, height: number, isMobile: boolean = false): string {
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;
@@ -239,49 +269,50 @@ export function generateFallbackMask(width: number, height: number): string {
     throw new Error('Failed to create fallback mask canvas');
   }
   
-  console.log('🔄 Generating enhanced fallback mask...');
+  console.log(`🔄 Generating ${isMobile ? 'mobile' : 'desktop'} fallback mask...`);
   
-  // White background = areas to modify
+  // Fill with white (areas to modify)
   ctx.fillStyle = 'white';
   ctx.fillRect(0, 0, width, height);
   
-  // Natural face positioning (avoid perfect center to prevent circular look)
-  const centerX = width * 0.5;
-  const centerY = height * 0.42; // Slightly higher for natural face position
-  const radiusX = width * 0.22;  // More conservative sizing
-  const radiusY = height * 0.28;
+  // Create mobile-optimized center face area
+  const centerX = width / 2;
+  const centerY = height / 2;
   
-  // Create natural multi-layer gradient
-  const layers = [
-    { inner: 0.3, outer: 0.7, opacity: 1.0 },
-    { inner: 0.5, outer: 1.0, opacity: 0.7 },
-    { inner: 0.7, outer: 1.4, opacity: 0.4 }
-  ];
+  // Adjust for mobile portrait orientation
+  const faceWidth = isMobile ? width * 0.4 : width * 0.35;
+  const faceHeight = isMobile ? height * 0.25 : height * 0.35; // Taller for vertical faces
   
-  layers.forEach(layer => {
-    const gradient = ctx.createRadialGradient(
-      centerX, centerY, Math.min(radiusX, radiusY) * layer.inner,
-      centerX, centerY, Math.max(radiusX, radiusY) * layer.outer
-    );
-    
-    gradient.addColorStop(0, `rgba(0, 0, 0, ${layer.opacity})`);
-    gradient.addColorStop(0.4, `rgba(64, 64, 64, ${layer.opacity * 0.8})`);
-    gradient.addColorStop(0.7, `rgba(128, 128, 128, ${layer.opacity * 0.5})`);
-    gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
-    
-    ctx.fillStyle = gradient;
-    ctx.beginPath();
-    ctx.ellipse(centerX, centerY, radiusX * layer.outer, radiusY * layer.outer, 0, 0, Math.PI * 2);
-    ctx.fill();
-  });
+  const gradient = ctx.createRadialGradient(
+    centerX, centerY, Math.min(faceWidth, faceHeight) * 0.3,
+    centerX, centerY, Math.max(faceWidth, faceHeight) * 0.8
+  );
   
-  // Apply final smoothing
-  ctx.filter = 'blur(3px)';
-  ctx.globalCompositeOperation = 'source-over';
-  ctx.drawImage(canvas, 0, 0);
-  ctx.filter = 'none';
+  gradient.addColorStop(0, 'rgba(0, 0, 0, 1)');
+  gradient.addColorStop(0.5, 'rgba(64, 64, 64, 0.7)');
+  gradient.addColorStop(0.8, 'rgba(128, 128, 128, 0.3)');
+  gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
   
-  console.log('✅ Enhanced fallback mask generated');
+  ctx.fillStyle = gradient;
+  ctx.beginPath();
+  ctx.ellipse(centerX, centerY, faceWidth, faceHeight, 0, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // Light blur for mobile
+  if (isMobile) {
+    ctx.filter = 'blur(2px)';
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.drawImage(canvas, 0, 0);
+    ctx.filter = 'none';
+  } else {
+    // Apply final smoothing
+    ctx.filter = 'blur(3px)';
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.drawImage(canvas, 0, 0);
+    ctx.filter = 'none';
+  }
+  
+  console.log(`📱 ${isMobile ? 'Mobile' : 'Desktop'} fallback mask generated`);
   return canvas.toDataURL('image/png');
 }
 
