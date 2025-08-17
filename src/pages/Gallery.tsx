@@ -73,13 +73,17 @@ export default function Gallery() {
       'og:title': 'AI Generated Photo',
       'og:description': `"${photo.prompt}" - Created with AI technology`,
       'og:image': imageUrl,
+      'og:image:width': '1200',
+      'og:image:height': '630',
+      'og:image:type': 'image/jpeg',
       'og:url': shareableUrl,
       'og:type': 'article',
       'og:site_name': 'AI Photo Gallery',
       'twitter:card': 'summary_large_image',
       'twitter:title': 'AI Generated Photo',
       'twitter:description': `"${photo.prompt}" - Created with AI technology`,
-      'twitter:image': imageUrl
+      'twitter:image': imageUrl,
+      'twitter:image:alt': photo.prompt
     };
   }, [getShareableUrl, getDirectImageUrl]);
 
