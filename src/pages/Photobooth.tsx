@@ -1,4 +1,4 @@
-// src/pages/Photobooth.tsx
+const getErrorIcon = (error: string) => {// src/pages/Photobooth.tsx
 // Enhanced Photobooth component with mobile optimization and camera fixes
 
 import React, { useState, useEffect } from 'react';
@@ -41,6 +41,7 @@ export default function Photobooth() {
   const [cameraKey, setCameraKey] = useState(0); // Add camera key for forcing re-initialization
   const [isMobile, setIsMobile] = useState(false);
   const [cameraReady, setCameraReady] = useState(false); // Add camera ready state
+  const [progressInterval, setProgressInterval] = useState<NodeJS.Timeout | null>(null); // For smooth progress animation
   
   const webcamRef = React.useRef<Webcam>(null);
 
@@ -186,8 +187,12 @@ export default function Photobooth() {
       if (processedMedia && processedMedia.startsWith('blob:')) {
         URL.revokeObjectURL(processedMedia);
       }
+      // Cleanup progress interval
+      if (progressInterval) {
+        clearInterval(progressInterval);
+      }
     };
-  }, [processedMedia]);
+  }, [processedMedia, progressInterval]);
 
   // AUTOMATIC UPLOAD - Triggers immediately after each photo generation
   useEffect(() => {
@@ -304,6 +309,13 @@ export default function Photobooth() {
     setDebugInfo(null);
     setProcessingState({ stage: 'detecting', progress: 0, message: 'Ready...' });
     setCameraReady(false); // Reset camera ready state
+    
+    // Clear progress interval
+    if (progressInterval) {
+      clearInterval(progressInterval);
+      setProgressInterval(null);
+    }
+    
     if (processedMedia && processedMedia.startsWith('blob:')) {
       URL.revokeObjectURL(processedMedia);
     }
@@ -328,7 +340,41 @@ export default function Photobooth() {
     }, 1000);
   };
 
-  const getErrorIcon = (error: string) => {
+  // Smooth progress animation function
+  const animateProgress = (startProgress: number, endProgress: number, duration: number, stage: ProcessingState['stage'], message: string) => {
+    return new Promise<void>((resolve) => {
+      // Clear any existing interval
+      if (progressInterval) {
+        clearInterval(progressInterval);
+      }
+
+      const startTime = Date.now();
+      const progressDiff = endProgress - startProgress;
+      
+      const interval = setInterval(() => {
+        const elapsed = Date.now() - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        
+        // Use easeOutCubic for smooth deceleration
+        const easeProgress = 1 - Math.pow(1 - progress, 3);
+        const currentProgress = startProgress + (progressDiff * easeProgress);
+        
+        setProcessingState({
+          stage,
+          progress: Math.round(currentProgress),
+          message
+        });
+        
+        if (progress >= 1) {
+          clearInterval(interval);
+          setProgressInterval(null);
+          resolve();
+        }
+      }, 50); // Update every 50ms for smooth animation
+      
+      setProgressInterval(interval);
+    });
+  };
     if (error.includes('API') || error.includes('key')) return '🔑';
     if (error.includes('credits') || error.includes('balance')) return '💳';
     if (error.includes('network') || error.includes('connection')) return '🌐';
@@ -479,8 +525,8 @@ export default function Photobooth() {
         attempt: generationAttempts + 1
       });
 
-      // Stage 1: Resize image for SDXL optimal input
-      setProcessingState({ stage: 'detecting', progress: 10, message: 'Preparing image for SDXL...' });
+      // Stage 1: Image preparation with smooth animation (0-15%)
+      await animateProgress(0, 15, 1000, 'detecting', 'Analyzing your photo...');
       console.log('🖼️ Resizing image for SDXL optimal input...');
       const processedContent = await resizeImage(capturedImageData, 1024);
       
@@ -494,8 +540,8 @@ export default function Photobooth() {
         resolution: '1024x1024 optimized'
       });
 
-      // Stage 2: Generate smart face mask for SDXL Inpainting
-      setProcessingState({ stage: 'masking', progress: 30, message: 'Analyzing facial features...' });
+      // Stage 2: Face detection with animation (15-35%)
+      await animateProgress(15, 35, 1500, 'masking', 'Detecting facial features...');
       
       let maskData: string | undefined;
       const faceMode = currentConfig.face_preservation_mode || 'preserve_face';
@@ -534,15 +580,17 @@ export default function Photobooth() {
         console.log('✅ Fallback mask generated for SDXL');
       }
 
-      // Stage 3: Generate AI content with SDXL Inpainting
-      setProcessingState({ stage: 'generating', progress: 50, message: 'Generating with SDXL Inpainting...' });
+      // Stage 3: AI Generation preparation (35-45%)
+      await animateProgress(35, 45, 800, 'generating', 'Preparing AI magic...');
       
       console.log('🎨 Starting SDXL Inpainting generation...');
       
       let aiContent: string;
 
       if (currentModelType === 'video') {
-        // Use Replicate for video generation via Edge Function
+        // Video generation with extended progress (45-90%)
+        await animateProgress(45, 60, 2000, 'generating', 'Initializing video AI...');
+        
         console.log('🎬 Starting video generation with Replicate...');
         
         const videoPromise = generateWithReplicate({
@@ -557,9 +605,19 @@ export default function Photobooth() {
           setTimeout(() => reject(new Error('Video generation timed out. Please try again.')), 300000); // 5 minutes for video
         });
 
-        setProcessingState({ stage: 'generating', progress: 70, message: 'Generating video with Replicate...' });
-        aiContent = await Promise.race([videoPromise, timeoutPromise]);
+        // Simulate video generation progress
+        const progressPromise = async () => {
+          await animateProgress(60, 75, 8000, 'generating', 'Generating video frames...');
+          await animateProgress(75, 85, 6000, 'generating', 'Applying face preservation...');
+          await animateProgress(85, 90, 4000, 'generating', 'Finalizing video...');
+          return await videoPromise;
+        };
+
+        aiContent = await Promise.race([progressPromise(), timeoutPromise]);
       } else {
+        // Image generation with smooth progress (45-90%)
+        await animateProgress(45, 55, 1200, 'generating', 'Loading SDXL model...');
+        
         // Enhanced prompting for SDXL Inpainting with clothing exclusion
         const basePrompt = currentConfig.global_prompt || 'AI Generated Portrait';
         const enhancedPrompt = faceMode === 'preserve_face' 
@@ -568,6 +626,8 @@ export default function Photobooth() {
 
         console.log(`🎭 Using ${faceMode} mode with clothing-free SDXL Inpainting...`);
         console.log('🎯 Enhanced prompt (clothing exclusion):', enhancedPrompt);
+        
+        await animateProgress(55, 70, 1500, 'generating', 'Processing with SDXL AI...');
         
         const generationPromise = generateWithStability({
           prompt: enhancedPrompt,
@@ -586,12 +646,19 @@ export default function Photobooth() {
           setTimeout(() => reject(new Error('SDXL Inpainting generation timed out. Please try again.')), 180000);
         });
 
-        setProcessingState({ stage: 'generating', progress: 70, message: 'SDXL processing...' });
-        aiContent = await Promise.race([generationPromise, timeoutPromise]);
+        // Simulate realistic AI generation progress
+        const progressPromise = async () => {
+          await animateProgress(70, 80, 3000, 'generating', 'Applying AI transformation...');
+          await animateProgress(80, 88, 2500, 'generating', 'Refining details...');
+          await animateProgress(88, 90, 1000, 'generating', 'Almost done...');
+          return await generationPromise;
+        };
+
+        aiContent = await Promise.race([progressPromise(), timeoutPromise]);
       }
       
-      // Stage 4: Validate generated content
-      setProcessingState({ stage: 'generating', progress: 80, message: 'Validating result...' });
+      // Stage 4: Validation (90-95%)
+      await animateProgress(90, 95, 800, 'generating', 'Validating result...');
       
       if (!aiContent) {
         throw new Error('Generated content is empty. Please try again.');
@@ -633,8 +700,8 @@ export default function Photobooth() {
         });
       }
 
-      // Stage 5: Finalize
-      setProcessingState({ stage: 'uploading', progress: 85, message: 'Finalizing...' });
+      // Stage 5: Finalize (95-100%)
+      await animateProgress(95, 100, 600, 'uploading', 'Finalizing magic...');
 
       console.log('✅ SDXL Inpainting generation completed successfully:', {
         type: currentModelType,
