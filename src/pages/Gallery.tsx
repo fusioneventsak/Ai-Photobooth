@@ -15,10 +15,18 @@ import {
   Pause,
   Grid,
   List,
-  Layers
+  Layers,
+  Copy,
+  Check,
+  X
 } from 'lucide-react';
 import { useConfigStore } from '../store/configStore';
-import { getPublicPhotos, deletePhoto, deleteAllPhotos } from '../lib/supabase';
+import { 
+  getPublicPhotos, 
+  deletePhoto, 
+  deleteAllPhotos, 
+  deletePhotoAndAllDuplicates 
+} from '../lib/supabase';
 import type { Photo } from '../types/supabase';
 
 export default function Gallery() {
@@ -27,6 +35,7 @@ export default function Gallery() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState<string | null>(null);
   const [showAdmin, setShowAdmin] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -37,6 +46,10 @@ export default function Gallery() {
   const [carouselPlaying, setCarouselPlaying] = useState(true);
   const [debugMode, setDebugMode] = useState(false);
   const [forceRefresh, setForceRefresh] = useState(0);
+
+  // Confirmation states
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+  const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
 
   // Load photos
   const loadPhotos = useCallback(async () => {
@@ -125,37 +138,137 @@ export default function Gallery() {
     }
   }, [config?.gallery_layout, config?.gallery_speed, carouselPlaying, photos.length]);
 
-  // Delete photo
+  // Force refresh handler
+  const handleForceRefresh = useCallback(() => {
+    setForceRefresh(prev => prev + 1);
+  }, []);
+
+  // Download photo
+  const handleDownloadPhoto = async (photo: Photo, filename?: string) => {
+    try {
+      setDownloading(photo.id);
+      console.log('📥 Starting download for photo:', photo.id);
+
+      const imageUrl = photo.processed_url || photo.original_url;
+      if (!imageUrl) {
+        throw new Error('No image URL available');
+      }
+
+      // Fetch the image
+      const response = await fetch(imageUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch image: ${response.statusText}`);
+      }
+
+      const blob = await response.blob();
+      
+      // Create download link
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      
+      // Generate filename
+      const extension = photo.content_type === 'video' ? 'mp4' : 'jpg';
+      const defaultFilename = `photo_${new Date(photo.created_at).toISOString().split('T')[0]}_${photo.id.substring(0, 8)}.${extension}`;
+      link.download = filename || defaultFilename;
+      
+      // Trigger download
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      console.log('✅ Photo downloaded successfully');
+    } catch (err) {
+      console.error('❌ Failed to download photo:', err);
+      setError(err instanceof Error ? err.message : 'Failed to download photo');
+    } finally {
+      setDownloading(null);
+    }
+  };
+
+  // Delete photo with confirmation
   const handleDeletePhoto = async (photoId: string) => {
     try {
       setDeleting(photoId);
+      console.log('🗑️ Deleting photo:', photoId);
+      
       await deletePhoto(photoId);
-      await loadPhotos(); // Refresh the gallery
+      
+      // Update local state immediately for better UX
+      setPhotos(prev => prev.filter(p => p.id !== photoId));
+      
+      // Close any open modals if this photo was selected
+      if (selectedPhoto?.id === photoId) {
+        setSelectedPhoto(null);
+      }
+      
+      // Update carousel index if needed
+      if (carouselIndex >= photos.length - 1) {
+        setCarouselIndex(Math.max(0, photos.length - 2));
+      }
+      
       console.log('✅ Photo deleted successfully');
     } catch (err) {
       console.error('❌ Failed to delete photo:', err);
       setError(err instanceof Error ? err.message : 'Failed to delete photo');
+      // Refresh gallery to get accurate state
+      loadPhotos();
     } finally {
       setDeleting(null);
+      setShowDeleteConfirm(null);
+    }
+  };
+
+  // Delete photo and all duplicates
+  const handleDeletePhotoAndDuplicates = async (photoId: string) => {
+    try {
+      setDeleting(photoId);
+      console.log('🗑️ Deleting photo and duplicates:', photoId);
+      
+      const result = await deletePhotoAndAllDuplicates(photoId);
+      
+      // Refresh the gallery to show updated state
+      await loadPhotos();
+      
+      console.log(`✅ Deleted ${result.deletedCount} photos (including duplicates)`);
+      
+      if (result.errors.length > 0) {
+        console.warn('⚠️ Some deletions failed:', result.errors);
+        setError(`Deleted ${result.deletedCount} photos, but ${result.errors.length} failed`);
+      }
+    } catch (err) {
+      console.error('❌ Failed to delete photos:', err);
+      setError(err instanceof Error ? err.message : 'Failed to delete photos');
+      loadPhotos();
+    } finally {
+      setDeleting(null);
+      setShowDeleteConfirm(null);
     }
   };
 
   // Delete all photos
   const handleDeleteAll = async () => {
-    if (!confirm('Are you sure you want to delete ALL photos? This cannot be undone.')) {
-      return;
-    }
-
     try {
       setLoading(true);
+      console.log('🗑️ Deleting all photos');
+      
       await deleteAllPhotos();
-      await loadPhotos(); // Refresh the gallery
+      
+      // Clear local state immediately
+      setPhotos([]);
+      setSelectedPhoto(null);
+      setCarouselIndex(0);
+      
       console.log('✅ All photos deleted successfully');
     } catch (err) {
       console.error('❌ Failed to delete all photos:', err);
       setError(err instanceof Error ? err.message : 'Failed to delete all photos');
+      // Refresh to get accurate state
+      loadPhotos();
     } finally {
       setLoading(false);
+      setShowDeleteAllConfirm(false);
     }
   };
 
@@ -170,6 +283,200 @@ export default function Gallery() {
 
   const toggleCarouselPlay = () => {
     setCarouselPlaying(!carouselPlaying);
+  };
+
+  // Photo action buttons component
+  const PhotoActions = ({ photo, className = "" }: { photo: Photo; className?: string }) => (
+    <div className={`flex gap-2 ${className}`}>
+      <button
+        onClick={() => setSelectedPhoto(photo)}
+        className="p-2 bg-white bg-opacity-20 rounded-full hover:bg-opacity-30 transition"
+        title="View fullscreen"
+      >
+        <Eye className="w-5 h-5" />
+      </button>
+      
+      <button
+        onClick={() => handleDownloadPhoto(photo)}
+        disabled={downloading === photo.id}
+        className="p-2 bg-white bg-opacity-20 rounded-full hover:bg-opacity-30 transition disabled:opacity-50"
+        title="Download photo"
+      >
+        {downloading === photo.id ? (
+          <RefreshCw className="w-5 h-5 animate-spin" />
+        ) : (
+          <Download className="w-5 h-5" />
+        )}
+      </button>
+      
+      {showAdmin && (
+        <>
+          <button
+            onClick={() => setShowDeleteConfirm(photo.id)}
+            disabled={deleting === photo.id}
+            className="p-2 bg-red-500 bg-opacity-20 rounded-full hover:bg-opacity-30 transition disabled:opacity-50"
+            title="Delete photo"
+          >
+            {deleting === photo.id ? (
+              <RefreshCw className="w-5 h-5 animate-spin" />
+            ) : (
+              <Trash2 className="w-5 h-5" />
+            )}
+          </button>
+          
+          <button
+            onClick={() => setShowDeleteConfirm(`${photo.id}-duplicates`)}
+            disabled={deleting === photo.id}
+            className="p-2 bg-orange-500 bg-opacity-20 rounded-full hover:bg-opacity-30 transition disabled:opacity-50"
+            title="Delete this photo and all duplicates"
+          >
+            {deleting === photo.id ? (
+              <RefreshCw className="w-5 h-5 animate-spin" />
+            ) : (
+              <Copy className="w-5 h-5" />
+            )}
+          </button>
+        </>
+      )}
+    </div>
+  );
+
+  // Delete confirmation modal
+  const DeleteConfirmModal = () => {
+    if (!showDeleteConfirm) return null;
+
+    const isDuplicateDelete = showDeleteConfirm.includes('-duplicates');
+    const photoId = isDuplicateDelete ? showDeleteConfirm.split('-')[0] : showDeleteConfirm;
+    const photo = photos.find(p => p.id === photoId);
+
+    if (!photo) return null;
+
+    return (
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4"
+        onClick={() => setShowDeleteConfirm(null)}
+      >
+        <motion.div
+          initial={{ scale: 0.9, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          exit={{ scale: 0.9, opacity: 0 }}
+          className="bg-gray-800 rounded-lg p-6 max-w-md w-full"
+          onClick={e => e.stopPropagation()}
+        >
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 bg-red-500 bg-opacity-20 rounded-full">
+              <Trash2 className="w-6 h-6 text-red-400" />
+            </div>
+            <h3 className="text-lg font-semibold text-white">
+              {isDuplicateDelete ? 'Delete Photo & Duplicates' : 'Delete Photo'}
+            </h3>
+          </div>
+          
+          <div className="mb-4">
+            <div className="aspect-video w-full bg-gray-700 rounded-lg overflow-hidden mb-3">
+              {photo.content_type === 'video' ? (
+                <video
+                  src={photo.processed_url || photo.original_url}
+                  className="w-full h-full object-cover"
+                  muted
+                />
+              ) : (
+                <img
+                  src={photo.processed_url || photo.original_url}
+                  alt={photo.prompt}
+                  className="w-full h-full object-cover"
+                />
+              )}
+            </div>
+            
+            <p className="text-gray-300 text-sm mb-2">{photo.prompt}</p>
+            <p className="text-gray-500 text-xs">
+              {new Date(photo.created_at).toLocaleString()}
+            </p>
+          </div>
+
+          <p className="text-gray-300 mb-6">
+            {isDuplicateDelete 
+              ? 'This will permanently delete this photo and all photos with the same prompt. This action cannot be undone.'
+              : 'This will permanently delete this photo from storage. This action cannot be undone.'
+            }
+          </p>
+
+          <div className="flex gap-3">
+            <button
+              onClick={() => setShowDeleteConfirm(null)}
+              className="flex-1 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => isDuplicateDelete 
+                ? handleDeletePhotoAndDuplicates(photoId)
+                : handleDeletePhoto(photoId)
+              }
+              disabled={deleting === photoId}
+              className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition disabled:opacity-50"
+            >
+              {deleting === photoId ? 'Deleting...' : 'Delete'}
+            </button>
+          </div>
+        </motion.div>
+      </motion.div>
+    );
+  };
+
+  // Delete all confirmation modal
+  const DeleteAllConfirmModal = () => {
+    if (!showDeleteAllConfirm) return null;
+
+    return (
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4"
+        onClick={() => setShowDeleteAllConfirm(false)}
+      >
+        <motion.div
+          initial={{ scale: 0.9, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          exit={{ scale: 0.9, opacity: 0 }}
+          className="bg-gray-800 rounded-lg p-6 max-w-md w-full"
+          onClick={e => e.stopPropagation()}
+        >
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 bg-red-500 bg-opacity-20 rounded-full">
+              <AlertCircle className="w-6 h-6 text-red-400" />
+            </div>
+            <h3 className="text-lg font-semibold text-white">Delete All Photos</h3>
+          </div>
+
+          <p className="text-gray-300 mb-6">
+            This will permanently delete all {photos.length} photos from storage. 
+            This action cannot be undone.
+          </p>
+
+          <div className="flex gap-3">
+            <button
+              onClick={() => setShowDeleteAllConfirm(false)}
+              className="flex-1 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleDeleteAll}
+              disabled={loading}
+              className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition disabled:opacity-50"
+            >
+              {loading ? 'Deleting...' : 'Delete All'}
+            </button>
+          </div>
+        </motion.div>
+      </motion.div>
+    );
   };
 
   if (loading) {
@@ -190,12 +497,20 @@ export default function Gallery() {
           <AlertCircle className="w-12 h-12 mx-auto mb-4 text-red-500" />
           <h2 className="text-xl font-semibold mb-2">Error Loading Gallery</h2>
           <p className="text-gray-400 mb-4">{error}</p>
-          <button
-            onClick={loadPhotos}
-            className="px-4 py-2 bg-blue-600 rounded-lg hover:bg-blue-700 transition"
-          >
-            Try Again
-          </button>
+          <div className="flex gap-3 justify-center">
+            <button
+              onClick={() => setError(null)}
+              className="px-4 py-2 bg-gray-600 rounded-lg hover:bg-gray-700 transition"
+            >
+              Dismiss
+            </button>
+            <button
+              onClick={loadPhotos}
+              className="px-4 py-2 bg-blue-600 rounded-lg hover:bg-blue-700 transition"
+            >
+              Try Again
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -259,7 +574,7 @@ export default function Gallery() {
                 
                 {photos.length > 0 && (
                   <button
-                    onClick={handleDeleteAll}
+                    onClick={() => setShowDeleteAllConfirm(true)}
                     className="flex items-center gap-2 px-3 py-1 bg-red-600 rounded hover:bg-red-700 transition"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -316,36 +631,7 @@ export default function Gallery() {
                       
                       {/* Overlay controls */}
                       <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all duration-200 flex items-center justify-center opacity-0 group-hover:opacity-100">
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => setSelectedPhoto(photo)}
-                            className="p-2 bg-white bg-opacity-20 rounded-full hover:bg-opacity-30 transition"
-                          >
-                            <Eye className="w-5 h-5" />
-                          </button>
-                          
-                          <a
-                            href={photo.processed_url || photo.original_url}
-                            download
-                            className="p-2 bg-white bg-opacity-20 rounded-full hover:bg-opacity-30 transition"
-                          >
-                            <Download className="w-5 h-5" />
-                          </a>
-                          
-                          {showAdmin && (
-                            <button
-                              onClick={() => handleDeletePhoto(photo.id)}
-                              disabled={deleting === photo.id}
-                              className="p-2 bg-red-500 bg-opacity-20 rounded-full hover:bg-opacity-30 transition disabled:opacity-50"
-                            >
-                              {deleting === photo.id ? (
-                                <RefreshCw className="w-5 h-5 animate-spin" />
-                              ) : (
-                                <Trash2 className="w-5 h-5" />
-                              )}
-                            </button>
-                          )}
-                        </div>
+                        <PhotoActions photo={photo} />
                       </div>
                     </div>
                     
@@ -395,36 +681,7 @@ export default function Gallery() {
                       
                       {/* Overlay controls */}
                       <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all duration-200 flex items-center justify-center opacity-0 group-hover:opacity-100">
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => setSelectedPhoto(photo)}
-                            className="p-2 bg-white bg-opacity-20 rounded-full hover:bg-opacity-30 transition"
-                          >
-                            <Eye className="w-5 h-5" />
-                          </button>
-                          
-                          <a
-                            href={photo.processed_url || photo.original_url}
-                            download
-                            className="p-2 bg-white bg-opacity-20 rounded-full hover:bg-opacity-30 transition"
-                          >
-                            <Download className="w-5 h-5" />
-                          </a>
-                          
-                          {showAdmin && (
-                            <button
-                              onClick={() => handleDeletePhoto(photo.id)}
-                              disabled={deleting === photo.id}
-                              className="p-2 bg-red-500 bg-opacity-20 rounded-full hover:bg-opacity-30 transition disabled:opacity-50"
-                            >
-                              {deleting === photo.id ? (
-                                <RefreshCw className="w-5 h-5 animate-spin" />
-                              ) : (
-                                <Trash2 className="w-5 h-5" />
-                              )}
-                            </button>
-                          )}
-                        </div>
+                        <PhotoActions photo={photo} />
                       </div>
                     </div>
                     
@@ -504,43 +761,13 @@ export default function Gallery() {
                       {carouselIndex + 1} / {photos.length}
                     </div>
 
-                    {/* Admin controls overlay */}
-                    {showAdmin && (
-                      <div className="absolute bottom-4 right-4 flex gap-2">
-                        <a
-                          href={photos[carouselIndex]?.processed_url || photos[carouselIndex]?.original_url}
-                          download
-                          className="p-2 bg-black bg-opacity-50 rounded-full hover:bg-opacity-70 transition"
-                        >
-                          <Download className="w-5 h-5" />
-                        </a>
-                        
-                        <button
-                          onClick={() => handleDeletePhoto(photos[carouselIndex]?.id)}
-                          disabled={deleting === photos[carouselIndex]?.id}
-                          className="p-2 bg-red-500 bg-opacity-50 rounded-full hover:bg-opacity-70 transition disabled:opacity-50"
-                        >
-                          {deleting === photos[carouselIndex]?.id ? (
-                            <RefreshCw className="w-5 h-5 animate-spin" />
-                          ) : (
-                            <Trash2 className="w-5 h-5" />
-                          )}
-                        </button>
-                        
-                        <button
-                          onClick={() => handleDeletePhotoAndDuplicates(photos[carouselIndex]?.id)}
-                          disabled={deleting === photos[carouselIndex]?.id}
-                          className="p-2 bg-orange-500 bg-opacity-50 rounded-full hover:bg-opacity-70 transition disabled:opacity-50"
-                          title="Delete this photo and all duplicates"
-                        >
-                          {deleting === photos[carouselIndex]?.id ? (
-                            <RefreshCw className="w-5 h-5 animate-spin" />
-                          ) : (
-                            <Trash2 className="w-5 h-5" />
-                          )}
-                        </button>
-                      </div>
-                    )}
+                    {/* Action controls overlay */}
+                    <div className="absolute bottom-4 right-4">
+                      <PhotoActions 
+                        photo={photos[carouselIndex]} 
+                        className="bg-black bg-opacity-50 rounded-lg p-2"
+                      />
+                    </div>
                   </div>
 
                   {/* Photo info */}
@@ -591,39 +818,59 @@ export default function Gallery() {
       </div>
 
       {/* Photo Modal */}
-      {selectedPhoto && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50 p-4"
-          onClick={() => setSelectedPhoto(null)}
-        >
-          <div className="max-w-4xl max-h-full relative" onClick={e => e.stopPropagation()}>
-            {selectedPhoto.content_type === 'video' ? (
-              <video
-                src={selectedPhoto.processed_url || selectedPhoto.original_url}
-                className="max-w-full max-h-full object-contain"
-                controls
-                autoPlay
-              />
-            ) : (
-              <img
-                src={selectedPhoto.processed_url || selectedPhoto.original_url}
-                alt={selectedPhoto.prompt}
-                className="max-w-full max-h-full object-contain"
-              />
-            )}
-            
-            <button
-              onClick={() => setSelectedPhoto(null)}
-              className="absolute top-4 right-4 p-2 bg-black bg-opacity-50 rounded-full hover:bg-opacity-70 transition"
-            >
-              <Eye className="w-6 h-6" />
-            </button>
-          </div>
-        </motion.div>
-      )}
+      <AnimatePresence>
+        {selectedPhoto && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50 p-4"
+            onClick={() => setSelectedPhoto(null)}
+          >
+            <div className="max-w-4xl max-h-full relative" onClick={e => e.stopPropagation()}>
+              {selectedPhoto.content_type === 'video' ? (
+                <video
+                  src={selectedPhoto.processed_url || selectedPhoto.original_url}
+                  className="max-w-full max-h-full object-contain"
+                  controls
+                  autoPlay
+                />
+              ) : (
+                <img
+                  src={selectedPhoto.processed_url || selectedPhoto.original_url}
+                  alt={selectedPhoto.prompt}
+                  className="max-w-full max-h-full object-contain"
+                />
+              )}
+              
+              {/* Modal controls */}
+              <div className="absolute top-4 right-4 flex gap-2">
+                <PhotoActions photo={selectedPhoto} />
+                <button
+                  onClick={() => setSelectedPhoto(null)}
+                  className="p-2 bg-black bg-opacity-50 rounded-full hover:bg-opacity-70 transition"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              {/* Photo info overlay */}
+              <div className="absolute bottom-4 left-4 bg-black bg-opacity-50 rounded-lg p-4 max-w-md">
+                <p className="text-white text-sm mb-1">{selectedPhoto.prompt}</p>
+                <p className="text-gray-300 text-xs">
+                  {new Date(selectedPhoto.created_at).toLocaleString()}
+                </p>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Confirmation Modals */}
+      <AnimatePresence>
+        {showDeleteConfirm && <DeleteConfirmModal />}
+        {showDeleteAllConfirm && <DeleteAllConfirmModal />}
+      </AnimatePresence>
     </div>
   );
 }
