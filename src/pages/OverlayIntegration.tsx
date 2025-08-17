@@ -1,11 +1,12 @@
-// src/pages/OverlayIntegration.tsx - Fixed version with working built-in borders
+// src/pages/OverlayIntegration.tsx - Updated with aspect ratio support
 import React, { useState, useRef, ChangeEvent } from 'react';
-import { Upload, Wand2, AlertCircle, RefreshCw, Image as ImageIcon, Layers, Settings, Eye, Info, Palette, Frame } from 'lucide-react';
+import { Upload, Wand2, AlertCircle, RefreshCw, Image as ImageIcon, Layers, Settings, Eye, Info, Palette, Frame, Smartphone, Monitor, Square } from 'lucide-react';
 import { useConfigStore } from '../store/configStore';
 import { saveOverlayConfig, generateBuiltInBorder } from '../lib/overlayUtils';
 
 type OverlayPosition = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center' | 'top-center' | 'bottom-center';
 type BlendMode = 'normal' | 'multiply' | 'screen' | 'overlay' | 'soft-light' | 'hard-light';
+type AspectRatio = '1:1' | '9:16' | '16:9';
 
 interface OverlaySettings {
   position: OverlayPosition;
@@ -116,6 +117,13 @@ const BUILT_IN_BORDERS: BuiltInBorder[] = [
   }
 ];
 
+// Aspect ratio configurations
+const ASPECT_RATIOS = {
+  '1:1': { width: 512, height: 512, label: 'Square (1:1)', icon: Square },
+  '9:16': { width: 512, height: 910, label: 'Portrait (9:16)', icon: Smartphone },
+  '16:9': { width: 910, height: 512, label: 'Landscape (16:9)', icon: Monitor }
+};
+
 export default function OverlayIntegration() {
   const { config } = useConfigStore();
   const [overlayImage, setOverlayImage] = useState<string | null>(null);
@@ -129,6 +137,8 @@ export default function OverlayIntegration() {
     offsetY: 20
   });
   const [testImage, setTestImage] = useState<string | null>(null);
+  const [testImageAspectRatio, setTestImageAspectRatio] = useState<AspectRatio>('1:1');
+  const [selectedAspectRatio, setSelectedAspectRatio] = useState<AspectRatio>('1:1');
   const [resultImage, setResultImage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
@@ -138,6 +148,19 @@ export default function OverlayIntegration() {
 
   const overlayFileRef = useRef<HTMLInputElement>(null);
   const testFileRef = useRef<HTMLInputElement>(null);
+
+  // Auto-detect aspect ratio from image dimensions
+  const detectAspectRatio = (width: number, height: number): AspectRatio => {
+    const ratio = width / height;
+    
+    if (Math.abs(ratio - 1) < 0.1) {
+      return '1:1'; // Square
+    } else if (ratio < 1) {
+      return '9:16'; // Portrait
+    } else {
+      return '16:9'; // Landscape
+    }
+  };
 
   // Handle overlay file upload
   const handleOverlayChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -228,7 +251,7 @@ export default function OverlayIntegration() {
     reader.readAsDataURL(file);
   };
 
-  // Handle test image upload
+  // Handle test image upload with aspect ratio detection
   const handleTestImageChange = (event: ChangeEvent<HTMLInputElement>) => {
     setError(null);
     
@@ -251,7 +274,24 @@ export default function OverlayIntegration() {
     const reader = new FileReader();
     reader.onload = (e) => {
       if (e.target?.result && typeof e.target.result === 'string') {
-        setTestImage(e.target.result);
+        const imageData = e.target.result;
+        
+        // Auto-detect aspect ratio of test image
+        const img = new Image();
+        img.onload = () => {
+          const detectedRatio = detectAspectRatio(img.width, img.height);
+          setTestImageAspectRatio(detectedRatio);
+          setSelectedAspectRatio(detectedRatio); // Auto-update selected ratio
+          
+          console.log('📱 Test image aspect ratio detected:', {
+            dimensions: `${img.width}x${img.height}`,
+            detectedRatio,
+            ratio: img.width / img.height
+          });
+        };
+        
+        img.src = imageData;
+        setTestImage(imageData);
         setError(null);
       } else {
         setError('Failed to read test image file');
@@ -265,11 +305,13 @@ export default function OverlayIntegration() {
     reader.readAsDataURL(file);
   };
 
-  // Handle border selection with auto-settings
+  // Handle border selection with aspect ratio support
   const handleBorderSelect = (borderId: string) => {
     try {
-      // Generate border at preview resolution
-      const borderImage = generateBuiltInBorder(borderId, 512, 512);
+      // Generate border for the selected aspect ratio
+      const aspectConfig = ASPECT_RATIOS[selectedAspectRatio];
+      const borderImage = generateBuiltInBorder(borderId, aspectConfig.width, aspectConfig.height);
+      
       if (!borderImage) {
         setError(`Failed to generate border: ${borderId}`);
         return;
@@ -283,7 +325,7 @@ export default function OverlayIntegration() {
 
       setOverlayImage(borderImage);
       setSelectedBorder(borderId);
-      setOverlayName(border.name);
+      setOverlayName(`${border.name} (${ASPECT_RATIOS[selectedAspectRatio].label})`);
       
       // Auto-configure settings for borders
       setOverlaySettings(prev => ({
@@ -297,10 +339,35 @@ export default function OverlayIntegration() {
       }));
       
       setError(null);
-      console.log('✅ Built-in border selected:', borderId);
+      console.log('✅ Built-in border selected:', borderId, 'for aspect ratio:', selectedAspectRatio);
     } catch (error) {
       console.error('Error selecting border:', error);
       setError(`Failed to select border: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  // Handle aspect ratio change and regenerate border if needed
+  const handleAspectRatioChange = (newRatio: AspectRatio) => {
+    setSelectedAspectRatio(newRatio);
+    
+    // Regenerate border if one is selected
+    if (selectedBorder) {
+      try {
+        const aspectConfig = ASPECT_RATIOS[newRatio];
+        const borderImage = generateBuiltInBorder(selectedBorder, aspectConfig.width, aspectConfig.height);
+        
+        if (borderImage) {
+          setOverlayImage(borderImage);
+          const border = BUILT_IN_BORDERS.find(b => b.id === selectedBorder);
+          if (border) {
+            setOverlayName(`${border.name} (${aspectConfig.label})`);
+          }
+          console.log('✅ Border regenerated for aspect ratio:', newRatio);
+        }
+      } catch (error) {
+        console.error('Error regenerating border for new aspect ratio:', error);
+        setError(`Failed to regenerate border for new aspect ratio`);
+      }
     }
   };
 
@@ -344,17 +411,17 @@ export default function OverlayIntegration() {
       // Draw background
       ctx.drawImage(bgImg, 0, 0);
 
-      // Smart scaling based on overlay type
+      // Smart scaling based on overlay type and aspect ratio
       let finalScale = overlaySettings.scale;
       let overlayWidth = overlayImg.width * finalScale;
       let overlayHeight = overlayImg.height * finalScale;
 
       // Auto-scale logic
       if (selectedBorder) {
-        // For borders: scale to match canvas size exactly
-        finalScale = 1.0;
+        // For borders: scale to exactly match canvas size
         overlayWidth = canvas.width;
         overlayHeight = canvas.height;
+        console.log('📏 Auto-scaled border to canvas size:', `${overlayWidth}x${overlayHeight}`);
       } else {
         // For logos/watermarks: intelligent scaling based on canvas size
         const canvasSize = Math.min(canvas.width, canvas.height);
@@ -367,6 +434,7 @@ export default function OverlayIntegration() {
           overlayWidth = overlayImg.width * finalScale;
           overlayHeight = overlayImg.height * finalScale;
         }
+        console.log('📏 Auto-scaled logo/watermark:', { finalScale, size: `${overlayWidth}x${overlayHeight}` });
       }
 
       // Position calculation
@@ -444,7 +512,7 @@ export default function OverlayIntegration() {
     }
   };
 
-  // Save overlay configuration
+  // Save overlay configuration with aspect ratio support
   const handleSaveOverlay = async () => {
     if (!overlayImage || !overlayName.trim()) {
       setError('Please provide both an overlay image and name');
@@ -461,7 +529,10 @@ export default function OverlayIntegration() {
         settings: overlaySettings,
         createdAt: new Date().toISOString(),
         type: selectedBorder ? 'border' as const : 'custom' as const,
-        ...(selectedBorder && { borderId: selectedBorder })
+        ...(selectedBorder && { 
+          borderId: selectedBorder,
+          aspectRatio: selectedAspectRatio // Store the aspect ratio for borders
+        })
       };
 
       const success = saveOverlayConfig(overlayConfig);
@@ -471,7 +542,7 @@ export default function OverlayIntegration() {
       }
       
       const typeDescription = selectedBorder ? 'border/frame' : 'logo/watermark';
-      alert(`✅ Overlay "${overlayName}" saved successfully as ${typeDescription}!\n\nThis overlay will now be automatically applied to all AI generated photos with smart auto-scaling.`);
+      alert(`✅ Overlay "${overlayName}" saved successfully as ${typeDescription}!\n\nThis overlay will now be automatically applied to all AI generated photos with smart auto-scaling for aspect ratio: ${ASPECT_RATIOS[selectedAspectRatio].label}.`);
       
       // Reset form
       resetForm();
@@ -493,6 +564,8 @@ export default function OverlayIntegration() {
     setError(null);
     setShowPreview(false);
     setSelectedBorder(null);
+    setSelectedAspectRatio('1:1');
+    setTestImageAspectRatio('1:1');
     
     // Clear file inputs
     if (overlayFileRef.current) overlayFileRef.current.value = '';
@@ -522,6 +595,7 @@ export default function OverlayIntegration() {
         <div className="mb-6 text-center">
           <p className="text-gray-300">
             Upload a custom overlay or choose from built-in borders that will be automatically applied to all AI generated photos.
+            Now supports multiple aspect ratios: Square (1:1), Portrait (9:16), and Landscape (16:9).
           </p>
           
           {/* Size recommendations */}
@@ -533,7 +607,9 @@ export default function OverlayIntegration() {
                 <ul className="text-sm text-blue-200 space-y-1">
                   <li>• <strong>Small logos/watermarks:</strong> 100x100 to 200x200 pixels</li>
                   <li>• <strong>Large logos:</strong> 300x300 to 512x512 pixels</li>
-                  <li>• <strong>Frames/borders:</strong> Same size as your AI images (typically 512x512 or 1024x1024)</li>
+                  <li>• <strong>Square frames (1:1):</strong> 512x512 or 1024x1024 pixels</li>
+                  <li>• <strong>Portrait frames (9:16):</strong> 512x910 or 1024x1820 pixels</li>
+                  <li>• <strong>Landscape frames (16:9):</strong> 910x512 or 1820x1024 pixels</li>
                   <li>• <strong>File format:</strong> PNG with transparency for best results</li>
                   <li>• <strong>Max file size:</strong> 10MB</li>
                 </ul>
@@ -612,6 +688,30 @@ export default function OverlayIntegration() {
                     <Palette className="w-5 h-5" />
                     Choose Built-in Border
                   </h2>
+                  
+                  {/* Aspect Ratio Selector */}
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium mb-2">Target Aspect Ratio</label>
+                    <div className="flex gap-2">
+                      {Object.entries(ASPECT_RATIOS).map(([ratio, config]) => {
+                        const IconComponent = config.icon;
+                        return (
+                          <button
+                            key={ratio}
+                            onClick={() => handleAspectRatioChange(ratio as AspectRatio)}
+                            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition ${
+                              selectedAspectRatio === ratio
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                            }`}
+                          >
+                            <IconComponent className="w-4 h-4" />
+                            {config.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                   
                   <div className="grid grid-cols-2 gap-3 max-h-96 overflow-y-auto">
                     {BUILT_IN_BORDERS.map((border) => (
@@ -774,6 +874,20 @@ export default function OverlayIntegration() {
                 Test with Sample Image
               </h2>
               
+              {/* Display detected aspect ratio */}
+              {testImage && (
+                <div className="mb-4 p-3 bg-blue-900/20 rounded-lg border border-blue-500/30">
+                  <div className="flex items-center gap-2 text-blue-300">
+                    {ASPECT_RATIOS[testImageAspectRatio].icon && (
+                      <ASPECT_RATIOS[testImageAspectRatio].icon className="w-4 h-4" />
+                    )}
+                    <span className="text-sm">
+                      Detected: {ASPECT_RATIOS[testImageAspectRatio].label}
+                    </span>
+                  </div>
+                </div>
+              )}
+              
               <div 
                 onClick={() => testFileRef.current?.click()}
                 className="border-2 border-dashed border-gray-600 rounded-lg p-6 text-center cursor-pointer hover:border-gray-400 transition"
@@ -854,20 +968,20 @@ export default function OverlayIntegration() {
                 </button>
                 <button
                   onClick={resetForm}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gray-700 rounded-lg hover:bg-gray-600 transition"
+                  className="w-auto flex items-center justify-center gap-2 px-4 py-3 bg-gray-700 rounded-lg hover:bg-gray-600 transition"
                 >
                   <RefreshCw className="w-5 h-5" />
-                  Reset Form
+                  Reset
                 </button>
               </div>
               <div className="mt-6 p-4 bg-blue-900/30 rounded-lg border border-blue-500/30">
-                <h3 className="font-semibold text-blue-400 mb-2">How it works:</h3>
+                <h3 className="font-semibold text-blue-400 mb-2">How it works with aspect ratios:</h3>
                 <ul className="text-sm text-blue-200 space-y-1">
-                  <li>• Upload custom overlay or choose a built-in border</li>
-                  <li>• Adjust position, size, and opacity settings</li>
-                  <li>• Test with a sample image to preview the result</li>
-                  <li>• Save configuration - it will apply to ALL future AI photos!</li>
-                  <li>• Your overlay will be permanently embedded in generated images</li>
+                  <li>• Upload test images to auto-detect aspect ratio (9:16, 16:9, or 1:1)</li>
+                  <li>• Built-in borders automatically adapt to the selected aspect ratio</li>
+                  <li>• Custom overlays use smart scaling based on image dimensions</li>
+                  <li>• AI photos will use the saved overlay with matching aspect ratio</li>
+                  <li>• Borders scale to perfectly fit the generated image size</li>
                   <li>• <strong>Note:</strong> Only one overlay can be active at a time</li>
                 </ul>
               </div>
