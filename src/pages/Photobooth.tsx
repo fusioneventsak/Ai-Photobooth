@@ -1,9 +1,9 @@
 // src/pages/Photobooth.tsx
-// Enhanced Photobooth component with mobile optimization and camera fixes
+// Enhanced Photobooth component with mobile optimization and improved face blending
 
 import React, { useState, useEffect } from 'react';
 import Webcam from 'react-webcam';
-import { Camera, ImageIcon, Wand2, AlertCircle, Video, RefreshCw, Users, UserX, Lightbulb, Eye, User } from 'lucide-react';
+import { Camera, ImageIcon, Wand2, AlertCircle, Video, RefreshCw, Users, UserX, Lightbulb, Eye, User, Smartphone } from 'lucide-react';
 import { useConfigStore } from '../store/configStore';
 import { uploadPhoto } from '../lib/supabase';
 import { generateWithStability } from '../lib/stabilityService';
@@ -43,17 +43,30 @@ export default function Photobooth() {
   const [isMobile, setIsMobile] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
   const [progressInterval, setProgressInterval] = useState<NodeJS.Timeout | null>(null);
+  const [capturedImageDimensions, setCapturedImageDimensions] = useState<{width: number, height: number} | null>(null);
   
   const webcamRef = React.useRef<Webcam>(null);
 
-  // Detect mobile device
+  // Enhanced mobile device detection
   useEffect(() => {
     const checkMobile = () => {
       const userAgent = navigator.userAgent.toLowerCase();
       const isIOS = /iphone|ipad|ipod/.test(userAgent);
       const isAndroid = /android/.test(userAgent);
-      const isMobileDevice = isIOS || isAndroid || window.innerWidth <= 768;
+      const isMobileWidth = window.innerWidth <= 768;
+      const hasTouch = 'ontouchstart' in window;
+      const isMobileDevice = isIOS || isAndroid || (isMobileWidth && hasTouch);
+      
       setIsMobile(isMobileDevice);
+      
+      console.log('📱 Device detection:', {
+        isIOS,
+        isAndroid,
+        isMobileWidth,
+        hasTouch,
+        finalDecision: isMobileDevice,
+        userAgent: userAgent.substring(0, 50)
+      });
     };
 
     checkMobile();
@@ -61,7 +74,7 @@ export default function Photobooth() {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // Add CSS for gradient animation
+  // Add CSS for gradient animation and mobile enhancements
   React.useEffect(() => {
     const style = document.createElement('style');
     style.textContent = `
@@ -79,25 +92,36 @@ export default function Photobooth() {
         animation: gradient-x 3s ease infinite;
       }
       
-      /* Mobile-specific camera fixes */
+      /* Enhanced mobile-specific camera fixes */
       @media (max-width: 768px) {
         .mobile-camera-container {
-          height: 100vw;
-          max-height: 80vh;
+          height: 70vh;
+          min-height: 400px;
+          max-height: 600px;
+          position: relative;
         }
         
         .mobile-camera-preview {
           width: 100%;
           height: 100%;
           object-fit: cover;
+          border-radius: 12px;
         }
         
-        /* iOS specific fixes */
+        /* iOS specific fixes for better camera quality */
         @supports (-webkit-touch-callout: none) {
           .ios-camera-fix {
             transform: scaleX(-1);
             -webkit-transform: scaleX(-1);
+            image-rendering: -webkit-optimize-contrast;
+            image-rendering: crisp-edges;
           }
+        }
+        
+        /* Android specific optimizations */
+        .android-camera-fix {
+          image-rendering: optimizeQuality;
+          -webkit-image-rendering: optimizeQuality;
         }
       }
       
@@ -105,6 +129,24 @@ export default function Photobooth() {
       @media (min-width: 769px) {
         .desktop-camera-container {
           aspect-ratio: 1;
+          max-width: 500px;
+          margin: 0 auto;
+        }
+      }
+      
+      /* Mobile portrait orientation optimization */
+      @media (max-width: 768px) and (orientation: portrait) {
+        .mobile-camera-container {
+          height: 60vh;
+          aspect-ratio: 3/4;
+        }
+      }
+      
+      /* Mobile landscape orientation optimization */
+      @media (max-width: 768px) and (orientation: landscape) {
+        .mobile-camera-container {
+          height: 80vh;
+          aspect-ratio: 4/3;
         }
       }
     `;
@@ -115,8 +157,8 @@ export default function Photobooth() {
     };
   }, []);
 
-  // Enhanced image resizing for SDXL optimal input
-  const resizeImage = (dataUrl: string, targetSize: number = 1024): Promise<string> => {
+  // Enhanced image resizing with mobile optimization
+  const resizeImageSmart = (dataUrl: string, targetSize: number = 1024): Promise<string> => {
     return new Promise((resolve, reject) => {
       const img = new Image();
       img.onload = () => {
@@ -129,23 +171,107 @@ export default function Photobooth() {
         }
 
         const { width, height } = img;
-        let newWidth = targetSize;
-        let newHeight = targetSize;
         
-        if (width > height) {
-          newHeight = Math.round((height / width) * targetSize);
+        console.log('📐 Original image dimensions:', {
+          width,
+          height,
+          aspectRatio: width / height,
+          isMobile,
+          isPortrait: height > width
+        });
+        
+        // Store original dimensions for debug info
+        setCapturedImageDimensions({ width, height });
+        
+        // IMPROVED: Smart aspect ratio preservation for mobile
+        let newWidth, newHeight;
+        
+        if (isMobile && Math.abs(width - height) / Math.max(width, height) > 0.2) {
+          // Mobile with significant aspect ratio difference - preserve ratio better
+          const aspectRatio = width / height;
+          const isPortrait = height > width;
+          
+          if (isPortrait) {
+            // Portrait mode - common on mobile selfies
+            // Keep face area larger by using less aggressive resizing
+            newHeight = targetSize;
+            newWidth = Math.round(targetSize * aspectRatio);
+            
+            // Ensure minimum width for SDXL face detection
+            const minWidth = Math.max(512, targetSize * 0.6);
+            if (newWidth < minWidth) {
+              const scale = minWidth / newWidth;
+              newWidth = minWidth;
+              newHeight = Math.round(newHeight * scale);
+              // Cap height to prevent excessive stretching
+              newHeight = Math.min(newHeight, targetSize * 1.4);
+            }
+          } else {
+            // Landscape mode
+            newWidth = targetSize;
+            newHeight = Math.round(targetSize / aspectRatio);
+            
+            const minHeight = Math.max(512, targetSize * 0.6);
+            if (newHeight < minHeight) {
+              const scale = minHeight / newHeight;
+              newHeight = minHeight;
+              newWidth = Math.round(newWidth * scale);
+              newWidth = Math.min(newWidth, targetSize * 1.4);
+            }
+          }
         } else {
-          newWidth = Math.round((width / height) * targetSize);
+          // Desktop or near-square images - use square format for SDXL
+          newWidth = targetSize;
+          newHeight = targetSize;
         }
 
         canvas.width = newWidth;
         canvas.height = newHeight;
 
+        // Enhanced smoothing for mobile images
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
-        ctx.drawImage(img, 0, 0, newWidth, newHeight);
         
-        resolve(canvas.toDataURL('image/png', 0.95));
+        // Fill background for non-square images with a neutral color
+        if (newWidth !== newHeight) {
+          ctx.fillStyle = '#1a1a1a'; // Dark neutral background
+          ctx.fillRect(0, 0, newWidth, newHeight);
+        }
+        
+        // Calculate positioning to center the image
+        let drawX = 0, drawY = 0, drawWidth = newWidth, drawHeight = newHeight;
+        
+        if (newWidth !== newHeight) {
+          // Center the image in the canvas
+          const sourceAspect = width / height;
+          const targetAspect = newWidth / newHeight;
+          
+          if (sourceAspect > targetAspect) {
+            // Source is wider, fit to width
+            drawWidth = newWidth;
+            drawHeight = newWidth / sourceAspect;
+            drawY = (newHeight - drawHeight) / 2;
+          } else {
+            // Source is taller, fit to height
+            drawHeight = newHeight;
+            drawWidth = newHeight * sourceAspect;
+            drawX = (newWidth - drawWidth) / 2;
+          }
+        }
+        
+        ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
+        
+        const result = canvas.toDataURL('image/png', 0.95);
+        
+        console.log('✅ Smart image resize completed:', {
+          originalSize: `${width}x${height}`,
+          newSize: `${newWidth}x${newHeight}`,
+          isMobile,
+          preservedAspectRatio: newWidth !== newHeight,
+          dataSize: `${(result.length / 1024).toFixed(1)}KB`
+        });
+        
+        resolve(result);
       };
       
       img.onerror = () => reject(new Error('Failed to load image for resizing'));
@@ -153,11 +279,274 @@ export default function Photobooth() {
     });
   };
 
+  // Mobile-optimized face mask generation
+  const generateMobileFaceMask = async (
+    imageElement: HTMLImageElement,
+    preserveFaces: boolean = true,
+    featherRadius: number = 25,
+    expansionFactor: number = 1.15
+  ): Promise<string> => {
+    try {
+      console.log('🎭 Generating mobile-optimized face mask...', {
+        preserveFaces,
+        featherRadius,
+        expansionFactor,
+        isMobile,
+        imageSize: `${imageElement.width}x${imageElement.height}`
+      });
+
+      // Load face detection models if not loaded
+      await loadFaceApiModels();
+
+      // Use higher resolution and lower threshold for mobile face detection
+      const detectionInputSize = isMobile ? 640 : 512;
+      const scoreThreshold = isMobile ? 0.35 : 0.5; // Lower threshold for mobile
+      
+      const detections = await import('face-api.js').then(faceapi => 
+        faceapi.detectAllFaces(imageElement, new faceapi.TinyFaceDetectorOptions({
+          inputSize: detectionInputSize,
+          scoreThreshold: scoreThreshold
+        })).withFaceLandmarks()
+      );
+      
+      if (detections.length === 0) {
+        console.warn('⚠️ No faces detected, generating mobile-optimized fallback mask');
+        return generateMobileFallbackMask(
+          imageElement.width || 512, 
+          imageElement.height || 512
+        );
+      }
+
+      console.log(`✅ Detected ${detections.length} face(s) on mobile device`);
+
+      const canvas = document.createElement('canvas');
+      canvas.width = imageElement.width;
+      canvas.height = imageElement.height;
+      const ctx = canvas.getContext('2d');
+      
+      if (!ctx) {
+        throw new Error('Failed to get canvas context for mask generation');
+      }
+
+      // Base color setup
+      if (preserveFaces) {
+        ctx.fillStyle = 'white';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      } else {
+        ctx.fillStyle = 'black';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
+
+      // Enhanced mobile face processing
+      detections.forEach((detection, index) => {
+        const box = detection.detection.box;
+        const landmarks = detection.landmarks;
+        
+        const centerX = box.x + box.width / 2;
+        const centerY = box.y + box.height / 2;
+        
+        // Mobile-specific adjustments for better blending
+        const mobileExpansion = isMobile ? expansionFactor * 0.85 : expansionFactor;
+        const mobileFeather = isMobile ? featherRadius * 0.7 : featherRadius;
+        
+        const faceWidth = box.width * mobileExpansion;
+        const faceHeight = box.height * mobileExpansion;
+        
+        console.log(`🎭 Processing mobile face ${index + 1}:`, {
+          originalBox: `${Math.round(box.width)}x${Math.round(box.height)}`,
+          adjustedSize: `${Math.round(faceWidth)}x${Math.round(faceHeight)}`,
+          center: `${Math.round(centerX)}, ${Math.round(centerY)}`,
+          featherRadius: mobileFeather
+        });
+        
+        // Create mobile-optimized gradient with smoother transitions
+        const createMobileGradient = (innerRadius: number, outerRadius: number) => {
+          const gradient = ctx.createRadialGradient(
+            centerX, centerY, innerRadius,
+            centerX, centerY, outerRadius
+          );
+          
+          if (preserveFaces) {
+            // More gradual transition for mobile
+            gradient.addColorStop(0, 'rgba(0, 0, 0, 1)');      // Solid black (preserve)
+            gradient.addColorStop(0.3, 'rgba(32, 32, 32, 0.9)');
+            gradient.addColorStop(0.5, 'rgba(64, 64, 64, 0.7)');
+            gradient.addColorStop(0.7, 'rgba(128, 128, 128, 0.4)');
+            gradient.addColorStop(0.85, 'rgba(192, 192, 192, 0.2)');
+            gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');  // Transparent edge
+          } else {
+            gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');    // Solid white (modify)
+            gradient.addColorStop(0.3, 'rgba(224, 224, 224, 0.9)');
+            gradient.addColorStop(0.5, 'rgba(192, 192, 192, 0.7)');
+            gradient.addColorStop(0.7, 'rgba(128, 128, 128, 0.4)');
+            gradient.addColorStop(0.85, 'rgba(64, 64, 64, 0.2)');
+            gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');        // Transparent edge
+          }
+          
+          return gradient;
+        };
+
+        // Apply mobile-optimized blending with tighter core area
+        const coreRadius = Math.min(faceWidth, faceHeight) * 0.18;
+        const featherRadius = coreRadius + mobileFeather;
+        
+        ctx.fillStyle = createMobileGradient(coreRadius, featherRadius);
+        ctx.beginPath();
+        ctx.ellipse(
+          centerX, centerY,
+          faceWidth * 0.4, faceHeight * 0.4,
+          0, 0, Math.PI * 2
+        );
+        ctx.fill();
+
+        // Enhanced landmark preservation for mobile faces
+        if (preserveFaces && landmarks && isMobile) {
+          const enhanceMobileFeature = (points: any[], scale: number = 1.0, featureName: string) => {
+            if (points.length === 0) return;
+            
+            const featureCenter = points.reduce((acc, point) => ({
+              x: acc.x + point.x,
+              y: acc.y + point.y
+            }), { x: 0, y: 0 });
+            
+            featureCenter.x /= points.length;
+            featureCenter.y /= points.length;
+            
+            const minX = Math.min(...points.map(p => p.x));
+            const maxX = Math.max(...points.map(p => p.x));
+            const minY = Math.min(...points.map(p => p.y));
+            const maxY = Math.max(...points.map(p => p.y));
+            
+            const featureWidth = (maxX - minX) * scale * 0.7; // Tighter for mobile
+            const featureHeight = (maxY - minY) * scale * 0.7;
+            
+            const featureGradient = ctx.createRadialGradient(
+              featureCenter.x, featureCenter.y, Math.min(featureWidth, featureHeight) * 0.1,
+              featureCenter.x, featureCenter.y, Math.max(featureWidth, featureHeight) * 0.5
+            );
+            
+            featureGradient.addColorStop(0, 'rgba(0, 0, 0, 1)');
+            featureGradient.addColorStop(0.4, 'rgba(16, 16, 16, 0.8)');
+            featureGradient.addColorStop(0.7, 'rgba(64, 64, 64, 0.5)');
+            featureGradient.addColorStop(1, 'rgba(128, 128, 128, 0)');
+            
+            ctx.fillStyle = featureGradient;
+            ctx.beginPath();
+            ctx.ellipse(
+              featureCenter.x, featureCenter.y,
+              featureWidth / 2, featureHeight / 2,
+              0, 0, Math.PI * 2
+            );
+            ctx.fill();
+            
+            console.log(`👁️ Enhanced ${featureName} preservation for mobile at (${Math.round(featureCenter.x)}, ${Math.round(featureCenter.y)})`);
+          };
+          
+          // Enhanced feature preservation with mobile-optimized parameters
+          enhanceMobileFeature(landmarks.getLeftEye(), 1.1, 'left eye');
+          enhanceMobileFeature(landmarks.getRightEye(), 1.1, 'right eye');
+          enhanceMobileFeature(landmarks.getNose(), 1.0, 'nose');
+          enhanceMobileFeature(landmarks.getMouth(), 0.9, 'mouth');
+        }
+      });
+
+      // Mobile-specific post-processing for smoother blending
+      if (isMobile) {
+        ctx.filter = 'blur(1px)'; // Lighter blur for mobile
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.drawImage(canvas, 0, 0);
+        ctx.filter = 'none';
+      }
+
+      const maskDataUrl = canvas.toDataURL('image/png');
+      
+      console.log('✅ Mobile face mask generated successfully:', {
+        faces: detections.length,
+        maskSize: `${(maskDataUrl.length / 1024).toFixed(1)}KB`,
+        optimizedForMobile: isMobile,
+        resolution: `${canvas.width}x${canvas.height}`
+      });
+      
+      return maskDataUrl;
+      
+    } catch (error) {
+      console.error('❌ Mobile face mask generation failed:', error);
+      return generateMobileFallbackMask(512, 512);
+    }
+  };
+
+  // Mobile-optimized fallback mask
+  const generateMobileFallbackMask = (width: number, height: number): string => {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d')!;
+    
+    // Fill with white (areas to modify)
+    ctx.fillStyle = 'white';
+    ctx.fillRect(0, 0, width, height);
+    
+    // Create mobile-optimized center face area
+    const centerX = width / 2;
+    const centerY = height / 2;
+    
+    // Adjust for mobile orientation and typical face positioning
+    const isPortrait = height > width;
+    let faceWidth, faceHeight;
+    
+    if (isMobile && isPortrait) {
+      // Portrait mode - face typically in upper portion
+      faceWidth = width * 0.35;
+      faceHeight = height * 0.22; // Smaller height ratio for portrait
+    } else if (isMobile && !isPortrait) {
+      // Landscape mode
+      faceWidth = width * 0.25;
+      faceHeight = height * 0.4;
+    } else {
+      // Desktop fallback
+      faceWidth = width * 0.35;
+      faceHeight = height * 0.35;
+    }
+    
+    const gradient = ctx.createRadialGradient(
+      centerX, centerY, Math.min(faceWidth, faceHeight) * 0.2,
+      centerX, centerY, Math.max(faceWidth, faceHeight) * 0.8
+    );
+    
+    gradient.addColorStop(0, 'rgba(0, 0, 0, 1)');
+    gradient.addColorStop(0.4, 'rgba(64, 64, 64, 0.8)');
+    gradient.addColorStop(0.7, 'rgba(128, 128, 128, 0.5)');
+    gradient.addColorStop(0.9, 'rgba(192, 192, 192, 0.2)');
+    gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.ellipse(centerX, centerY, faceWidth, faceHeight, 0, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Light blur for mobile
+    if (isMobile) {
+      ctx.filter = 'blur(2px)';
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.drawImage(canvas, 0, 0);
+      ctx.filter = 'none';
+    }
+    
+    console.log('📱 Mobile fallback mask generated:', {
+      dimensions: `${width}x${height}`,
+      faceArea: `${Math.round(faceWidth)}x${Math.round(faceHeight)}`,
+      isPortrait
+    });
+    
+    return canvas.toDataURL('image/png');
+  };
+
   // Environment variable checker for debugging
   useEffect(() => {
     const checkEnv = () => {
       console.log('🔍 Using secure Supabase Edge Functions for SDXL Inpainting');
       console.log('✅ API keys are now securely stored server-side');
+      console.log('📱 Mobile optimization enabled:', isMobile);
     };
     
     checkEnv();
@@ -165,7 +554,7 @@ export default function Photobooth() {
     loadFaceApiModels().catch(error => {
       console.warn('Failed to load face detection models:', error);
     });
-  }, []);
+  }, [isMobile]);
 
   // Update current model type when config changes
   useEffect(() => {
@@ -298,7 +687,8 @@ export default function Photobooth() {
       
       console.log('📷 Photo captured:', {
         format: imageSrc.substring(0, 30) + '...',
-        size: imageSrc.length
+        size: imageSrc.length,
+        isMobile
       });
       
       setMediaData(imageSrc);
@@ -330,6 +720,7 @@ export default function Photobooth() {
     setUploadSuccess(false);
     setUploadAttempts(0);
     setDebugInfo(null);
+    setCapturedImageDimensions(null);
     setProcessingState({ stage: 'detecting', progress: 0, message: 'Ready...' });
     setCameraReady(false);
     
@@ -431,13 +822,13 @@ export default function Photobooth() {
         {state.stage === 'detecting' && (
           <>
             <div className="w-2 h-2 bg-purple-400 rounded-full animate-pulse"></div>
-            <span>🔍 Preparing your photo with AI magic...</span>
+            <span>🔍 {isMobile ? 'Mobile-optimized analysis...' : 'Preparing your photo with AI magic...'}</span>
           </>
         )}
         {state.stage === 'masking' && (
           <>
             <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce"></div>
-            <span>🎭 Crafting the perfect face blend...</span>
+            <span>🎭 {isMobile ? 'Enhanced mobile face blending...' : 'Crafting the perfect face blend...'}</span>
           </>
         )}
         {state.stage === 'generating' && (
@@ -529,29 +920,34 @@ export default function Photobooth() {
     try {
       setGenerationAttempts(prev => prev + 1);
 
-      console.log('🚀 Starting SDXL Inpainting generation process...');
+      console.log('🚀 Starting SDXL Inpainting generation process...', {
+        isMobile,
+        attempt: generationAttempts + 1
+      });
       console.log('📋 Generation details:', {
         prompt: currentConfig.global_prompt,
         modelType: currentModelType,
         faceMode: currentConfig.face_preservation_mode || 'preserve_face',
-        attempt: generationAttempts + 1
+        attempt: generationAttempts + 1,
+        mobileOptimized: isMobile
       });
 
-      await animateProgress(0, 15, 1000, 'detecting', 'Analyzing your photo...');
-      console.log('🖼️ Resizing image for SDXL optimal input...');
-      const processedContent = await resizeImage(capturedImageData, 1024);
+      await animateProgress(0, 15, 1000, 'detecting', isMobile ? 'Analyzing mobile photo...' : 'Analyzing your photo...');
+      console.log('🖼️ Smart resizing image for SDXL optimal input...');
+      const processedContent = await resizeImageSmart(capturedImageData, 1024);
       
       if (!processedContent || !processedContent.startsWith('data:image/')) {
         throw new Error('Image resizing failed - invalid output format');
       }
       
-      console.log('✅ Image resized for SDXL:', {
+      console.log('✅ Smart image resize for SDXL:', {
         originalSize: capturedImageData.length,
         processedSize: processedContent.length,
-        resolution: '1024x1024 optimized'
+        resolution: 'Optimized for SDXL',
+        mobileOptimized: isMobile
       });
 
-      await animateProgress(15, 35, 1500, 'masking', 'Detecting facial features...');
+      await animateProgress(15, 35, 1500, 'masking', isMobile ? 'Mobile-optimized face detection...' : 'Detecting facial features...');
       
       let maskData: string | undefined;
       const faceMode = currentConfig.face_preservation_mode || 'preserve_face';
@@ -564,18 +960,20 @@ export default function Photobooth() {
           img.src = processedContent;
         });
 
-        console.log('🔍 Generating face-only mask (excluding clothing)...');
-        maskData = await generateSmartFaceMask(
+        console.log('🔍 Generating mobile-optimized face-only mask (excluding clothing)...');
+        
+        // Use mobile-optimized mask generation
+        maskData = await generateMobileFaceMask(
           img,
           faceMode === 'preserve_face',
-          20,
-          1.2
+          isMobile ? 15 : 20, // Smaller feather for mobile
+          isMobile ? 1.1 : 1.2 // Less expansion for mobile
         );
         
-        console.log('✅ Smart face mask generated successfully for SDXL');
+        console.log('✅ Mobile-optimized face mask generated successfully for SDXL');
         
       } catch (faceDetectionError) {
-        console.warn('⚠️ Face detection failed, using fallback mask:', faceDetectionError);
+        console.warn('⚠️ Face detection failed, using mobile-optimized fallback mask:', faceDetectionError);
         
         const img = new Image();
         await new Promise<void>((resolve, reject) => {
@@ -584,13 +982,13 @@ export default function Photobooth() {
           img.src = processedContent;
         });
         
-        maskData = generateFallbackMask(img.naturalWidth, img.naturalHeight);
-        console.log('✅ Fallback mask generated for SDXL');
+        maskData = generateMobileFallbackMask(img.naturalWidth, img.naturalHeight);
+        console.log('✅ Mobile-optimized fallback mask generated for SDXL');
       }
 
       await animateProgress(35, 45, 800, 'generating', 'Preparing AI magic...');
       
-      console.log('🎨 Starting SDXL Inpainting generation...');
+      console.log('🎨 Starting SDXL Inpainting generation with mobile optimizations...');
       
       let aiContent: string;
 
@@ -628,13 +1026,18 @@ export default function Photobooth() {
         
         const basePrompt = currentConfig.global_prompt || 'AI Generated Portrait';
         const enhancedPrompt = faceMode === 'preserve_face' 
-          ? `${basePrompt}, photorealistic portrait, preserve facial features only, exclude clothing and collars, natural skin texture, detailed eyes and mouth, face-focused composition, no shirts or ties visible, professional headshot style, 8k quality`
-          : `${basePrompt}, creative character transformation, artistic interpretation, detailed facial features, no clothing elements from original`;
+          ? `${basePrompt}, photorealistic portrait, preserve facial features only, exclude clothing and collars, natural skin texture, detailed eyes and mouth, face-focused composition, no shirts or ties visible, professional headshot style, 8k quality${isMobile ? ', mobile photography, sharp details' : ''}`
+          : `${basePrompt}, creative character transformation, artistic interpretation, detailed facial features, no clothing elements from original${isMobile ? ', mobile-optimized rendering' : ''}`;
 
-        console.log(`🎭 Using ${faceMode} mode with clothing-free SDXL Inpainting...`);
-        console.log('🎯 Enhanced prompt (clothing exclusion):', enhancedPrompt);
+        console.log(`🎭 Using ${faceMode} mode with clothing-free SDXL Inpainting (mobile: ${isMobile})...`);
+        console.log('🎯 Enhanced prompt (clothing exclusion + mobile optimization):', enhancedPrompt);
         
-        await animateProgress(55, 70, 1500, 'generating', 'Processing with SDXL AI...');
+        await animateProgress(55, 70, 1500, 'generating', isMobile ? 'Processing with mobile-optimized SDXL...' : 'Processing with SDXL AI...');
+        
+        // Mobile-specific generation parameters
+        const mobileStrength = isMobile ? 
+          (faceMode === 'preserve_face' ? 0.35 : 0.65) : // Slightly lower strength for mobile
+          (faceMode === 'preserve_face' ? 0.4 : 0.7);
         
         const generationPromise = generateWithStability({
           prompt: enhancedPrompt,
@@ -642,8 +1045,8 @@ export default function Photobooth() {
           mode: 'inpaint',
           maskData: maskData,
           facePreservationMode: faceMode,
-          strength: faceMode === 'preserve_face' ? 0.4 : 0.7,
-          cfgScale: 8.0,
+          strength: mobileStrength,
+          cfgScale: isMobile ? 7.5 : 8.0, // Slightly lower CFG for mobile
           steps: 25,
           useControlNet: currentConfig.use_controlnet ?? true,
           controlNetType: currentConfig.controlnet_type || 'auto'
@@ -654,7 +1057,7 @@ export default function Photobooth() {
         });
 
         const progressPromise = async () => {
-          await animateProgress(70, 80, 3000, 'generating', 'Applying AI transformation...');
+          await animateProgress(70, 80, 3000, 'generating', isMobile ? 'Mobile AI transformation...' : 'Applying AI transformation...');
           await animateProgress(80, 88, 2500, 'generating', 'Refining details...');
           await animateProgress(88, 90, 1000, 'generating', 'Almost done...');
           return await generationPromise;
@@ -682,7 +1085,8 @@ export default function Photobooth() {
         contentType: typeof aiContent,
         length: aiContent.length,
         startsWithData: aiContent.startsWith('data:'),
-        preview: aiContent.substring(0, 100) + '...'
+        preview: aiContent.substring(0, 100) + '...',
+        mobileOptimized: isMobile
       });
 
       if (aiContent.startsWith('data:')) {
@@ -692,7 +1096,8 @@ export default function Photobooth() {
             console.log('✅ SDXL generated image loads successfully:', {
               width: testImg.width,
               height: testImg.height,
-              model: 'SDXL Inpainting'
+              model: 'SDXL Inpainting',
+              mobileOptimized: isMobile
             });
             resolve();
           };
@@ -715,7 +1120,8 @@ export default function Photobooth() {
         format: aiContent.startsWith('data:') ? 'data URL' : 'blob URL',
         size: aiContent.length,
         faceMode: faceMode,
-        model: 'SDXL Inpainting'
+        model: 'SDXL Inpainting',
+        mobileOptimized: isMobile
       });
 
       setProcessedMedia(aiContent);
@@ -738,29 +1144,32 @@ export default function Photobooth() {
           debugDetails = {
             issue: 'Edge Function Error',
             suggestion: 'Check STABILITY_API_KEY in Supabase Edge Functions',
-            errorType: 'server_error'
+            errorType: 'server_error',
+            mobile: isMobile
           };
         } else if (message.includes('api key') || message.includes('unauthorized') || message.includes('401')) {
           errorMessage = 'API authentication failed. Please check your Stability AI API key.';
-          debugDetails = { errorType: 'auth_error' };
+          debugDetails = { errorType: 'auth_error', mobile: isMobile };
         } else if (message.includes('credits') || message.includes('insufficient') || message.includes('402')) {
           errorMessage = 'Insufficient Stability AI credits. Please check your account balance.';
-          debugDetails = { errorType: 'credits_error' };
+          debugDetails = { errorType: 'credits_error', mobile: isMobile };
         } else if (message.includes('rate limit') || message.includes('429')) {
           errorMessage = 'Rate limit exceeded. Please wait a moment and try again.';
-          debugDetails = { errorType: 'rate_limit_error' };
+          debugDetails = { errorType: 'rate_limit_error', mobile: isMobile };
         } else if (message.includes('timeout')) {
           errorMessage = 'SDXL generation timed out. Please try again with a simpler prompt.';
-          debugDetails = { errorType: 'timeout_error' };
+          debugDetails = { errorType: 'timeout_error', mobile: isMobile };
         } else if (message.includes('face detection')) {
-          errorMessage = 'Face detection failed. Please ensure the photo shows clear facial features.';
-          debugDetails = { errorType: 'face_detection_error' };
+          errorMessage = isMobile ? 
+            'Mobile face detection failed. Please ensure good lighting and face the camera directly.' :
+            'Face detection failed. Please ensure the photo shows clear facial features.';
+          debugDetails = { errorType: 'face_detection_error', mobile: isMobile };
         } else if (message.includes('mask')) {
           errorMessage = 'Mask generation failed. Please try taking a new photo.';
-          debugDetails = { errorType: 'mask_error' };
+          debugDetails = { errorType: 'mask_error', mobile: isMobile };
         } else {
           errorMessage = `SDXL Inpainting error: ${error.message}`;
-          debugDetails = { errorType: 'general_error', originalMessage: error.message };
+          debugDetails = { errorType: 'general_error', originalMessage: error.message, mobile: isMobile };
         }
       }
 
@@ -771,9 +1180,10 @@ export default function Photobooth() {
     } finally {
       setProcessing(false);
     }
-  }, [currentModelType, generationAttempts, config, animateProgress]);
+  }, [currentModelType, generationAttempts, config, animateProgress, isMobile]);
 
-  const getMobileVideoConstraints = () => {
+  // Enhanced mobile video constraints for better face capture
+  const getMobileVideoConstraintsEnhanced = () => {
     if (!isMobile) {
       return {
         width: 1280,
@@ -782,11 +1192,25 @@ export default function Photobooth() {
       };
     }
 
+    // Optimized for mobile face capture
+    const userAgent = navigator.userAgent.toLowerCase();
+    const isIOS = /iphone|ipad|ipod/.test(userAgent);
+    
     return {
-      width: { ideal: 1920, max: 1920 },
-      height: { ideal: 1080, max: 1080 },
+      width: { ideal: isIOS ? 1280 : 1920, max: 1920 },
+      height: { ideal: isIOS ? 720 : 1080, max: 1920 },
       facingMode: "user",
-      frameRate: { ideal: 30, max: 30 }
+      frameRate: { ideal: 30, max: 30 },
+      // Enhanced mobile camera settings
+      ...(isIOS ? {
+        // iOS optimizations
+        exposureMode: "continuous",
+        whiteBalanceMode: "continuous",
+        focusMode: "continuous"
+      } : {
+        // Android optimizations  
+        aspectRatio: { ideal: 1.777 } // 16:9
+      })
     };
   };
 
@@ -834,6 +1258,13 @@ export default function Photobooth() {
                 )}
               </div>
               
+              {isMobile && (
+                <div className="bg-gray-800 px-3 py-1 rounded-lg text-xs flex items-center gap-1">
+                  <Smartphone className="w-3 h-3 text-blue-400" />
+                  <span className="text-blue-400">Mobile+</span>
+                </div>
+              )}
+              
               {processedMedia && (
                 <div className="bg-gray-800 px-3 py-1 rounded-lg text-xs flex items-center gap-1">
                   {uploading ? (
@@ -864,21 +1295,21 @@ export default function Photobooth() {
           <div className="mb-6 bg-gradient-to-br from-blue-900/20 to-purple-900/20 border border-blue-500/30 rounded-xl p-5">
             <h3 className="text-white font-semibold mb-4 flex items-center gap-2">
               <Lightbulb className="w-5 h-5 text-yellow-400" />
-              Get the Best SDXL Results
+              {isMobile ? 'Mobile SDXL Tips' : 'Get the Best SDXL Results'}
             </h3>
             <div className="space-y-3 text-sm">
               <div className="flex items-start gap-3">
                 <Lightbulb className="w-4 h-4 text-yellow-400 mt-0.5 flex-shrink-0" />
                 <div>
-                  <span className="text-white font-medium">Good Lighting:</span>
-                  <span className="text-gray-300"> Face the light source, avoid harsh shadows</span>
+                  <span className="text-white font-medium">{isMobile ? 'Good Mobile Lighting:' : 'Good Lighting:'}</span>
+                  <span className="text-gray-300"> {isMobile ? 'Use natural light, avoid harsh shadows on your face' : 'Face the light source, avoid harsh shadows'}</span>
                 </div>
               </div>
               <div className="flex items-start gap-3">
                 <Eye className="w-4 h-4 text-green-400 mt-0.5 flex-shrink-0" />
                 <div>
-                  <span className="text-white font-medium">Face the Camera:</span>
-                  <span className="text-gray-300"> Look directly at the lens for optimal face detection</span>
+                  <span className="text-white font-medium">{isMobile ? 'Hold Steady:' : 'Face the Camera:'}</span>
+                  <span className="text-gray-300"> {isMobile ? 'Keep phone steady, look directly at front camera' : 'Look directly at the lens for optimal face detection'}</span>
                 </div>
               </div>
               <div className="flex items-start gap-3">
@@ -891,8 +1322,8 @@ export default function Photobooth() {
               <div className="flex items-start gap-3">
                 <Wand2 className="w-4 h-4 text-purple-400 mt-0.5 flex-shrink-0" />
                 <div>
-                  <span className="text-white font-medium">SDXL Inpainting:</span>
-                  <span className="text-gray-300"> Advanced AI for superior face preservation</span>
+                  <span className="text-white font-medium">{isMobile ? 'Mobile SDXL:' : 'SDXL Inpainting:'}</span>
+                  <span className="text-gray-300"> {isMobile ? 'Optimized AI processing for mobile photos' : 'Advanced AI for superior face preservation'}</span>
                 </div>
               </div>
             </div>
@@ -932,11 +1363,19 @@ export default function Photobooth() {
                 ref={webcamRef}
                 audio={false}
                 screenshotFormat="image/png"
-                screenshotQuality={0.92}
-                className={`w-full h-full ${isMobile ? 'mobile-camera-preview ios-camera-fix object-cover' : 'object-cover'}`}
-                videoConstraints={getMobileVideoConstraints()}
+                screenshotQuality={0.95}
+                className={`w-full h-full ${
+                  isMobile 
+                    ? 'mobile-camera-preview ios-camera-fix android-camera-fix object-cover' 
+                    : 'object-cover'
+                }`}
+                videoConstraints={getMobileVideoConstraintsEnhanced()}
                 onUserMedia={() => {
-                  console.log('✅ Webcam initialized successfully with key:', cameraKey);
+                  console.log('✅ Webcam initialized successfully with mobile optimizations:', {
+                    cameraKey,
+                    isMobile,
+                    constraints: getMobileVideoConstraintsEnhanced()
+                  });
                   setCameraReady(true);
                   setError(null);
                 }}
@@ -948,7 +1387,7 @@ export default function Photobooth() {
             {processedMedia && (
               <div className="absolute top-3 left-3 bg-black/70 text-white px-2 py-1 rounded-lg text-xs flex items-center gap-1">
                 <Wand2 className="w-3 h-3 text-purple-400" />
-                <span className="text-purple-400">SDXL Generated</span>
+                <span className="text-purple-400">SDXL {isMobile ? 'Mobile+' : 'Generated'}</span>
                 {uploading && (
                   <RefreshCw className="w-3 h-3 text-blue-400 animate-spin ml-1" />
                 )}
@@ -958,12 +1397,13 @@ export default function Photobooth() {
             {processing && (
               <div className="absolute top-3 left-3 bg-black/70 text-white px-2 py-1 rounded-lg text-xs flex items-center gap-1">
                 <Wand2 className="w-3 h-3 text-purple-400 animate-spin" />
-                <span className="text-purple-400">AI Processing...</span>
+                <span className="text-purple-400">{isMobile ? 'Mobile AI...' : 'AI Processing...'}</span>
               </div>
             )}
             
             {isMobile && !mediaData && !processedMedia && !processing && (
               <div className="absolute bottom-3 right-3 bg-black/70 text-white px-2 py-1 rounded-lg text-xs flex items-center gap-1">
+                <Smartphone className="w-3 h-3 text-green-400" />
                 <span className="text-green-400">📱 Mobile Optimized</span>
               </div>
             )}
@@ -979,12 +1419,17 @@ export default function Photobooth() {
               style={{ backgroundColor: config?.primary_color || '#3B82F6' }}
             >
               <Camera className="w-7 h-7" />
-              {!cameraReady ? 'Initializing Camera...' : 'Take Photo'}
+              {!cameraReady ? 
+                (isMobile ? 'Initializing Mobile Camera...' : 'Initializing Camera...') : 
+                (isMobile ? 'Take Mobile Photo' : 'Take Photo')
+              }
             </button>
           ) : processing ? (
             <div className="text-center text-sm text-gray-400 bg-gray-800/50 rounded-lg p-4">
               <Wand2 className="w-6 h-6 animate-spin text-purple-400 mx-auto mb-2" />
-              <span className="text-purple-400">AI is creating your magic...</span>
+              <span className="text-purple-400">
+                {isMobile ? 'Mobile AI is creating your magic...' : 'AI is creating your magic...'}
+              </span>
             </div>
           ) : processedMedia ? (
             <button
@@ -992,7 +1437,7 @@ export default function Photobooth() {
               className="w-full flex items-center justify-center gap-2 py-4 bg-gray-600 rounded-xl hover:bg-gray-700 transition font-medium"
             >
               <Camera className="w-5 h-5" />
-              Take New Photo
+              {isMobile ? 'Take New Mobile Photo' : 'Take New Photo'}
             </button>
           ) : null}
 
@@ -1021,13 +1466,35 @@ export default function Photobooth() {
             <p><span className="text-blue-400 font-semibold">Mode:</span> {currentModelType}</p>
             <p><span className="text-green-400 font-semibold">Face Mode:</span> {config?.face_preservation_mode || 'preserve_face'}</p>
             <p><span className="text-yellow-400 font-semibold">Attempts:</span> {generationAttempts}/3</p>
-            <p><span className="text-indigo-400 font-semibold">Strength:</span> {config?.face_preservation_mode === 'preserve_face' ? '0.4' : '0.7'}</p>
-            <p><span className="text-pink-400 font-semibold">CFG Scale:</span> 8.0</p>
-            <p><span className="text-cyan-400 font-semibold">Resolution:</span> 1024x1024 SDXL Native</p>
+            <p><span className="text-indigo-400 font-semibold">Strength:</span> {
+              isMobile ? 
+                (config?.face_preservation_mode === 'preserve_face' ? '0.35 (Mobile)' : '0.65 (Mobile)') :
+                (config?.face_preservation_mode === 'preserve_face' ? '0.4' : '0.7')
+            }</p>
+            <p><span className="text-pink-400 font-semibold">CFG Scale:</span> {isMobile ? '7.5 (Mobile)' : '8.0'}</p>
+            <p><span className="text-cyan-400 font-semibold">Resolution:</span> {
+              capturedImageDimensions ? 
+                `${capturedImageDimensions.width}x${capturedImageDimensions.height} → SDXL Optimized` :
+                '1024x1024 SDXL Native'
+            }</p>
             <p><span className="text-orange-400 font-semibold">Steps:</span> 25 (SDXL Optimized)</p>
-            <p><span className="text-teal-400 font-semibold">Approach:</span> Face-Only (No Clothing)</p>
-            <p><span className="text-violet-400 font-semibold">Mask Settings:</span> 20px feather, 1.2x expansion, clothing excluded</p>
+            <p><span className="text-teal-400 font-semibold">Approach:</span> Face-Only (No Clothing) {isMobile && '+ Mobile+'}</p>
+            <p><span className="text-violet-400 font-semibold">Mask Settings:</span> {
+              isMobile ? '15px feather, 1.1x expansion, mobile-optimized' : '20px feather, 1.2x expansion, clothing excluded'
+            }</p>
             <p><span className="text-red-400 font-semibold">Camera Key:</span> {cameraKey} {isMobile && '(Mobile Mode)'}</p>
+            <p><span className="text-lime-400 font-semibold">Device:</span> {
+              isMobile ? 
+                `Mobile (${navigator.userAgent.includes('iPhone') ? 'iOS' : navigator.userAgent.includes('Android') ? 'Android' : 'Mobile'})` :
+                'Desktop'
+            }</p>
+            {capturedImageDimensions && (
+              <p><span className="text-emerald-400 font-semibold">Capture:</span> {
+                capturedImageDimensions.width}x{capturedImageDimensions.height} (AR: {
+                (capturedImageDimensions.width / capturedImageDimensions.height).toFixed(2)
+              }) {capturedImageDimensions.height > capturedImageDimensions.width ? '📱 Portrait' : '🖥️ Landscape'}
+              </p>
+            )}
             {debugInfo && (
               <div className="mt-2 p-2 bg-red-900/20 border border-red-500/30 rounded">
                 <p className="text-red-400 font-mono text-xs">
