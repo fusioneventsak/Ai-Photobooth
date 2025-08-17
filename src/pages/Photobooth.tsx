@@ -280,7 +280,7 @@ export default function Photobooth() {
       
       // Automatically start processing after capture
       setTimeout(() => {
-        processMedia();
+        processMediaWithCapturedPhoto(imageSrc);
       }, 500); // Small delay to show the processing state
       
     } catch (err) {
@@ -435,9 +435,9 @@ export default function Photobooth() {
     </div>
   );
 
-  // ENHANCED processMedia function with SDXL Inpainting (EXACT COPY from original)
-  const processMedia = React.useCallback(async () => {
-    if (!mediaData) {
+  // ENHANCED processMedia function with SDXL Inpainting - takes captured photo as parameter
+  const processMediaWithCapturedPhoto = React.useCallback(async (capturedImageData: string) => {
+    if (!capturedImageData) {
       setError('No photo captured');
       return;
     }
@@ -470,14 +470,14 @@ export default function Photobooth() {
       // Stage 1: Resize image for SDXL optimal input
       setProcessingState({ stage: 'detecting', progress: 10, message: 'Preparing image for SDXL...' });
       console.log('🖼️ Resizing image for SDXL optimal input...');
-      const processedContent = await resizeImage(mediaData, 1024);
+      const processedContent = await resizeImage(capturedImageData, 1024);
       
       if (!processedContent || !processedContent.startsWith('data:image/')) {
         throw new Error('Image resizing failed - invalid output format');
       }
       
       console.log('✅ Image resized for SDXL:', {
-        originalSize: mediaData.length,
+        originalSize: capturedImageData.length,
         processedSize: processedContent.length,
         resolution: '1024x1024 optimized'
       });
@@ -685,7 +685,7 @@ export default function Photobooth() {
     } finally {
       setProcessing(false);
     }
-  }, [mediaData, config, currentModelType, generationAttempts]);
+  }, [config, currentModelType, generationAttempts]);
 
   // Get mobile-optimized video constraints
   const getMobileVideoConstraints = () => {
