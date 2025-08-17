@@ -276,7 +276,13 @@ export default function Photobooth() {
       setGenerationAttempts(0);
       setShowInstructions(false);
       setDebugInfo(null);
-      setProcessingState({ stage: 'detecting', progress: 0, message: 'Ready to generate...' });
+      setProcessingState({ stage: 'detecting', progress: 0, message: 'Photo captured! Starting AI generation...' });
+      
+      // Automatically start processing after capture
+      setTimeout(() => {
+        processMedia();
+      }, 500); // Small delay to show the processing state
+      
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to capture photo';
       console.error('Error capturing photo:', err);
@@ -430,7 +436,7 @@ export default function Photobooth() {
   );
 
   // ENHANCED processMedia function with SDXL Inpainting (EXACT COPY from original)
-  const processMedia = async () => {
+  const processMedia = React.useCallback(async () => {
     if (!mediaData) {
       setError('No photo captured');
       return;
@@ -679,7 +685,7 @@ export default function Photobooth() {
     } finally {
       setProcessing(false);
     }
-  };
+  }, [mediaData, config, currentModelType, generationAttempts]);
 
   // Get mobile-optimized video constraints
   const getMobileVideoConstraints = () => {
@@ -834,13 +840,13 @@ export default function Photobooth() {
                   className={`w-full h-full ${isMobile ? 'object-cover' : 'object-contain'}`}
                 />
               )
-            ) : mediaData ? (
-              // Show captured photo
-              <img
-                src={mediaData}
-                alt="Captured"
-                className={`w-full h-full ${isMobile ? 'object-cover' : 'object-contain'}`}
-              />
+            ) : processing || (mediaData && !error) ? (
+              // Show processing screen (either actively processing or about to start)
+              <div className="w-full h-full bg-black flex items-center justify-center">
+                <div className="text-center max-w-sm mx-auto p-8">
+                  <ProcessingIndicator state={processingState} />
+                </div>
+              </div>
             ) : error ? (
               // Show error state
               <ErrorDisplay error={error} attempts={generationAttempts} />
@@ -863,15 +869,6 @@ export default function Photobooth() {
               />
             )}
             
-            {/* Enhanced Processing overlay */}
-            {processing && (
-              <div className="absolute inset-0 bg-black bg-opacity-85 flex items-center justify-center">
-                <div className="text-center max-w-sm mx-auto p-8">
-                  <ProcessingIndicator state={processingState} />
-                </div>
-              </div>
-            )}
-
             {/* Status badges */}
             {processedMedia && (
               <div className="absolute top-3 left-3 bg-black/70 text-white px-2 py-1 rounded-lg text-xs flex items-center gap-1">
@@ -883,8 +880,16 @@ export default function Photobooth() {
               </div>
             )}
             
+            {/* Processing badge */}
+            {processing && (
+              <div className="absolute top-3 left-3 bg-black/70 text-white px-2 py-1 rounded-lg text-xs flex items-center gap-1">
+                <Wand2 className="w-3 h-3 text-purple-400 animate-spin" />
+                <span className="text-purple-400">AI Processing...</span>
+              </div>
+            )}
+            
             {/* Mobile optimization indicator */}
-            {isMobile && !mediaData && !processedMedia && (
+            {isMobile && !mediaData && !processedMedia && !processing && (
               <div className="absolute bottom-3 right-3 bg-black/70 text-white px-2 py-1 rounded-lg text-xs flex items-center gap-1">
                 <span className="text-green-400">📱 Mobile Optimized</span>
               </div>
@@ -894,7 +899,7 @@ export default function Photobooth() {
 
         {/* Action Buttons */}
         <div className="space-y-4 mb-6">
-          {!mediaData ? (
+          {!mediaData && !processing && !processedMedia ? (
             <button
               onClick={capturePhoto}
               disabled={!!error || !webcamRef.current}
@@ -904,26 +909,20 @@ export default function Photobooth() {
               <Camera className="w-7 h-7" />
               {!webcamRef.current ? 'Initializing Camera...' : 'Take Photo'}
             </button>
-          ) : (
-            <div className="space-y-3">
-              <button
-                onClick={processMedia}
-                disabled={processing || !!error || generationAttempts >= 3}
-                className="w-full flex items-center justify-center gap-3 py-5 rounded-xl transition disabled:opacity-50 text-lg font-semibold shadow-lg"
-                style={{ backgroundColor: config?.primary_color || '#3B82F6' }}
-              >
-                <Wand2 className="w-7 h-7" />
-                {processing ? 'Creating AI Magic...' : 'Create AI Magic'}
-              </button>
-              <button
-                onClick={reset}
-                className="w-full flex items-center justify-center gap-2 py-3 bg-gray-600 rounded-xl hover:bg-gray-700 transition font-medium"
-              >
-                <Camera className="w-5 h-5" />
-                Take New Photo
-              </button>
+          ) : processing ? (
+            <div className="text-center text-sm text-gray-400 bg-gray-800/50 rounded-lg p-4">
+              <Wand2 className="w-6 h-6 animate-spin text-purple-400 mx-auto mb-2" />
+              <span className="text-purple-400">AI is creating your magic...</span>
             </div>
-          )}
+          ) : processedMedia ? (
+            <button
+              onClick={reset}
+              className="w-full flex items-center justify-center gap-2 py-4 bg-gray-600 rounded-xl hover:bg-gray-700 transition font-medium"
+            >
+              <Camera className="w-5 h-5" />
+              Take New Photo
+            </button>
+          ) : null}
 
           {/* Auto-upload status message */}
           {processedMedia && (
