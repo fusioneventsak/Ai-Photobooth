@@ -125,12 +125,29 @@ export default function Photobooth() {
         }
       }
       
+      /* Extra small screen breakpoint for header text */
+      @media (max-width: 400px) {
+        .xs\\:hidden {
+          display: none !important;
+        }
+        .xs\\:inline {
+          display: inline !important;
+        }
+      }
+      
       /* Desktop camera styling */
       @media (min-width: 769px) {
         .desktop-camera-container {
           aspect-ratio: 1;
           max-width: 500px;
           margin: 0 auto;
+        }
+        
+        .xs\\:hidden {
+          display: inline !important;
+        }
+        .xs\\:inline {
+          display: inline !important;
         }
       }
       
@@ -157,7 +174,7 @@ export default function Photobooth() {
     };
   }, []);
 
-  // FIXED: Smart aspect ratio handling for proper 16:9 desktop and 9:16 mobile
+  // OPTIMIZED: Smart aspect ratio with FACE-CENTRIC scaling
   const resizeImageSmart = (dataUrl: string): Promise<string> => {
     return new Promise((resolve, reject) => {
       const img = new Image();
@@ -183,19 +200,31 @@ export default function Photobooth() {
         // Store original dimensions for debug info
         setCapturedImageDimensions({ width, height });
         
-        // FIXED: Use proper target aspect ratios
-        let targetWidth, targetHeight, targetAspectRatio;
+        // FACE-CENTRIC: Choose dimensions that keep faces at optimal size
+        let targetWidth, targetHeight;
         
         if (isMobile) {
-          // Mobile: 9:16 (portrait) for better face area
-          targetAspectRatio = 9 / 16; // 0.5625
-          targetHeight = 1792; // High resolution for mobile
-          targetWidth = Math.round(targetHeight * targetAspectRatio); // 1008px
+          // Mobile: Use moderate 9:16 that doesn't shrink faces too much
+          if (inputAspectRatio > 0.7) {
+            // Input is closer to square/landscape - use smaller dimensions
+            targetHeight = 1280; // Reduced from 1792
+            targetWidth = Math.round(targetHeight * (9/16)); // 720px
+          } else {
+            // Input is already portrait - use larger dimensions to maintain face size
+            targetHeight = 1536; // Compromise size
+            targetWidth = Math.round(targetHeight * (9/16)); // 864px
+          }
         } else {
-          // Desktop: 16:9 (landscape) 
-          targetAspectRatio = 16 / 9; // 1.777
-          targetWidth = 1792; // High resolution for desktop
-          targetHeight = Math.round(targetWidth / targetAspectRatio); // 1008px
+          // Desktop: Use moderate 16:9 that keeps faces prominent
+          if (inputAspectRatio < 1.3) {
+            // Input is closer to square/portrait - use smaller dimensions  
+            targetWidth = 1280; // Reduced from 1792
+            targetHeight = Math.round(targetWidth / (16/9)); // 720px
+          } else {
+            // Input is already landscape - use larger dimensions
+            targetWidth = 1536; // Compromise size
+            targetHeight = Math.round(targetWidth / (16/9)); // 864px
+          }
         }
 
         canvas.width = targetWidth;
@@ -209,30 +238,41 @@ export default function Photobooth() {
         ctx.fillStyle = '#2a2a2a';
         ctx.fillRect(0, 0, targetWidth, targetHeight);
         
-        // Calculate scaling to fit image into target aspect ratio without distortion
+        // FACE-CENTRIC SCALING: Prioritize maintaining face size over filling canvas
+        let scaledWidth, scaledHeight, offsetX, offsetY;
+        
+        // Calculate two possible scales
         const scaleToFitWidth = targetWidth / width;
         const scaleToFitHeight = targetHeight / height;
-        const scale = Math.min(scaleToFitWidth, scaleToFitHeight);
         
-        const scaledWidth = width * scale;
-        const scaledHeight = height * scale;
+        // FACE-PRIORITY: Use the larger scale to keep faces bigger
+        // This may crop some background but preserves face detail
+        const facePreservingScale = Math.max(scaleToFitWidth, scaleToFitHeight);
         
-        // Center the image
-        const offsetX = (targetWidth - scaledWidth) / 2;
-        const offsetY = (targetHeight - scaledHeight) / 2;
+        // But cap it to prevent excessive cropping
+        const maxScale = 1.2; // Don't scale up more than 20%
+        const finalScale = Math.min(facePreservingScale, maxScale);
         
-        // Draw with perfect aspect ratio preservation
+        scaledWidth = width * finalScale;
+        scaledHeight = height * finalScale;
+        
+        // Center the scaled image (may crop edges but preserves face)
+        offsetX = (targetWidth - scaledWidth) / 2;
+        offsetY = (targetHeight - scaledHeight) / 2;
+        
+        // Draw with face-preserving scale
         ctx.drawImage(img, offsetX, offsetY, scaledWidth, scaledHeight);
         
         const result = canvas.toDataURL('image/png', 0.98);
         
-        console.log('✅ Smart aspect ratio resize completed:', {
+        console.log('✅ Face-centric resize completed:', {
           originalSize: `${width}x${height}`,
           targetSize: `${targetWidth}x${targetHeight}`,
-          targetAspectRatio: targetAspectRatio.toFixed(3),
-          scale: scale.toFixed(3),
+          inputAspectRatio: inputAspectRatio.toFixed(3),
+          finalScale: finalScale.toFixed(3),
           scaledSize: `${Math.round(scaledWidth)}x${Math.round(scaledHeight)}`,
-          centered: `${Math.round(offsetX)}, ${Math.round(offsetY)}`,
+          offset: `${Math.round(offsetX)}, ${Math.round(offsetY)}`,
+          facePreserving: finalScale > Math.min(scaleToFitWidth, scaleToFitHeight),
           isMobile,
           dataSize: `${(result.length / 1024).toFixed(1)}KB`
         });
@@ -311,9 +351,9 @@ export default function Photobooth() {
         const centerX = box.x + box.width / 2;
         const centerY = box.y + box.height / 2;
         
-        // CRITICAL: Much larger expansion to include forehead and full head
-        const mobileExpansion = isMobile ? expansionFactor * 1.3 : expansionFactor; // 1.95x total
-        const mobileFeather = isMobile ? featherRadius * 1.5 : featherRadius;
+        // CRITICAL: Much larger expansion to maintain face prominence in new aspect ratios
+        const mobileExpansion = isMobile ? expansionFactor * 1.4 : expansionFactor; // 2.1x total for mobile
+        const mobileFeather = isMobile ? featherRadius * 1.2 : featherRadius;
         
         // FULL HEAD coverage including forehead, hair, and chin
         const faceWidth = box.width * mobileExpansion;
@@ -364,15 +404,15 @@ export default function Photobooth() {
           return gradient;
         };
 
-        // Apply FULL HEAD preservation mask
-        const coreRadius = Math.min(faceWidth, faceHeight) * 0.3; // Larger core for full head
+        // Apply ENHANCED face-centric mask for prominence
+        const coreRadius = Math.min(faceWidth, faceHeight) * 0.35; // Much larger core
         const blendRadius = coreRadius + mobileFeather;
         
         ctx.fillStyle = createFullHeadGradient(coreRadius, blendRadius);
         ctx.beginPath();
         ctx.ellipse(
           centerX, adjustedCenterY, // Use adjusted center for forehead
-          faceWidth * 0.6, faceHeight * 0.65, // Larger mask, taller for forehead
+          faceWidth * 0.65, faceHeight * 0.7, // Even larger mask for face prominence
           0, 0, Math.PI * 2
         );
         ctx.fill();
@@ -977,12 +1017,12 @@ export default function Photobooth() {
 
         console.log('🔍 Generating mobile-optimized face-only mask (excluding clothing)...');
         
-        // Use mobile-optimized mask generation with FULL HEAD parameters
+        // Use mobile-optimized mask generation with ENHANCED FACE SIZE parameters
         maskData = await generateMobileFaceMask(
           img,
           faceMode === 'preserve_face',
-          isMobile ? 10 : 20, // Tighter feather for mobile precision
-          isMobile ? 1.6 : 1.2 // Much more generous expansion for full head coverage
+          isMobile ? 8 : 20, // Even tighter feather for precision
+          isMobile ? 1.8 : 1.4 // MUCH larger expansion to maintain face prominence
         );
         
         console.log('✅ Mobile-optimized face mask generated successfully for SDXL');
@@ -1049,10 +1089,10 @@ export default function Photobooth() {
         
         await animateProgress(55, 70, 1500, 'generating', isMobile ? 'Processing with mobile-optimized SDXL...' : 'Processing with SDXL AI...');
         
-        // Mobile-specific generation parameters for MAXIMUM face preservation
+        // Mobile-specific generation parameters for FACE SIZE preservation
         const mobileStrength = isMobile ? 
-          (faceMode === 'preserve_face' ? 0.2 : 0.5) : // Even lower strength for mobile
-          (faceMode === 'preserve_face' ? 0.4 : 0.7);
+          (faceMode === 'preserve_face' ? 0.15 : 0.45) : // Even gentler for face size retention
+          (faceMode === 'preserve_face' ? 0.3 : 0.6); // Reduced desktop strength too
         
         const generationPromise = generateWithStability({
           prompt: enhancedPrompt,
@@ -1061,7 +1101,7 @@ export default function Photobooth() {
           maskData: maskData,
           facePreservationMode: faceMode,
           strength: mobileStrength,
-          cfgScale: isMobile ? 6.5 : 8.0, // Lower CFG for more natural mobile results
+          cfgScale: isMobile ? 6.0 : 7.5, // Lower CFG for more natural face-centric results
           steps: 25,
           useControlNet: currentConfig.use_controlnet ?? true,
           controlNetType: currentConfig.controlnet_type || 'auto'
@@ -1239,59 +1279,66 @@ export default function Photobooth() {
           borderBottomColor: config?.primary_color ? `${config.primary_color}30` : undefined
         }}
       >
-        <div className="container mx-auto px-4 py-4 max-w-lg">
-          <div className="flex items-center justify-between">
-            <h1 className="text-2xl font-bold flex items-center gap-3">
-              <Camera className="w-8 h-8" style={{ color: config?.primary_color }} />
-              {config?.brand_name || 'AI Photobooth'}
+        <div className="container mx-auto px-3 py-3 max-w-lg">
+          <div className="flex items-center justify-between gap-2">
+            <h1 className="text-lg sm:text-2xl font-bold flex items-center gap-2 min-w-0 flex-shrink">
+              <Camera className="w-6 h-6 sm:w-8 sm:h-8 flex-shrink-0" style={{ color: config?.primary_color }} />
+              <span className="truncate">{config?.brand_name || 'AI Photobooth'}</span>
             </h1>
-            <div className="flex items-center gap-2">
-              <div className="bg-gray-800 px-3 py-1 rounded-lg text-xs flex items-center gap-1">
+            <div className="flex items-center gap-1 flex-wrap">
+              <div className="bg-gray-800 px-2 py-1 rounded-lg text-xs flex items-center gap-1 whitespace-nowrap">
                 {currentModelType === 'video' ? (
                   <>
-                    <Video className="w-3 h-3 text-purple-400" />
-                    <span>Video Mode</span>
+                    <Video className="w-3 h-3 text-purple-400 flex-shrink-0" />
+                    <span className="hidden xs:inline">Video Mode</span>
+                    <span className="xs:hidden">Video</span>
                   </>
                 ) : (
                   <>
-                    <ImageIcon className="w-3 h-3 text-blue-400" />
-                    <span>SDXL Image</span>
+                    <ImageIcon className="w-3 h-3 text-blue-400 flex-shrink-0" />
+                    <span className="hidden xs:inline">SDXL Image</span>
+                    <span className="xs:hidden">SDXL</span>
                   </>
                 )}
               </div>
               
-              <div className="bg-gray-800 px-3 py-1 rounded-lg text-xs flex items-center gap-1">
+              <div className="bg-gray-800 px-2 py-1 rounded-lg text-xs flex items-center gap-1 whitespace-nowrap">
                 {config?.face_preservation_mode === 'preserve_face' ? (
                   <>
-                    <Users className="w-3 h-3 text-green-400" />
-                    <span className="text-green-400">Face Preserved</span>
+                    <Users className="w-3 h-3 text-green-400 flex-shrink-0" />
+                    <span className="text-green-400 hidden xs:inline">Face Preserved</span>
+                    <span className="text-green-400 xs:hidden">Face+</span>
                   </>
                 ) : (
                   <>
-                    <UserX className="w-3 h-3 text-orange-400" />
-                    <span className="text-orange-400">New Character</span>
+                    <UserX className="w-3 h-3 text-orange-400 flex-shrink-0" />
+                    <span className="text-orange-400 hidden xs:inline">New Character</span>
+                    <span className="text-orange-400 xs:hidden">New</span>
                   </>
                 )}
               </div>
               
               {isMobile && (
-                <div className="bg-gray-800 px-3 py-1 rounded-lg text-xs flex items-center gap-1">
-                  <Smartphone className="w-3 h-3 text-blue-400" />
-                  <span className="text-blue-400">Mobile+</span>
+                <div className="bg-gray-800 px-2 py-1 rounded-lg text-xs flex items-center gap-1 whitespace-nowrap">
+                  <Smartphone className="w-3 h-3 text-blue-400 flex-shrink-0" />
+                  <span className="text-blue-400 hidden xs:inline">Mobile+</span>
+                  <span className="text-blue-400 xs:hidden">📱</span>
                 </div>
               )}
               
               {processedMedia && (
-                <div className="bg-gray-800 px-3 py-1 rounded-lg text-xs flex items-center gap-1">
+                <div className="bg-gray-800 px-2 py-1 rounded-lg text-xs flex items-center gap-1 whitespace-nowrap">
                   {uploading ? (
                     <>
-                      <RefreshCw className="w-3 h-3 animate-spin text-blue-400" />
-                      <span className="text-blue-400">Saving...</span>
+                      <RefreshCw className="w-3 h-3 animate-spin text-blue-400 flex-shrink-0" />
+                      <span className="text-blue-400 hidden xs:inline">Saving...</span>
+                      <span className="text-blue-400 xs:hidden">💾</span>
                     </>
                   ) : uploadSuccess ? (
                     <>
-                      <ImageIcon className="w-3 h-3 text-green-400" />
-                      <span className="text-green-400">Saved!</span>
+                      <ImageIcon className="w-3 h-3 text-green-400 flex-shrink-0" />
+                      <span className="text-green-400 hidden xs:inline">Saved!</span>
+                      <span className="text-green-400 xs:hidden">✅</span>
                     </>
                   ) : null}
                 </div>
@@ -1299,7 +1346,7 @@ export default function Photobooth() {
             </div>
           </div>
           {config?.global_prompt && (
-            <p className="text-gray-300 text-sm mt-2 px-2">
+            <p className="text-gray-300 text-xs sm:text-sm mt-2 px-1 leading-relaxed break-words">
               {config.global_prompt}
             </p>
           )}
@@ -1482,21 +1529,21 @@ export default function Photobooth() {
             <p><span className="text-blue-400 font-semibold">Mode:</span> {currentModelType}</p>
             <p><span className="text-green-400 font-semibold">Face Mode:</span> {config?.face_preservation_mode || 'preserve_face'}</p>
             <p><span className="text-yellow-400 font-semibold">Attempts:</span> {generationAttempts}/3</p>
-            <            p><span className="text-indigo-400 font-semibold">Strength:</span> {
+            <            <p><span className="text-indigo-400 font-semibold">Strength:</span> {
               isMobile ? 
-                (config?.face_preservation_mode === 'preserve_face' ? '0.25 (Mobile Max)' : '0.55 (Mobile)') :
-                (config?.face_preservation_mode === 'preserve_face' ? '0.4' : '0.7')
+                (config?.face_preservation_mode === 'preserve_face' ? '0.15 (Face Size+)' : '0.45 (Mobile)') :
+                (config?.face_preservation_mode === 'preserve_face' ? '0.3 (Gentle)' : '0.6')
             }</p>
-            <p><span className="text-pink-400 font-semibold">CFG Scale:</span> {isMobile ? '6.5 (Mobile Gentle)' : '8.0'}</p>
+            <p><span className="text-pink-400 font-semibold">CFG Scale:</span> {isMobile ? '6.0 (Face-Centric)' : '7.5'}</p>
             <p><span className="text-cyan-400 font-semibold">Resolution:</span> {
               capturedImageDimensions ? 
-                `${capturedImageDimensions.width}x${capturedImageDimensions.height} → SDXL Optimized` :
-                '1024x1024 SDXL Native'
+                `${capturedImageDimensions.width}x${capturedImageDimensions.height} → ${isMobile ? 'Face-Centric 9:16' : 'Face-Centric 16:9'}` :
+                `${isMobile ? 'Dynamic 9:16' : 'Dynamic 16:9'} (Face-Optimized)`
             }</p>
             <p><span className="text-orange-400 font-semibold">Steps:</span> 25 (SDXL Optimized)</p>
             <p><span className="text-teal-400 font-semibold">Approach:</span> Face-Only (No Clothing) {isMobile && '+ Mobile+'}</p>
             <p><span className="text-violet-400 font-semibold">Mask Settings:</span> {
-              isMobile ? '12px feather, 1.4x expansion, MAXIMUM mobile preservation' : '20px feather, 1.2x expansion, clothing excluded'
+              isMobile ? '8px feather, 1.8x expansion, FACE SIZE optimized' : '20px feather, 1.4x expansion, face-centric'
             }</p>
             <p><span className="text-red-400 font-semibold">Camera Key:</span> {cameraKey} {isMobile && '(Mobile Mode)'}</p>
             <p><span className="text-lime-400 font-semibold">Device:</span> {
