@@ -115,8 +115,8 @@ export default function Photobooth() {
     };
   }, []);
 
-  // ORIGINAL WORKING: Simple image resizing for SDXL optimal input (from working code)
-  const resizeImage = (dataUrl: string, targetSize: number = 1024): Promise<string> => {
+  // MOBILE 9:16 TO 16:9 CONVERSION: Create landscape generations from portrait mobile photos
+  const resizeImageForGeneration = (dataUrl: string): Promise<string> => {
     return new Promise((resolve, reject) => {
       const img = new Image();
       img.onload = () => {
@@ -129,30 +129,60 @@ export default function Photobooth() {
         }
 
         const { width, height } = img;
-        let newWidth = targetSize;
-        let newHeight = targetSize;
+        const inputAspectRatio = width / height;
         
-        // Maintain aspect ratio like the original working code
-        if (width > height) {
-          newHeight = Math.round((height / width) * targetSize);
-        } else {
-          newWidth = Math.round((width / height) * targetSize);
-        }
-
-        canvas.width = newWidth;
-        canvas.height = newHeight;
-
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';
-        ctx.drawImage(img, 0, 0, newWidth, newHeight);
-        
-        console.log('✅ Image resized for SDXL (original method):', {
-          originalSize: `${width}x${height}`,
-          newSize: `${newWidth}x${newHeight}`,
-          targetSize
+        console.log('📐 Original capture dimensions:', {
+          width,
+          height,
+          aspectRatio: inputAspectRatio.toFixed(2),
+          isMobile,
+          isPortrait: height > width
         });
         
-        resolve(canvas.toDataURL('image/png', 0.95));
+        // CRITICAL: Always generate 16:9 landscape images for full AI generations
+        const targetWidth = 1024;
+        const targetHeight = 576; // 16:9 aspect ratio (1024/576 = 1.778)
+        
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+
+        // High quality settings
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        
+        // Fill with neutral background
+        ctx.fillStyle = '#1a1a1a';
+        ctx.fillRect(0, 0, targetWidth, targetHeight);
+        
+        // Calculate scaling to fit mobile portrait into landscape canvas
+        const scaleToFitWidth = targetWidth / width;
+        const scaleToFitHeight = targetHeight / height;
+        const scale = Math.min(scaleToFitWidth, scaleToFitHeight);
+        
+        const scaledWidth = width * scale;
+        const scaledHeight = height * scale;
+        
+        // Center the mobile image in the landscape canvas
+        const offsetX = (targetWidth - scaledWidth) / 2;
+        const offsetY = (targetHeight - scaledHeight) / 2;
+        
+        // Draw the mobile image centered in landscape format
+        ctx.drawImage(img, offsetX, offsetY, scaledWidth, scaledHeight);
+        
+        const result = canvas.toDataURL('image/png', 0.95);
+        
+        console.log('✅ Mobile 9:16 → 16:9 conversion completed:', {
+          originalSize: `${width}x${height}`,
+          targetSize: `${targetWidth}x${targetHeight}`,
+          scale: scale.toFixed(3),
+          scaledSize: `${Math.round(scaledWidth)}x${Math.round(scaledHeight)}`,
+          offset: `${Math.round(offsetX)}, ${Math.round(offsetY)}`,
+          conversion: height > width ? '9:16 Portrait → 16:9 Landscape' : 'Landscape maintained',
+          isMobile,
+          dataSize: `${(result.length / 1024).toFixed(1)}KB`
+        });
+        
+        resolve(result);
       };
       
       img.onerror = () => reject(new Error('Failed to load image for resizing'));
@@ -546,19 +576,20 @@ export default function Photobooth() {
       });
 
       await animateProgress(0, 15, 1000, 'detecting', 'Analyzing your photo...');
-      console.log('🖼️ Resizing image for SDXL optimal input (original method)...');
+      console.log('🖼️ Converting mobile 9:16 portrait to 16:9 landscape generation...');
       
-      // ORIGINAL WORKING: Use the simple resizeImage method that works
-      const processedContent = await resizeImage(capturedImageData, 1024);
+      // MOBILE TO LANDSCAPE: Convert mobile portrait photos to landscape AI generations
+      const processedContent = await resizeImageForGeneration(capturedImageData);
       
       if (!processedContent || !processedContent.startsWith('data:image/')) {
-        throw new Error('Image resizing failed - invalid output format');
+        throw new Error('Image conversion failed - invalid output format');
       }
       
-      console.log('✅ Image resized for SDXL (original method):', {
+      console.log('✅ Mobile to landscape conversion for SDXL:', {
         originalSize: capturedImageData.length,
         processedSize: processedContent.length,
-        resolution: '1024x1024 optimized'
+        resolution: '1024x576 (16:9 landscape)',
+        conversion: 'Mobile portrait → Landscape AI generation'
       });
 
       await animateProgress(15, 35, 1500, 'masking', 'Detecting facial features...');
@@ -641,13 +672,13 @@ export default function Photobooth() {
         
         const basePrompt = currentConfig.global_prompt || 'AI Generated Portrait';
         
-        // ORIGINAL WORKING: Use the exact same prompt enhancement as the working code
+        // LANDSCAPE GENERATION: Enhanced prompt for 16:9 landscape AI generations
         const enhancedPrompt = faceMode === 'preserve_face' 
-          ? `${basePrompt}, photorealistic portrait, preserve facial features only, exclude clothing and collars, natural skin texture, detailed eyes and mouth, face-focused composition, no shirts or ties visible, professional headshot style, 8k quality`
-          : `${basePrompt}, creative character transformation, artistic interpretation, detailed facial features, no clothing elements from original`;
+          ? `${basePrompt}, photorealistic portrait, preserve facial features only, exclude clothing and collars, natural skin texture, detailed eyes and mouth, cinematic composition, professional photography, 16:9 landscape format, wide shot, environmental background, no shirts or ties visible, 8k quality`
+          : `${basePrompt}, creative character transformation, artistic interpretation, detailed facial features, cinematic landscape composition, 16:9 wide format, environmental setting, no clothing elements from original`;
 
-        console.log(`🎭 Using ${faceMode} mode with clothing-free SDXL Inpainting (original method)...`);
-        console.log('🎯 Enhanced prompt (original method):', enhancedPrompt);
+        console.log(`🎭 Using ${faceMode} mode with 16:9 landscape SDXL generation (original working method)...`);
+        console.log('🎯 Enhanced landscape prompt:', enhancedPrompt);
         
         await animateProgress(55, 70, 1500, 'generating', 'Processing with SDXL AI...');
         
@@ -726,21 +757,22 @@ export default function Photobooth() {
 
       await animateProgress(98, 100, 600, 'uploading', 'Finalizing magic...');
 
-      console.log('✅ SDXL Inpainting generation completed successfully (original method):', {
+      console.log('✅ SDXL Inpainting generation completed successfully (16:9 landscape method):', {
         type: currentModelType,
         format: aiContent.startsWith('data:') ? 'data URL' : 'blob URL',
         size: aiContent.length,
         faceMode: faceMode,
-        model: 'SDXL Inpainting - Original Working Method'
+        aspectRatio: '16:9 landscape',
+        model: 'SDXL Inpainting - Mobile Portrait to Landscape'
       });
 
       setProcessedMedia(aiContent);
       setError(null);
 
-      console.log('🎯 SDXL Inpainting process completed (original method) - automatic upload should trigger via useEffect');
+      console.log('🎯 SDXL 16:9 landscape generation process completed - automatic upload should trigger via useEffect');
 
     } catch (error) {
-      console.error('❌ === SDXL INPAINTING GENERATION FAILED (ORIGINAL METHOD) ===');
+              console.log('❌ === SDXL 16:9 LANDSCAPE GENERATION FAILED ===');
       console.error('📊 Generation error details:', error);
 
       let errorMessage = 'Failed to generate AI content with SDXL Inpainting. Please try again.';
@@ -900,15 +932,15 @@ export default function Photobooth() {
               <div className="flex items-start gap-3">
                 <User className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" />
                 <div>
-                  <span className="text-white font-medium">Face-Only Preservation:</span>
-                  <span className="text-gray-300"> Only facial features preserved, clothing like collars and ties excluded</span>
+                  <span className="text-white font-medium">Mobile to Landscape:</span>
+                  <span className="text-gray-300"> Portrait mobile photos generate full 16:9 landscape AI images</span>
                 </div>
               </div>
               <div className="flex items-start gap-3">
                 <Wand2 className="w-4 h-4 text-purple-400 mt-0.5 flex-shrink-0" />
                 <div>
-                  <span className="text-white font-medium">SDXL Inpainting:</span>
-                  <span className="text-gray-300"> Advanced AI for superior face preservation</span>
+                  <span className="text-white font-medium">16:9 Cinematic:</span>
+                  <span className="text-gray-300"> Creates wide landscape compositions with environmental backgrounds</span>
                 </div>
               </div>
             </div>
@@ -1033,16 +1065,16 @@ export default function Photobooth() {
 
         {(process.env.NODE_ENV === 'development' || debugInfo) && (
           <div className="mt-4 p-4 bg-gray-800/50 rounded-lg text-xs text-gray-400 space-y-2">
-            <p><span className="text-purple-400 font-semibold">Model:</span> SDXL Inpainting + ControlNet (Original Method)</p>
+            <p><span className="text-purple-400 font-semibold">Model:</span> SDXL 16:9 Landscape + ControlNet</p>
             <p><span className="text-blue-400 font-semibold">Mode:</span> {currentModelType}</p>
             <p><span className="text-green-400 font-semibold">Face Mode:</span> {config?.face_preservation_mode || 'preserve_face'}</p>
             <p><span className="text-yellow-400 font-semibold">Attempts:</span> {generationAttempts}/3</p>
             <p><span className="text-indigo-400 font-semibold">Strength:</span> {config?.face_preservation_mode === 'preserve_face' ? '0.4 (Original)' : '0.7 (Original)'}</p>
             <p><span className="text-pink-400 font-semibold">CFG Scale:</span> 8.0 (Original)</p>
-            <p><span className="text-cyan-400 font-semibold">Resolution:</span> 1024x1024 SDXL Native (Original)</p>
+            <p><span className="text-cyan-400 font-semibold">Resolution:</span> 1024x576 (16:9 Landscape)</p>
             <p><span className="text-orange-400 font-semibold">Steps:</span> 25 (Original)</p>
-            <p><span className="text-teal-400 font-semibold">Approach:</span> Face-Only (No Clothing) - Original Working Method</p>
-            <p><span className="text-violet-400 font-semibold">Mask Settings:</span> 20px feather, 1.2x expansion (Original Working Settings)</p>
+            <p><span className="text-teal-400 font-semibold">Approach:</span> Mobile Portrait → 16:9 Landscape AI Generation</p>
+            <p><span className="text-violet-400 font-semibold">Conversion:</span> 9:16 Mobile → 16:9 Cinematic Wide</p>
             <p><span className="text-red-400 font-semibold">Camera Key:</span> {cameraKey} {isMobile && '(Mobile Mode)'}</p>
             {debugInfo && (
               <div className="mt-2 p-2 bg-red-900/20 border border-red-500/30 rounded">
