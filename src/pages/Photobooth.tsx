@@ -116,7 +116,7 @@ export default function Photobooth() {
   }, []);
 
   // Enhanced image resizing for SDXL optimal input
-  const resizeImageSmart = (dataUrl: string, targetSize: number = 1024): Promise<string> => {
+  const resizeImage = (dataUrl: string, targetSize: number = 1024): Promise<string> => {
     return new Promise((resolve, reject) => {
       const img = new Image();
       img.onload = () => {
@@ -129,56 +129,20 @@ export default function Photobooth() {
         }
 
         const { width, height } = img;
+        let newWidth = targetSize;
+        let newHeight = targetSize;
         
-        // IMPROVED: Preserve aspect ratio for mobile photos
-        // Only force square for desktop to maintain SDXL compatibility
-        let newWidth, newHeight;
-        
-        if (isMobile && Math.abs(width - height) / Math.max(width, height) > 0.3) {
-          // Mobile with significant aspect ratio difference - preserve ratio
-          const aspectRatio = width / height;
-          
-          if (width > height) {
-            // Landscape
-            newWidth = targetSize;
-            newHeight = Math.round(targetSize / aspectRatio);
-          } else {
-            // Portrait (vertical) - common on mobile
-            newHeight = targetSize;
-            newWidth = Math.round(targetSize * aspectRatio);
-          }
-          
-          // Ensure minimum dimension for SDXL
-          const minDim = 512;
-          if (newWidth < minDim) {
-            const scale = minDim / newWidth;
-            newWidth = minDim;
-            newHeight = Math.round(newHeight * scale);
-          }
-          if (newHeight < minDim) {
-            const scale = minDim / newHeight;
-            newHeight = minDim;
-            newWidth = Math.round(newWidth * scale);
-          }
+        if (width > height) {
+          newHeight = Math.round((height / width) * targetSize);
         } else {
-          // Desktop or near-square images - use square format
-          newWidth = targetSize;
-          newHeight = targetSize;
+          newWidth = Math.round((width / height) * targetSize);
         }
 
         canvas.width = newWidth;
         canvas.height = newHeight;
 
-        // Enhanced smoothing for mobile
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
-        
-        // Fill background for non-square images
-        if (newWidth !== newHeight) {
-          ctx.fillStyle = '#000000';
-          ctx.fillRect(0, 0, newWidth, newHeight);
-        }
-        
         ctx.drawImage(img, 0, 0, newWidth, newHeight);
         
         resolve(canvas.toDataURL('image/png', 0.95));
@@ -575,7 +539,7 @@ export default function Photobooth() {
 
       await animateProgress(0, 15, 1000, 'detecting', 'Analyzing your photo...');
       console.log('🖼️ Resizing image for SDXL optimal input...');
-      const processedContent = await resizeImageSmart(capturedImageData, 1024);
+      const processedContent = await resizeImage(capturedImageData, 1024);
       
       if (!processedContent || !processedContent.startsWith('data:image/')) {
         throw new Error('Image resizing failed - invalid output format');
@@ -605,8 +569,7 @@ export default function Photobooth() {
           img,
           faceMode === 'preserve_face',
           20,
-          1.2,
-          isMobile
+          1.2
         );
         
         console.log('✅ Smart face mask generated successfully for SDXL');
@@ -621,7 +584,7 @@ export default function Photobooth() {
           img.src = processedContent;
         });
         
-        maskData = generateFallbackMask(img.naturalWidth, img.naturalHeight, isMobile);
+        maskData = generateFallbackMask(img.naturalWidth, img.naturalHeight);
         console.log('✅ Fallback mask generated for SDXL');
       }
 
@@ -810,7 +773,7 @@ export default function Photobooth() {
     }
   }, [currentModelType, generationAttempts, config, animateProgress]);
 
-  const getMobileVideoConstraintsEnhanced = () => {
+  const getMobileVideoConstraints = () => {
     if (!isMobile) {
       return {
         width: 1280,
@@ -819,17 +782,11 @@ export default function Photobooth() {
       };
     }
 
-    // Optimized for vertical mobile photography
     return {
-      width: { ideal: 1080, max: 1920 }, // Better for vertical faces
-      height: { ideal: 1920, max: 1920 }, // Portrait aspect ratio
+      width: { ideal: 1920, max: 1920 },
+      height: { ideal: 1080, max: 1080 },
       facingMode: "user",
-      frameRate: { ideal: 30, max: 30 },
-      // Additional mobile optimizations
-      aspectRatio: { ideal: 0.5625 }, // 9:16 for vertical
-      exposureMode: "continuous",
-      whiteBalanceMode: "continuous",
-      focusMode: "continuous"
+      frameRate: { ideal: 30, max: 30 }
     };
   };
 
@@ -977,7 +934,7 @@ export default function Photobooth() {
                 screenshotFormat="image/png"
                 screenshotQuality={0.92}
                 className={`w-full h-full ${isMobile ? 'mobile-camera-preview ios-camera-fix object-cover' : 'object-cover'}`}
-                videoConstraints={getMobileVideoConstraintsEnhanced()}
+                videoConstraints={getMobileVideoConstraints()}
                 onUserMedia={() => {
                   console.log('✅ Webcam initialized successfully with key:', cameraKey);
                   setCameraReady(true);
