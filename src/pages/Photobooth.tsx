@@ -375,6 +375,8 @@ export default function Photobooth() {
       setProgressInterval(interval);
     });
   };
+
+  const getErrorIcon = (error: string) => {
     if (error.includes('API') || error.includes('key')) return '🔑';
     if (error.includes('credits') || error.includes('balance')) return '💳';
     if (error.includes('network') || error.includes('connection')) return '🌐';
