@@ -7,8 +7,15 @@ export interface ShareOptions {
   message?: string;
 }
 
-// Generate a shareable URL for a photo (frontend route)
+// Generate a shareable URL for a photo (Edge Function route for social media)
 export function getShareableUrl(photo: Photo): string {
+  // Use the Edge Function URL for sharing - this handles crawlers and redirects browsers
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  return `${supabaseUrl}/functions/v1/share?photoId=${photo.id}`;
+}
+
+// Generate a direct frontend URL for internal use
+export function getFrontendUrl(photo: Photo): string {
   return `${window.location.origin}/shared/${photo.id}`;
 }
 
