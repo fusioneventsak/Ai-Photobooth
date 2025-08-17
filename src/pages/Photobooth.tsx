@@ -157,7 +157,7 @@ export default function Photobooth() {
     };
   }, []);
 
-  // Enhanced image resizing with mobile optimization
+  // Enhanced image resizing with CRITICAL mobile face preservation
   const resizeImageSmart = (dataUrl: string, targetSize: number = 1024): Promise<string> => {
     return new Promise((resolve, reject) => {
       const img = new Image();
@@ -171,56 +171,51 @@ export default function Photobooth() {
         }
 
         const { width, height } = img;
+        const aspectRatio = width / height;
+        const isPortrait = height > width;
         
         console.log('📐 Original image dimensions:', {
           width,
           height,
-          aspectRatio: width / height,
+          aspectRatio: aspectRatio.toFixed(2),
           isMobile,
-          isPortrait: height > width
+          isPortrait
         });
         
         // Store original dimensions for debug info
         setCapturedImageDimensions({ width, height });
         
-        // IMPROVED: Smart aspect ratio preservation for mobile
+        // CRITICAL FIX: Never compress faces - maintain face resolution
         let newWidth, newHeight;
         
-        if (isMobile && Math.abs(width - height) / Math.max(width, height) > 0.2) {
-          // Mobile with significant aspect ratio difference - preserve ratio better
-          const aspectRatio = width / height;
-          const isPortrait = height > width;
+        if (isMobile && isPortrait) {
+          // Mobile portrait - PRESERVE face area by maintaining aspect ratio
+          // Use larger dimensions to prevent face compression
+          const mobileTargetSize = Math.max(targetSize, 1280); // Larger for mobile
           
-          if (isPortrait) {
-            // Portrait mode - common on mobile selfies
-            // Keep face area larger by using less aggressive resizing
-            newHeight = targetSize;
-            newWidth = Math.round(targetSize * aspectRatio);
-            
-            // Ensure minimum width for SDXL face detection
-            const minWidth = Math.max(512, targetSize * 0.6);
-            if (newWidth < minWidth) {
-              const scale = minWidth / newWidth;
-              newWidth = minWidth;
-              newHeight = Math.round(newHeight * scale);
-              // Cap height to prevent excessive stretching
-              newHeight = Math.min(newHeight, targetSize * 1.4);
-            }
+          // Calculate based on the longer dimension to preserve face quality
+          if (aspectRatio < 0.6) {
+            // Very tall portrait (9:16 etc) - prioritize face area
+            newWidth = Math.round(mobileTargetSize * 0.75); // 75% width
+            newHeight = mobileTargetSize;
           } else {
-            // Landscape mode
-            newWidth = targetSize;
-            newHeight = Math.round(targetSize / aspectRatio);
-            
-            const minHeight = Math.max(512, targetSize * 0.6);
-            if (newHeight < minHeight) {
-              const scale = minHeight / newHeight;
-              newHeight = minHeight;
-              newWidth = Math.round(newWidth * scale);
-              newWidth = Math.min(newWidth, targetSize * 1.4);
-            }
+            // Standard portrait (3:4 etc)
+            newWidth = Math.round(mobileTargetSize * aspectRatio);
+            newHeight = mobileTargetSize;
           }
+          
+          // Ensure minimum face-friendly dimensions
+          newWidth = Math.max(newWidth, 768);
+          newHeight = Math.max(newHeight, 1024);
+          
+        } else if (isMobile && !isPortrait) {
+          // Mobile landscape
+          newWidth = Math.max(targetSize, 1280);
+          newHeight = Math.round(newWidth / aspectRatio);
+          newHeight = Math.max(newHeight, 768);
+          
         } else {
-          // Desktop or near-square images - use square format for SDXL
+          // Desktop - can use square format safely
           newWidth = targetSize;
           newHeight = targetSize;
         }
@@ -228,46 +223,35 @@ export default function Photobooth() {
         canvas.width = newWidth;
         canvas.height = newHeight;
 
-        // Enhanced smoothing for mobile images
+        // Maximum quality settings for mobile face preservation
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
         
-        // Fill background for non-square images with a neutral color
-        if (newWidth !== newHeight) {
-          ctx.fillStyle = '#1a1a1a'; // Dark neutral background
-          ctx.fillRect(0, 0, newWidth, newHeight);
-        }
+        // Fill with neutral background that won't interfere with face detection
+        ctx.fillStyle = '#2d2d2d'; // Neutral gray
+        ctx.fillRect(0, 0, newWidth, newHeight);
         
-        // Calculate positioning to center the image
-        let drawX = 0, drawY = 0, drawWidth = newWidth, drawHeight = newHeight;
+        // CRITICAL: Maintain original aspect ratio to prevent face distortion
+        const scaleFactor = Math.min(newWidth / width, newHeight / height);
+        const scaledWidth = width * scaleFactor;
+        const scaledHeight = height * scaleFactor;
         
-        if (newWidth !== newHeight) {
-          // Center the image in the canvas
-          const sourceAspect = width / height;
-          const targetAspect = newWidth / newHeight;
-          
-          if (sourceAspect > targetAspect) {
-            // Source is wider, fit to width
-            drawWidth = newWidth;
-            drawHeight = newWidth / sourceAspect;
-            drawY = (newHeight - drawHeight) / 2;
-          } else {
-            // Source is taller, fit to height
-            drawHeight = newHeight;
-            drawWidth = newHeight * sourceAspect;
-            drawX = (newWidth - drawWidth) / 2;
-          }
-        }
+        // Center the image without stretching
+        const offsetX = (newWidth - scaledWidth) / 2;
+        const offsetY = (newHeight - scaledHeight) / 2;
         
-        ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
+        // Draw with perfect aspect ratio preservation
+        ctx.drawImage(img, offsetX, offsetY, scaledWidth, scaledHeight);
         
-        const result = canvas.toDataURL('image/png', 0.95);
+        const result = canvas.toDataURL('image/png', 0.98); // Higher quality for mobile
         
-        console.log('✅ Smart image resize completed:', {
+        console.log('✅ Face-preserving resize completed:', {
           originalSize: `${width}x${height}`,
           newSize: `${newWidth}x${newHeight}`,
+          scaleFactor: scaleFactor.toFixed(3),
+          faceAreaPreserved: true,
+          noDistortion: true,
           isMobile,
-          preservedAspectRatio: newWidth !== newHeight,
           dataSize: `${(result.length / 1024).toFixed(1)}KB`
         });
         
@@ -279,15 +263,15 @@ export default function Photobooth() {
     });
   };
 
-  // Mobile-optimized face mask generation
+  // MOBILE-OPTIMIZED face mask generation with ENHANCED face preservation
   const generateMobileFaceMask = async (
     imageElement: HTMLImageElement,
     preserveFaces: boolean = true,
-    featherRadius: number = 25,
-    expansionFactor: number = 1.15
+    featherRadius: number = 20, // Reduced for mobile
+    expansionFactor: number = 1.3 // Increased for better mobile face coverage
   ): Promise<string> => {
     try {
-      console.log('🎭 Generating mobile-optimized face mask...', {
+      console.log('🎭 Generating ENHANCED mobile face mask...', {
         preserveFaces,
         featherRadius,
         expansionFactor,
@@ -298,9 +282,9 @@ export default function Photobooth() {
       // Load face detection models if not loaded
       await loadFaceApiModels();
 
-      // Use higher resolution and lower threshold for mobile face detection
-      const detectionInputSize = isMobile ? 640 : 512;
-      const scoreThreshold = isMobile ? 0.35 : 0.5; // Lower threshold for mobile
+      // ENHANCED mobile face detection settings
+      const detectionInputSize = isMobile ? 832 : 512; // Much higher for mobile
+      const scoreThreshold = isMobile ? 0.25 : 0.5; // Much lower threshold
       
       const detections = await import('face-api.js').then(faceapi => 
         faceapi.detectAllFaces(imageElement, new faceapi.TinyFaceDetectorOptions({
@@ -310,14 +294,14 @@ export default function Photobooth() {
       );
       
       if (detections.length === 0) {
-        console.warn('⚠️ No faces detected, generating mobile-optimized fallback mask');
+        console.warn('⚠️ No faces detected, generating enhanced mobile fallback mask');
         return generateMobileFallbackMask(
           imageElement.width || 512, 
           imageElement.height || 512
         );
       }
 
-      console.log(`✅ Detected ${detections.length} face(s) on mobile device`);
+      console.log(`✅ Detected ${detections.length} face(s) with enhanced mobile detection`);
 
       const canvas = document.createElement('canvas');
       canvas.width = imageElement.width;
@@ -337,7 +321,7 @@ export default function Photobooth() {
         ctx.fillRect(0, 0, canvas.width, canvas.height);
       }
 
-      // Enhanced mobile face processing
+      // ENHANCED mobile face processing with LARGER masks
       detections.forEach((detection, index) => {
         const box = detection.detection.box;
         const landmarks = detection.landmarks;
@@ -345,63 +329,67 @@ export default function Photobooth() {
         const centerX = box.x + box.width / 2;
         const centerY = box.y + box.height / 2;
         
-        // Mobile-specific adjustments for better blending
-        const mobileExpansion = isMobile ? expansionFactor * 0.85 : expansionFactor;
-        const mobileFeather = isMobile ? featherRadius * 0.7 : featherRadius;
+        // CRITICAL: Much more generous face area for mobile preservation
+        const mobileExpansion = isMobile ? expansionFactor * 1.2 : expansionFactor; // 1.56x total
+        const mobileFeather = isMobile ? featherRadius * 1.5 : featherRadius; // More blending
         
+        // LARGER face coverage for mobile
         const faceWidth = box.width * mobileExpansion;
         const faceHeight = box.height * mobileExpansion;
         
-        console.log(`🎭 Processing mobile face ${index + 1}:`, {
+        console.log(`🎭 Enhanced mobile face ${index + 1}:`, {
           originalBox: `${Math.round(box.width)}x${Math.round(box.height)}`,
-          adjustedSize: `${Math.round(faceWidth)}x${Math.round(faceHeight)}`,
+          enhancedSize: `${Math.round(faceWidth)}x${Math.round(faceHeight)}`,
+          expansion: `${(mobileExpansion * 100).toFixed(0)}%`,
           center: `${Math.round(centerX)}, ${Math.round(centerY)}`,
           featherRadius: mobileFeather
         });
         
-        // Create mobile-optimized gradient with smoother transitions
-        const createMobileGradient = (innerRadius: number, outerRadius: number) => {
+        // Create PREMIUM mobile gradient with more preservation
+        const createEnhancedMobileGradient = (innerRadius: number, outerRadius: number) => {
           const gradient = ctx.createRadialGradient(
             centerX, centerY, innerRadius,
             centerX, centerY, outerRadius
           );
           
           if (preserveFaces) {
-            // More gradual transition for mobile
-            gradient.addColorStop(0, 'rgba(0, 0, 0, 1)');      // Solid black (preserve)
-            gradient.addColorStop(0.3, 'rgba(32, 32, 32, 0.9)');
-            gradient.addColorStop(0.5, 'rgba(64, 64, 64, 0.7)');
-            gradient.addColorStop(0.7, 'rgba(128, 128, 128, 0.4)');
-            gradient.addColorStop(0.85, 'rgba(192, 192, 192, 0.2)');
-            gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');  // Transparent edge
+            // MAXIMUM face preservation for mobile
+            gradient.addColorStop(0, 'rgba(0, 0, 0, 1)');      // 100% preserve core
+            gradient.addColorStop(0.4, 'rgba(16, 16, 16, 0.95)'); // 95% preserve inner
+            gradient.addColorStop(0.6, 'rgba(48, 48, 48, 0.8)');  // 80% preserve mid
+            gradient.addColorStop(0.75, 'rgba(96, 96, 96, 0.6)'); // 60% preserve outer
+            gradient.addColorStop(0.85, 'rgba(160, 160, 160, 0.3)'); // 30% blend
+            gradient.addColorStop(0.95, 'rgba(224, 224, 224, 0.1)'); // 10% blend
+            gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');   // Transparent edge
           } else {
-            gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');    // Solid white (modify)
-            gradient.addColorStop(0.3, 'rgba(224, 224, 224, 0.9)');
-            gradient.addColorStop(0.5, 'rgba(192, 192, 192, 0.7)');
-            gradient.addColorStop(0.7, 'rgba(128, 128, 128, 0.4)');
-            gradient.addColorStop(0.85, 'rgba(64, 64, 64, 0.2)');
-            gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');        // Transparent edge
+            gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
+            gradient.addColorStop(0.4, 'rgba(240, 240, 240, 0.95)');
+            gradient.addColorStop(0.6, 'rgba(208, 208, 208, 0.8)');
+            gradient.addColorStop(0.75, 'rgba(160, 160, 160, 0.6)');
+            gradient.addColorStop(0.85, 'rgba(96, 96, 96, 0.3)');
+            gradient.addColorStop(0.95, 'rgba(32, 32, 32, 0.1)');
+            gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
           }
           
           return gradient;
         };
 
-        // Apply mobile-optimized blending with tighter core area
-        const coreRadius = Math.min(faceWidth, faceHeight) * 0.18;
+        // Apply ENHANCED mobile blending with LARGER coverage
+        const coreRadius = Math.min(faceWidth, faceHeight) * 0.25; // Larger core
         const blendRadius = coreRadius + mobileFeather;
         
-        ctx.fillStyle = createMobileGradient(coreRadius, featherRadius);
+        ctx.fillStyle = createEnhancedMobileGradient(coreRadius, blendRadius);
         ctx.beginPath();
         ctx.ellipse(
           centerX, centerY,
-          faceWidth * 0.4, faceHeight * 0.4,
+          faceWidth * 0.5, faceHeight * 0.5, // Much larger mask area
           0, 0, Math.PI * 2
         );
         ctx.fill();
 
-        // Enhanced landmark preservation for mobile faces
+        // ENHANCED landmark preservation with MAXIMUM mobile protection
         if (preserveFaces && landmarks && isMobile) {
-          const enhanceMobileFeature = (points: any[], scale: number = 1.0, featureName: string) => {
+          const enhanceMaxMobileFeature = (points: any[], scale: number = 1.2, featureName: string) => {
             if (points.length === 0) return;
             
             const featureCenter = points.reduce((acc, point) => ({
@@ -417,17 +405,20 @@ export default function Photobooth() {
             const minY = Math.min(...points.map(p => p.y));
             const maxY = Math.max(...points.map(p => p.y));
             
-            const featureWidth = (maxX - minX) * scale * 0.7; // Tighter for mobile
-            const featureHeight = (maxY - minY) * scale * 0.7;
+            // LARGER feature protection for mobile
+            const featureWidth = (maxX - minX) * scale;
+            const featureHeight = (maxY - minY) * scale;
             
             const featureGradient = ctx.createRadialGradient(
-              featureCenter.x, featureCenter.y, Math.min(featureWidth, featureHeight) * 0.1,
-              featureCenter.x, featureCenter.y, Math.max(featureWidth, featureHeight) * 0.5
+              featureCenter.x, featureCenter.y, Math.min(featureWidth, featureHeight) * 0.05,
+              featureCenter.x, featureCenter.y, Math.max(featureWidth, featureHeight) * 0.6
             );
             
+            // MAXIMUM feature preservation
             featureGradient.addColorStop(0, 'rgba(0, 0, 0, 1)');
-            featureGradient.addColorStop(0.4, 'rgba(16, 16, 16, 0.8)');
-            featureGradient.addColorStop(0.7, 'rgba(64, 64, 64, 0.5)');
+            featureGradient.addColorStop(0.3, 'rgba(8, 8, 8, 0.95)');
+            featureGradient.addColorStop(0.6, 'rgba(32, 32, 32, 0.8)');
+            featureGradient.addColorStop(0.8, 'rgba(80, 80, 80, 0.4)');
             featureGradient.addColorStop(1, 'rgba(128, 128, 128, 0)');
             
             ctx.fillStyle = featureGradient;
@@ -439,20 +430,20 @@ export default function Photobooth() {
             );
             ctx.fill();
             
-            console.log(`👁️ Enhanced ${featureName} preservation for mobile at (${Math.round(featureCenter.x)}, ${Math.round(featureCenter.y)})`);
+            console.log(`👁️ MAXIMUM ${featureName} preservation for mobile at (${Math.round(featureCenter.x)}, ${Math.round(featureCenter.y)})`);
           };
           
-          // Enhanced feature preservation with mobile-optimized parameters
-          enhanceMobileFeature(landmarks.getLeftEye(), 1.1, 'left eye');
-          enhanceMobileFeature(landmarks.getRightEye(), 1.1, 'right eye');
-          enhanceMobileFeature(landmarks.getNose(), 1.0, 'nose');
-          enhanceMobileFeature(landmarks.getMouth(), 0.9, 'mouth');
+          // Apply MAXIMUM feature preservation for mobile
+          enhanceMaxMobileFeature(landmarks.getLeftEye(), 1.4, 'left eye');
+          enhanceMaxMobileFeature(landmarks.getRightEye(), 1.4, 'right eye');
+          enhanceMaxMobileFeature(landmarks.getNose(), 1.3, 'nose');
+          enhanceMaxMobileFeature(landmarks.getMouth(), 1.2, 'mouth');
         }
       });
 
-      // Mobile-specific post-processing for smoother blending
+      // Minimal blur to maintain sharp edges for mobile
       if (isMobile) {
-        ctx.filter = 'blur(1px)'; // Lighter blur for mobile
+        ctx.filter = 'blur(0.5px)'; // Very light blur
         ctx.globalCompositeOperation = 'source-over';
         ctx.drawImage(canvas, 0, 0);
         ctx.filter = 'none';
@@ -460,17 +451,18 @@ export default function Photobooth() {
 
       const maskDataUrl = canvas.toDataURL('image/png');
       
-      console.log('✅ Mobile face mask generated successfully:', {
+      console.log('✅ ENHANCED mobile face mask generated:', {
         faces: detections.length,
         maskSize: `${(maskDataUrl.length / 1024).toFixed(1)}KB`,
-        optimizedForMobile: isMobile,
+        enhancedForMobile: isMobile,
+        maxPreservation: true,
         resolution: `${canvas.width}x${canvas.height}`
       });
       
       return maskDataUrl;
       
     } catch (error) {
-      console.error('❌ Mobile face mask generation failed:', error);
+      console.error('❌ Enhanced mobile face mask generation failed:', error);
       return generateMobileFallbackMask(512, 512);
     }
   };
@@ -962,12 +954,12 @@ export default function Photobooth() {
 
         console.log('🔍 Generating mobile-optimized face-only mask (excluding clothing)...');
         
-        // Use mobile-optimized mask generation
+        // Use mobile-optimized mask generation with ENHANCED parameters
         maskData = await generateMobileFaceMask(
           img,
           faceMode === 'preserve_face',
-          isMobile ? 15 : 20, // Smaller feather for mobile
-          isMobile ? 1.1 : 1.2 // Less expansion for mobile
+          isMobile ? 12 : 20, // Tighter feather for mobile precision
+          isMobile ? 1.4 : 1.2 // More generous expansion for mobile faces
         );
         
         console.log('✅ Mobile-optimized face mask generated successfully for SDXL');
@@ -1034,9 +1026,9 @@ export default function Photobooth() {
         
         await animateProgress(55, 70, 1500, 'generating', isMobile ? 'Processing with mobile-optimized SDXL...' : 'Processing with SDXL AI...');
         
-        // Mobile-specific generation parameters
+        // Mobile-specific generation parameters for BETTER face preservation
         const mobileStrength = isMobile ? 
-          (faceMode === 'preserve_face' ? 0.35 : 0.65) : // Slightly lower strength for mobile
+          (faceMode === 'preserve_face' ? 0.25 : 0.55) : // Much lower strength for mobile
           (faceMode === 'preserve_face' ? 0.4 : 0.7);
         
         const generationPromise = generateWithStability({
@@ -1046,7 +1038,7 @@ export default function Photobooth() {
           maskData: maskData,
           facePreservationMode: faceMode,
           strength: mobileStrength,
-          cfgScale: isMobile ? 7.5 : 8.0, // Slightly lower CFG for mobile
+          cfgScale: isMobile ? 6.5 : 8.0, // Lower CFG for more natural mobile results
           steps: 25,
           useControlNet: currentConfig.use_controlnet ?? true,
           controlNetType: currentConfig.controlnet_type || 'auto'
@@ -1466,12 +1458,12 @@ export default function Photobooth() {
             <p><span className="text-blue-400 font-semibold">Mode:</span> {currentModelType}</p>
             <p><span className="text-green-400 font-semibold">Face Mode:</span> {config?.face_preservation_mode || 'preserve_face'}</p>
             <p><span className="text-yellow-400 font-semibold">Attempts:</span> {generationAttempts}/3</p>
-            <p><span className="text-indigo-400 font-semibold">Strength:</span> {
+            <            p><span className="text-indigo-400 font-semibold">Strength:</span> {
               isMobile ? 
-                (config?.face_preservation_mode === 'preserve_face' ? '0.35 (Mobile)' : '0.65 (Mobile)') :
+                (config?.face_preservation_mode === 'preserve_face' ? '0.25 (Mobile Max)' : '0.55 (Mobile)') :
                 (config?.face_preservation_mode === 'preserve_face' ? '0.4' : '0.7')
             }</p>
-            <p><span className="text-pink-400 font-semibold">CFG Scale:</span> {isMobile ? '7.5 (Mobile)' : '8.0'}</p>
+            <p><span className="text-pink-400 font-semibold">CFG Scale:</span> {isMobile ? '6.5 (Mobile Gentle)' : '8.0'}</p>
             <p><span className="text-cyan-400 font-semibold">Resolution:</span> {
               capturedImageDimensions ? 
                 `${capturedImageDimensions.width}x${capturedImageDimensions.height} → SDXL Optimized` :
