@@ -5,6 +5,7 @@ import Photobooth from './pages/Photobooth';
 import Gallery from './pages/Gallery';
 import Admin from './pages/Admin';
 import OverlayIntegration from './pages/OverlayIntegration'; // FIXED: Import the new fixed component
+import SharedPhoto from './pages/SharedPhoto';
 import { useConfigStore } from './store/configStore';
 
 function Navigation() {
@@ -75,6 +76,7 @@ function App() {
           <Route path="/overlay-integration" element={<OverlayIntegration />} /> {/* FIXED: Updated route */}
           {/* Keep backwards compatibility */}
           <Route path="/logo-integration" element={<OverlayIntegration />} /> {/* Redirect old route */}
+          <Route path="/shared/:photoId" element={<SharedPhoto />} />
         </Routes>
       </div>
     </BrowserRouter>
