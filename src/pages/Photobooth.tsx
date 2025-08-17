@@ -174,7 +174,7 @@ export default function Photobooth() {
     };
   }, []);
 
-  // OPTIMIZED: Smart aspect ratio with FACE-CENTRIC scaling
+  // FIXED: Proper face size preservation with optimal dimensions
   const resizeImageSmart = (dataUrl: string): Promise<string> => {
     return new Promise((resolve, reject) => {
       const img = new Image();
@@ -200,31 +200,17 @@ export default function Photobooth() {
         // Store original dimensions for debug info
         setCapturedImageDimensions({ width, height });
         
-        // FACE-CENTRIC: Choose dimensions that keep faces at optimal size
+        // FIXED: Use dimensions that maintain natural face sizes
         let targetWidth, targetHeight;
         
         if (isMobile) {
-          // Mobile: Use moderate 9:16 that doesn't shrink faces too much
-          if (inputAspectRatio > 0.7) {
-            // Input is closer to square/landscape - use smaller dimensions
-            targetHeight = 1280; // Reduced from 1792
-            targetWidth = Math.round(targetHeight * (9/16)); // 720px
-          } else {
-            // Input is already portrait - use larger dimensions to maintain face size
-            targetHeight = 1536; // Compromise size
-            targetWidth = Math.round(targetHeight * (9/16)); // 864px
-          }
+          // Mobile: Use 1024x1536 for good face detail without overshrinking
+          targetWidth = 1024;
+          targetHeight = 1536;
         } else {
-          // Desktop: Use moderate 16:9 that keeps faces prominent
-          if (inputAspectRatio < 1.3) {
-            // Input is closer to square/portrait - use smaller dimensions  
-            targetWidth = 1280; // Reduced from 1792
-            targetHeight = Math.round(targetWidth / (16/9)); // 720px
-          } else {
-            // Input is already landscape - use larger dimensions
-            targetWidth = 1536; // Compromise size
-            targetHeight = Math.round(targetWidth / (16/9)); // 864px
-          }
+          // Desktop: Use 1536x1024 for good face detail  
+          targetWidth = 1536;
+          targetHeight = 1024;
         }
 
         canvas.width = targetWidth;
@@ -238,41 +224,32 @@ export default function Photobooth() {
         ctx.fillStyle = '#2a2a2a';
         ctx.fillRect(0, 0, targetWidth, targetHeight);
         
-        // FACE-CENTRIC SCALING: Prioritize maintaining face size over filling canvas
-        let scaledWidth, scaledHeight, offsetX, offsetY;
-        
-        // Calculate two possible scales
+        // CRITICAL: Use standard fit scaling to maintain natural face proportions
         const scaleToFitWidth = targetWidth / width;
         const scaleToFitHeight = targetHeight / height;
         
-        // FACE-PRIORITY: Use the larger scale to keep faces bigger
-        // This may crop some background but preserves face detail
-        const facePreservingScale = Math.max(scaleToFitWidth, scaleToFitHeight);
+        // Use the SMALLER scale to ensure entire image fits (preserves face proportions)
+        const scale = Math.min(scaleToFitWidth, scaleToFitHeight);
         
-        // But cap it to prevent excessive cropping
-        const maxScale = 1.2; // Don't scale up more than 20%
-        const finalScale = Math.min(facePreservingScale, maxScale);
+        const scaledWidth = width * scale;
+        const scaledHeight = height * scale;
         
-        scaledWidth = width * finalScale;
-        scaledHeight = height * finalScale;
+        // Center the image
+        const offsetX = (targetWidth - scaledWidth) / 2;
+        const offsetY = (targetHeight - scaledHeight) / 2;
         
-        // Center the scaled image (may crop edges but preserves face)
-        offsetX = (targetWidth - scaledWidth) / 2;
-        offsetY = (targetHeight - scaledHeight) / 2;
-        
-        // Draw with face-preserving scale
+        // Draw with natural proportions preserved
         ctx.drawImage(img, offsetX, offsetY, scaledWidth, scaledHeight);
         
         const result = canvas.toDataURL('image/png', 0.98);
         
-        console.log('✅ Face-centric resize completed:', {
+        console.log('✅ Natural face proportion resize completed:', {
           originalSize: `${width}x${height}`,
           targetSize: `${targetWidth}x${targetHeight}`,
-          inputAspectRatio: inputAspectRatio.toFixed(3),
-          finalScale: finalScale.toFixed(3),
+          scale: scale.toFixed(3),
           scaledSize: `${Math.round(scaledWidth)}x${Math.round(scaledHeight)}`,
           offset: `${Math.round(offsetX)}, ${Math.round(offsetY)}`,
-          facePreserving: finalScale > Math.min(scaleToFitWidth, scaleToFitHeight),
+          naturalProportions: true,
           isMobile,
           dataSize: `${(result.length / 1024).toFixed(1)}KB`
         });
@@ -304,9 +281,9 @@ export default function Photobooth() {
       // Load face detection models if not loaded
       await loadFaceApiModels();
 
-      // ENHANCED mobile face detection settings
-      const detectionInputSize = isMobile ? 832 : 512;
-      const scoreThreshold = isMobile ? 0.25 : 0.5;
+      // ENHANCED mobile face detection settings for better small screen performance
+      const detectionInputSize = isMobile ? 1024 : 640; // Much higher for mobile reliability
+      const scoreThreshold = isMobile ? 0.2 : 0.4; // Much lower threshold for mobile
       
       const detections = await import('face-api.js').then(faceapi => 
         faceapi.detectAllFaces(imageElement, new faceapi.TinyFaceDetectorOptions({
@@ -351,9 +328,9 @@ export default function Photobooth() {
         const centerX = box.x + box.width / 2;
         const centerY = box.y + box.height / 2;
         
-        // CRITICAL: Much larger expansion to maintain face prominence in new aspect ratios
-        const mobileExpansion = isMobile ? expansionFactor * 1.4 : expansionFactor; // 2.1x total for mobile
-        const mobileFeather = isMobile ? featherRadius * 1.2 : featherRadius;
+        // BALANCED expansion for natural face preservation
+        const mobileExpansion = isMobile ? expansionFactor * 1.2 : expansionFactor; // 1.68x total for mobile
+        const mobileFeather = isMobile ? featherRadius * 1.0 : featherRadius;
         
         // FULL HEAD coverage including forehead, hair, and chin
         const faceWidth = box.width * mobileExpansion;
@@ -404,15 +381,15 @@ export default function Photobooth() {
           return gradient;
         };
 
-        // Apply ENHANCED face-centric mask for prominence
-        const coreRadius = Math.min(faceWidth, faceHeight) * 0.35; // Much larger core
+        // Apply NATURAL face preservation mask
+        const coreRadius = Math.min(faceWidth, faceHeight) * 0.25; // Natural core size
         const blendRadius = coreRadius + mobileFeather;
         
         ctx.fillStyle = createFullHeadGradient(coreRadius, blendRadius);
         ctx.beginPath();
         ctx.ellipse(
           centerX, adjustedCenterY, // Use adjusted center for forehead
-          faceWidth * 0.65, faceHeight * 0.7, // Even larger mask for face prominence
+          faceWidth * 0.5, faceHeight * 0.55, // Natural mask proportions
           0, 0, Math.PI * 2
         );
         ctx.fill();
@@ -463,11 +440,11 @@ export default function Photobooth() {
             console.log(`👁️ ENHANCED ${featureName} preservation for mobile at (${Math.round(featureCenter.x)}, ${Math.round(featureCenter.y)})`);
           };
           
-          // Apply MAXIMUM feature preservation for mobile
-          enhanceFullFeature(landmarks.getLeftEye(), 1.6, 'left eye');
-          enhanceFullFeature(landmarks.getRightEye(), 1.6, 'right eye');
-          enhanceFullFeature(landmarks.getNose(), 1.4, 'nose');
-          enhanceFullFeature(landmarks.getMouth(), 1.3, 'mouth');
+          // Apply NATURAL feature preservation for mobile
+          enhanceFullFeature(landmarks.getLeftEye(), 1.3, 'left eye');
+          enhanceFullFeature(landmarks.getRightEye(), 1.3, 'right eye');
+          enhanceFullFeature(landmarks.getNose(), 1.2, 'nose');
+          enhanceFullFeature(landmarks.getMouth(), 1.1, 'mouth');
           
           // CRITICAL: Add forehead preservation
           if (landmarks.positions && landmarks.positions.length > 0) {
@@ -503,9 +480,9 @@ export default function Photobooth() {
         }
       });
 
-      // Minimal blur to maintain sharp edges
+      // Light blur for natural blending
       if (isMobile) {
-        ctx.filter = 'blur(0.3px)'; // Ultra-light blur
+        ctx.filter = 'blur(1px)'; // Natural blur for mobile
         ctx.globalCompositeOperation = 'source-over';
         ctx.drawImage(canvas, 0, 0);
         ctx.filter = 'none';
@@ -1017,12 +994,12 @@ export default function Photobooth() {
 
         console.log('🔍 Generating mobile-optimized face-only mask (excluding clothing)...');
         
-        // Use mobile-optimized mask generation with ENHANCED FACE SIZE parameters
+        // Use OPTIMAL mask generation for natural face size preservation
         maskData = await generateMobileFaceMask(
           img,
           faceMode === 'preserve_face',
-          isMobile ? 8 : 20, // Even tighter feather for precision
-          isMobile ? 1.8 : 1.4 // MUCH larger expansion to maintain face prominence
+          isMobile ? 15 : 25, // Moderate feathering for natural blending
+          isMobile ? 1.4 : 1.3 // Generous but not excessive expansion
         );
         
         console.log('✅ Mobile-optimized face mask generated successfully for SDXL');
@@ -1089,10 +1066,10 @@ export default function Photobooth() {
         
         await animateProgress(55, 70, 1500, 'generating', isMobile ? 'Processing with mobile-optimized SDXL...' : 'Processing with SDXL AI...');
         
-        // Mobile-specific generation parameters for FACE SIZE preservation
+        // NATURAL face size preservation parameters
         const mobileStrength = isMobile ? 
-          (faceMode === 'preserve_face' ? 0.15 : 0.45) : // Even gentler for face size retention
-          (faceMode === 'preserve_face' ? 0.3 : 0.6); // Reduced desktop strength too
+          (faceMode === 'preserve_face' ? 0.3 : 0.6) : // Natural strength for proper face scale
+          (faceMode === 'preserve_face' ? 0.4 : 0.7);
         
         const generationPromise = generateWithStability({
           prompt: enhancedPrompt,
@@ -1101,7 +1078,7 @@ export default function Photobooth() {
           maskData: maskData,
           facePreservationMode: faceMode,
           strength: mobileStrength,
-          cfgScale: isMobile ? 6.0 : 7.5, // Lower CFG for more natural face-centric results
+          cfgScale: isMobile ? 7.0 : 8.0, // Balanced CFG for natural results
           steps: 25,
           useControlNet: currentConfig.use_controlnet ?? true,
           controlNetType: currentConfig.controlnet_type || 'auto'
@@ -1531,19 +1508,19 @@ export default function Photobooth() {
             <p><span className="text-yellow-400 font-semibold">Attempts:</span> {generationAttempts}/3</p>
             <p><span className="text-indigo-400 font-semibold">Strength:</span> {
               isMobile ? 
-                (config?.face_preservation_mode === 'preserve_face' ? '0.15 (Face Size+)' : '0.45 (Mobile)') :
-                (config?.face_preservation_mode === 'preserve_face' ? '0.3 (Gentle)' : '0.6')
+                (config?.face_preservation_mode === 'preserve_face' ? '0.3 (Natural)' : '0.6 (Mobile)') :
+                (config?.face_preservation_mode === 'preserve_face' ? '0.4 (Natural)' : '0.7')
             }</p>
-            <p><span className="text-pink-400 font-semibold">CFG Scale:</span> {isMobile ? '6.0 (Face-Centric)' : '7.5'}</p>
+            <p><span className="text-pink-400 font-semibold">CFG Scale:</span> {isMobile ? '7.0 (Balanced)' : '8.0'}</p>
             <p><span className="text-cyan-400 font-semibold">Resolution:</span> {
               capturedImageDimensions ? 
-                `${capturedImageDimensions.width}x${capturedImageDimensions.height} → ${isMobile ? 'Face-Centric 9:16' : 'Face-Centric 16:9'}` :
-                `${isMobile ? 'Dynamic 9:16' : 'Dynamic 16:9'} (Face-Optimized)`
+                `${capturedImageDimensions.width}x${capturedImageDimensions.height} → ${isMobile ? '1024x1536 (Natural)' : '1536x1024 (Natural)'}` :
+                `${isMobile ? '1024x1536' : '1536x1024'} (Face-Optimized)`
             }</p>
             <p><span className="text-orange-400 font-semibold">Steps:</span> 25 (SDXL Optimized)</p>
             <p><span className="text-teal-400 font-semibold">Approach:</span> Face-Only (No Clothing) {isMobile && '+ Mobile+'}</p>
             <p><span className="text-violet-400 font-semibold">Mask Settings:</span> {
-              isMobile ? '8px feather, 1.8x expansion, FACE SIZE optimized' : '20px feather, 1.4x expansion, face-centric'
+              isMobile ? '15px feather, 1.4x expansion, Natural face preservation' : '25px feather, 1.3x expansion, balanced'
             }</p>
             <p><span className="text-red-400 font-semibold">Camera Key:</span> {cameraKey} {isMobile && '(Mobile Mode)'}</p>
             <p><span className="text-lime-400 font-semibold">Device:</span> {
