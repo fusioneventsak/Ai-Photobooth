@@ -1529,7 +1529,7 @@ export default function Photobooth() {
             <p><span className="text-blue-400 font-semibold">Mode:</span> {currentModelType}</p>
             <p><span className="text-green-400 font-semibold">Face Mode:</span> {config?.face_preservation_mode || 'preserve_face'}</p>
             <p><span className="text-yellow-400 font-semibold">Attempts:</span> {generationAttempts}/3</p>
-            <            <p><span className="text-indigo-400 font-semibold">Strength:</span> {
+            <p><span className="text-indigo-400 font-semibold">Strength:</span> {
               isMobile ? 
                 (config?.face_preservation_mode === 'preserve_face' ? '0.15 (Face Size+)' : '0.45 (Mobile)') :
                 (config?.face_preservation_mode === 'preserve_face' ? '0.3 (Gentle)' : '0.6')
