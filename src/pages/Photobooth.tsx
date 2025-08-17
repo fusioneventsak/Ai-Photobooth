@@ -1,9 +1,9 @@
 // src/pages/Photobooth.tsx
-// Fixed mobile face swap with improved face detection and preservation
+// Enhanced Photobooth component with mobile optimization and camera fixes
 
 import React, { useState, useEffect } from 'react';
 import Webcam from 'react-webcam';
-import { Camera, ImageIcon, Wand2, AlertCircle, Video, RefreshCw, Users, UserX, Lightbulb, Eye, User, Smartphone } from 'lucide-react';
+import { Camera, ImageIcon, Wand2, AlertCircle, Video, RefreshCw, Users, UserX, Lightbulb, Eye, User } from 'lucide-react';
 import { useConfigStore } from '../store/configStore';
 import { uploadPhoto } from '../lib/supabase';
 import { generateWithStability } from '../lib/stabilityService';
@@ -43,30 +43,17 @@ export default function Photobooth() {
   const [isMobile, setIsMobile] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
   const [progressInterval, setProgressInterval] = useState<NodeJS.Timeout | null>(null);
-  const [capturedImageDimensions, setCapturedImageDimensions] = useState<{width: number, height: number} | null>(null);
   
   const webcamRef = React.useRef<Webcam>(null);
 
-  // Enhanced mobile device detection
+  // Detect mobile device
   useEffect(() => {
     const checkMobile = () => {
       const userAgent = navigator.userAgent.toLowerCase();
       const isIOS = /iphone|ipad|ipod/.test(userAgent);
       const isAndroid = /android/.test(userAgent);
-      const isMobileWidth = window.innerWidth <= 768;
-      const hasTouch = 'ontouchstart' in window;
-      const isMobileDevice = isIOS || isAndroid || (isMobileWidth && hasTouch);
-      
+      const isMobileDevice = isIOS || isAndroid || window.innerWidth <= 768;
       setIsMobile(isMobileDevice);
-      
-      console.log('📱 Device detection:', {
-        isIOS,
-        isAndroid,
-        isMobileWidth,
-        hasTouch,
-        finalDecision: isMobileDevice,
-        userAgent: userAgent.substring(0, 50)
-      });
     };
 
     checkMobile();
@@ -74,7 +61,7 @@ export default function Photobooth() {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // Add CSS for gradient animation and mobile enhancements
+  // Add CSS for gradient animation
   React.useEffect(() => {
     const style = document.createElement('style');
     style.textContent = `
@@ -92,46 +79,25 @@ export default function Photobooth() {
         animation: gradient-x 3s ease infinite;
       }
       
-      /* Enhanced mobile-specific camera fixes */
+      /* Mobile-specific camera fixes */
       @media (max-width: 768px) {
         .mobile-camera-container {
-          height: 70vh;
-          min-height: 400px;
-          max-height: 600px;
-          position: relative;
+          height: 100vw;
+          max-height: 80vh;
         }
         
         .mobile-camera-preview {
           width: 100%;
           height: 100%;
           object-fit: cover;
-          border-radius: 12px;
         }
         
-        /* iOS specific fixes for better camera quality */
+        /* iOS specific fixes */
         @supports (-webkit-touch-callout: none) {
           .ios-camera-fix {
             transform: scaleX(-1);
             -webkit-transform: scaleX(-1);
-            image-rendering: -webkit-optimize-contrast;
-            image-rendering: crisp-edges;
           }
-        }
-        
-        /* Android specific optimizations */
-        .android-camera-fix {
-          image-rendering: optimizeQuality;
-          -webkit-image-rendering: optimizeQuality;
-        }
-      }
-      
-      /* Extra small screen breakpoint for header text */
-      @media (max-width: 400px) {
-        .xs\\:hidden {
-          display: none !important;
-        }
-        .xs\\:inline {
-          display: inline !important;
         }
       }
       
@@ -139,31 +105,6 @@ export default function Photobooth() {
       @media (min-width: 769px) {
         .desktop-camera-container {
           aspect-ratio: 1;
-          max-width: 500px;
-          margin: 0 auto;
-        }
-        
-        .xs\\:hidden {
-          display: inline !important;
-        }
-        .xs\\:inline {
-          display: inline !important;
-        }
-      }
-      
-      /* Mobile portrait orientation optimization */
-      @media (max-width: 768px) and (orientation: portrait) {
-        .mobile-camera-container {
-          height: 60vh;
-          aspect-ratio: 3/4;
-        }
-      }
-      
-      /* Mobile landscape orientation optimization */
-      @media (max-width: 768px) and (orientation: landscape) {
-        .mobile-camera-container {
-          height: 80vh;
-          aspect-ratio: 4/3;
         }
       }
     `;
@@ -174,8 +115,8 @@ export default function Photobooth() {
     };
   }, []);
 
-  // FIXED: Better image resizing that preserves face proportions
-  const resizeImageForFacePreservation = (dataUrl: string): Promise<string> => {
+  // Enhanced image resizing for SDXL optimal input
+  const resizeImage = (dataUrl: string, targetSize: number = 1024): Promise<string> => {
     return new Promise((resolve, reject) => {
       const img = new Image();
       img.onload = () => {
@@ -188,63 +129,23 @@ export default function Photobooth() {
         }
 
         const { width, height } = img;
-        const inputAspectRatio = width / height;
+        let newWidth = targetSize;
+        let newHeight = targetSize;
         
-        console.log('📐 Original image dimensions for face processing:', {
-          width,
-          height,
-          aspectRatio: inputAspectRatio.toFixed(2),
-          isMobile
-        });
-        
-        // Store original dimensions for debug info
-        setCapturedImageDimensions({ width, height });
-        
-        // CRITICAL FIX: Use consistent sizing that preserves face scale
-        let targetWidth, targetHeight;
-        
-        // Always use square format for consistent face processing
-        const targetSize = 1024; // Standard SDXL size
-        targetWidth = targetSize;
-        targetHeight = targetSize;
+        if (width > height) {
+          newHeight = Math.round((height / width) * targetSize);
+        } else {
+          newWidth = Math.round((width / height) * targetSize);
+        }
 
-        canvas.width = targetWidth;
-        canvas.height = targetHeight;
+        canvas.width = newWidth;
+        canvas.height = newHeight;
 
-        // High quality settings for face preservation
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, newWidth, newHeight);
         
-        // Fill with neutral background
-        ctx.fillStyle = '#1a1a1a';
-        ctx.fillRect(0, 0, targetWidth, targetHeight);
-        
-        // CRITICAL: Maintain face proportions by fitting the image properly
-        const scale = Math.min(targetWidth / width, targetHeight / height);
-        const scaledWidth = width * scale;
-        const scaledHeight = height * scale;
-        
-        // Center the image
-        const offsetX = (targetWidth - scaledWidth) / 2;
-        const offsetY = (targetHeight - scaledHeight) / 2;
-        
-        // Draw with preserved proportions
-        ctx.drawImage(img, offsetX, offsetY, scaledWidth, scaledHeight);
-        
-        const result = canvas.toDataURL('image/png', 0.95);
-        
-        console.log('✅ Face-preserving resize completed:', {
-          originalSize: `${width}x${height}`,
-          targetSize: `${targetWidth}x${targetHeight}`,
-          scale: scale.toFixed(3),
-          scaledSize: `${Math.round(scaledWidth)}x${Math.round(scaledHeight)}`,
-          offset: `${Math.round(offsetX)}, ${Math.round(offsetY)}`,
-          faceProportionsPreserved: true,
-          isMobile,
-          dataSize: `${(result.length / 1024).toFixed(1)}KB`
-        });
-        
-        resolve(result);
+        resolve(canvas.toDataURL('image/png', 0.95));
       };
       
       img.onerror = () => reject(new Error('Failed to load image for resizing'));
@@ -252,259 +153,11 @@ export default function Photobooth() {
     });
   };
 
-  // ENHANCED mobile face mask with better face detection and preservation
-  const generateOptimizedFaceMask = async (
-    imageElement: HTMLImageElement,
-    preserveFaces: boolean = true,
-    featherRadius: number = 15,
-    expansionFactor: number = 1.2
-  ): Promise<string> => {
-    try {
-      console.log('🎭 Generating optimized face mask for better likeness...', {
-        preserveFaces,
-        featherRadius,
-        expansionFactor,
-        isMobile,
-        imageSize: `${imageElement.width}x${imageElement.height}`
-      });
-
-      // Load face detection models if not loaded
-      await loadFaceApiModels();
-
-      // IMPROVED face detection settings for better accuracy
-      const detectionInputSize = 832; // Optimal size for face detection
-      const scoreThreshold = 0.3; // Balanced threshold
-      
-      const detections = await import('face-api.js').then(faceapi => 
-        faceapi.detectAllFaces(imageElement, new faceapi.TinyFaceDetectorOptions({
-          inputSize: detectionInputSize,
-          scoreThreshold: scoreThreshold
-        })).withFaceLandmarks()
-      );
-      
-      if (detections.length === 0) {
-        console.warn('⚠️ No faces detected, generating center fallback mask');
-        return generateCenterFallbackMask(
-          imageElement.width || 1024, 
-          imageElement.height || 1024
-        );
-      }
-
-      console.log(`✅ Detected ${detections.length} face(s) for processing`);
-
-      const canvas = document.createElement('canvas');
-      canvas.width = imageElement.width;
-      canvas.height = imageElement.height;
-      const ctx = canvas.getContext('2d');
-      
-      if (!ctx) {
-        throw new Error('Failed to get canvas context for mask generation');
-      }
-
-      // CRITICAL: Proper mask base setup
-      if (preserveFaces) {
-        // White background = areas to keep unchanged (preserve face)
-        ctx.fillStyle = 'white';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-      } else {
-        // Black background = areas to modify
-        ctx.fillStyle = 'black';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-      }
-
-      // Process each detected face
-      detections.forEach((detection, index) => {
-        const box = detection.detection.box;
-        const landmarks = detection.landmarks;
-        
-        const centerX = box.x + box.width / 2;
-        const centerY = box.y + box.height / 2;
-        
-        // BALANCED expansion for good face coverage without losing features
-        const faceWidth = box.width * expansionFactor;
-        const faceHeight = box.height * expansionFactor;
-        
-        console.log(`🎭 Processing face ${index + 1}:`, {
-          originalBox: `${Math.round(box.width)}x${Math.round(box.height)}`,
-          expandedSize: `${Math.round(faceWidth)}x${Math.round(faceHeight)}`,
-          expansion: `${(expansionFactor * 100).toFixed(0)}%`,
-          center: `${Math.round(centerX)}, ${Math.round(centerY)}`,
-          featherRadius
-        });
-        
-        // Create precise face mask gradient
-        const createFaceGradient = (innerRadius: number, outerRadius: number) => {
-          const gradient = ctx.createRadialGradient(
-            centerX, centerY, innerRadius,
-            centerX, centerY, outerRadius
-          );
-          
-          if (preserveFaces) {
-            // Black = modify, gradient to white = preserve
-            gradient.addColorStop(0, 'rgba(0, 0, 0, 1)');      // Full modification at center
-            gradient.addColorStop(0.3, 'rgba(32, 32, 32, 0.9)'); // Strong modification
-            gradient.addColorStop(0.6, 'rgba(96, 96, 96, 0.7)'); // Medium blend
-            gradient.addColorStop(0.8, 'rgba(160, 160, 160, 0.4)'); // Light blend
-            gradient.addColorStop(0.95, 'rgba(224, 224, 224, 0.1)'); // Very light
-            gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');   // No modification at edge
-          } else {
-            // Inverse for new character mode
-            gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
-            gradient.addColorStop(0.3, 'rgba(224, 224, 224, 0.9)');
-            gradient.addColorStop(0.6, 'rgba(160, 160, 160, 0.7)');
-            gradient.addColorStop(0.8, 'rgba(96, 96, 96, 0.4)');
-            gradient.addColorStop(0.95, 'rgba(32, 32, 32, 0.1)');
-            gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
-          }
-          
-          return gradient;
-        };
-
-        // Apply face mask with proper blending
-        const coreRadius = Math.min(faceWidth, faceHeight) * 0.2;
-        const blendRadius = coreRadius + featherRadius;
-        
-        ctx.fillStyle = createFaceGradient(coreRadius, blendRadius);
-        ctx.beginPath();
-        ctx.ellipse(
-          centerX, centerY,
-          faceWidth * 0.5, faceHeight * 0.5,
-          0, 0, Math.PI * 2
-        );
-        ctx.fill();
-
-        // ENHANCED landmark preservation for better feature retention
-        if (preserveFaces && landmarks) {
-          const enhanceFeature = (points: any[], scale: number = 1.2, featureName: string) => {
-            if (points.length === 0) return;
-            
-            const featureCenter = points.reduce((acc, point) => ({
-              x: acc.x + point.x,
-              y: acc.y + point.y
-            }), { x: 0, y: 0 });
-            
-            featureCenter.x /= points.length;
-            featureCenter.y /= points.length;
-            
-            const minX = Math.min(...points.map(p => p.x));
-            const maxX = Math.max(...points.map(p => p.x));
-            const minY = Math.min(...points.map(p => p.y));
-            const maxY = Math.max(...points.map(p => p.y));
-            
-            const featureWidth = (maxX - minX) * scale;
-            const featureHeight = (maxY - minY) * scale;
-            
-            const featureGradient = ctx.createRadialGradient(
-              featureCenter.x, featureCenter.y, Math.min(featureWidth, featureHeight) * 0.1,
-              featureCenter.x, featureCenter.y, Math.max(featureWidth, featureHeight) * 0.6
-            );
-            
-            // Strong feature preservation
-            featureGradient.addColorStop(0, 'rgba(0, 0, 0, 1)');
-            featureGradient.addColorStop(0.4, 'rgba(16, 16, 16, 0.8)');
-            featureGradient.addColorStop(0.7, 'rgba(64, 64, 64, 0.5)');
-            featureGradient.addColorStop(1, 'rgba(128, 128, 128, 0)');
-            
-            ctx.fillStyle = featureGradient;
-            ctx.beginPath();
-            ctx.ellipse(
-              featureCenter.x, featureCenter.y,
-              featureWidth / 2, featureHeight / 2,
-              0, 0, Math.PI * 2
-            );
-            ctx.fill();
-            
-            console.log(`👁️ Enhanced ${featureName} preservation at (${Math.round(featureCenter.x)}, ${Math.round(featureCenter.y)})`);
-          };
-          
-          // Apply feature-specific preservation
-          enhanceFeature(landmarks.getLeftEye(), 1.1, 'left eye');
-          enhanceFeature(landmarks.getRightEye(), 1.1, 'right eye');
-          enhanceFeature(landmarks.getNose(), 1.0, 'nose');
-          enhanceFeature(landmarks.getMouth(), 1.0, 'mouth');
-        }
-      });
-
-      // Light blur for natural blending
-      ctx.filter = 'blur(1px)';
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.drawImage(canvas, 0, 0);
-      ctx.filter = 'none';
-
-      const maskDataUrl = canvas.toDataURL('image/png');
-      
-      console.log('✅ Optimized face mask generated:', {
-        faces: detections.length,
-        maskSize: `${(maskDataUrl.length / 1024).toFixed(1)}KB`,
-        preserveFaces,
-        featherRadius,
-        expansionFactor,
-        resolution: `${canvas.width}x${canvas.height}`
-      });
-      
-      return maskDataUrl;
-      
-    } catch (error) {
-      console.error('❌ Optimized face mask generation failed:', error);
-      return generateCenterFallbackMask(1024, 1024);
-    }
-  };
-
-  // Improved fallback mask for better coverage
-  const generateCenterFallbackMask = (width: number, height: number): string => {
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d')!;
-    
-    // Fill with white (areas to preserve)
-    ctx.fillStyle = 'white';
-    ctx.fillRect(0, 0, width, height);
-    
-    // Create center face area
-    const centerX = width / 2;
-    const centerY = height / 2;
-    
-    // Reasonable face area based on typical proportions
-    const faceWidth = width * 0.3;
-    const faceHeight = height * 0.3;
-    
-    const gradient = ctx.createRadialGradient(
-      centerX, centerY, Math.min(faceWidth, faceHeight) * 0.1,
-      centerX, centerY, Math.max(faceWidth, faceHeight) * 0.8
-    );
-    
-    gradient.addColorStop(0, 'rgba(0, 0, 0, 1)');
-    gradient.addColorStop(0.4, 'rgba(64, 64, 64, 0.8)');
-    gradient.addColorStop(0.7, 'rgba(128, 128, 128, 0.5)');
-    gradient.addColorStop(0.9, 'rgba(192, 192, 192, 0.2)');
-    gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
-    
-    ctx.fillStyle = gradient;
-    ctx.beginPath();
-    ctx.ellipse(centerX, centerY, faceWidth, faceHeight, 0, 0, Math.PI * 2);
-    ctx.fill();
-    
-    // Light blur
-    ctx.filter = 'blur(2px)';
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.drawImage(canvas, 0, 0);
-    ctx.filter = 'none';
-    
-    console.log('📱 Center fallback mask generated:', {
-      dimensions: `${width}x${height}`,
-      faceArea: `${Math.round(faceWidth)}x${Math.round(faceHeight)}`
-    });
-    
-    return canvas.toDataURL('image/png');
-  };
-
   // Environment variable checker for debugging
   useEffect(() => {
     const checkEnv = () => {
       console.log('🔍 Using secure Supabase Edge Functions for SDXL Inpainting');
       console.log('✅ API keys are now securely stored server-side');
-      console.log('📱 Mobile optimization enabled:', isMobile);
     };
     
     checkEnv();
@@ -512,7 +165,7 @@ export default function Photobooth() {
     loadFaceApiModels().catch(error => {
       console.warn('Failed to load face detection models:', error);
     });
-  }, [isMobile]);
+  }, []);
 
   // Update current model type when config changes
   useEffect(() => {
@@ -645,8 +298,7 @@ export default function Photobooth() {
       
       console.log('📷 Photo captured:', {
         format: imageSrc.substring(0, 30) + '...',
-        size: imageSrc.length,
-        isMobile
+        size: imageSrc.length
       });
       
       setMediaData(imageSrc);
@@ -678,7 +330,6 @@ export default function Photobooth() {
     setUploadSuccess(false);
     setUploadAttempts(0);
     setDebugInfo(null);
-    setCapturedImageDimensions(null);
     setProcessingState({ stage: 'detecting', progress: 0, message: 'Ready...' });
     setCameraReady(false);
     
@@ -780,13 +431,13 @@ export default function Photobooth() {
         {state.stage === 'detecting' && (
           <>
             <div className="w-2 h-2 bg-purple-400 rounded-full animate-pulse"></div>
-            <span>🔍 {isMobile ? 'Mobile-optimized analysis...' : 'Preparing your photo with AI magic...'}</span>
+            <span>🔍 Preparing your photo with AI magic...</span>
           </>
         )}
         {state.stage === 'masking' && (
           <>
             <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce"></div>
-            <span>🎭 {isMobile ? 'Enhanced mobile face detection...' : 'Crafting the perfect face blend...'}</span>
+            <span>🎭 Crafting the perfect face blend...</span>
           </>
         )}
         {state.stage === 'generating' && (
@@ -878,34 +529,29 @@ export default function Photobooth() {
     try {
       setGenerationAttempts(prev => prev + 1);
 
-      console.log('🚀 Starting optimized SDXL face processing...', {
-        isMobile,
-        attempt: generationAttempts + 1
-      });
+      console.log('🚀 Starting SDXL Inpainting generation process...');
       console.log('📋 Generation details:', {
         prompt: currentConfig.global_prompt,
         modelType: currentModelType,
         faceMode: currentConfig.face_preservation_mode || 'preserve_face',
-        attempt: generationAttempts + 1,
-        optimizedForFaces: true
+        attempt: generationAttempts + 1
       });
 
-      await animateProgress(0, 15, 1000, 'detecting', isMobile ? 'Analyzing mobile photo...' : 'Analyzing your photo...');
-      console.log('🖼️ Resizing image for optimal face processing...');
-      const processedContent = await resizeImageForFacePreservation(capturedImageData);
+      await animateProgress(0, 15, 1000, 'detecting', 'Analyzing your photo...');
+      console.log('🖼️ Resizing image for SDXL optimal input...');
+      const processedContent = await resizeImage(capturedImageData, 1024);
       
       if (!processedContent || !processedContent.startsWith('data:image/')) {
         throw new Error('Image resizing failed - invalid output format');
       }
       
-      console.log('✅ Face-optimized image resize for SDXL:', {
+      console.log('✅ Image resized for SDXL:', {
         originalSize: capturedImageData.length,
         processedSize: processedContent.length,
-        resolution: 'Face-optimized 1024x1024',
-        preservesFaceScale: true
+        resolution: '1024x1024 optimized'
       });
 
-      await animateProgress(15, 35, 1500, 'masking', isMobile ? 'Enhanced mobile face detection...' : 'Detecting facial features...');
+      await animateProgress(15, 35, 1500, 'masking', 'Detecting facial features...');
       
       let maskData: string | undefined;
       const faceMode = currentConfig.face_preservation_mode || 'preserve_face';
@@ -918,20 +564,18 @@ export default function Photobooth() {
           img.src = processedContent;
         });
 
-        console.log('🔍 Generating optimized face mask for better likeness...');
-        
-        // Use optimized mask generation with better settings
-        maskData = await generateOptimizedFaceMask(
+        console.log('🔍 Generating face-only mask (excluding clothing)...');
+        maskData = await generateSmartFaceMask(
           img,
           faceMode === 'preserve_face',
-          15, // Moderate feathering for natural blending
-          1.2 // Conservative expansion to preserve likeness
+          20,
+          1.2
         );
         
-        console.log('✅ Optimized face mask generated successfully for SDXL');
+        console.log('✅ Smart face mask generated successfully for SDXL');
         
       } catch (faceDetectionError) {
-        console.warn('⚠️ Face detection failed, using center fallback mask:', faceDetectionError);
+        console.warn('⚠️ Face detection failed, using fallback mask:', faceDetectionError);
         
         const img = new Image();
         await new Promise<void>((resolve, reject) => {
@@ -940,13 +584,13 @@ export default function Photobooth() {
           img.src = processedContent;
         });
         
-        maskData = generateCenterFallbackMask(img.naturalWidth, img.naturalHeight);
-        console.log('✅ Center fallback mask generated for SDXL');
+        maskData = generateFallbackMask(img.naturalWidth, img.naturalHeight);
+        console.log('✅ Fallback mask generated for SDXL');
       }
 
       await animateProgress(35, 45, 800, 'generating', 'Preparing AI magic...');
       
-      console.log('🎨 Starting SDXL generation with optimized face settings...');
+      console.log('🎨 Starting SDXL Inpainting generation...');
       
       let aiContent: string;
 
@@ -984,16 +628,13 @@ export default function Photobooth() {
         
         const basePrompt = currentConfig.global_prompt || 'AI Generated Portrait';
         const enhancedPrompt = faceMode === 'preserve_face' 
-          ? `${basePrompt}, high quality portrait, preserve facial features and likeness, natural skin texture, detailed eyes and facial structure, professional photography, sharp focus, maintain identity`
-          : `${basePrompt}, creative character transformation, artistic interpretation, detailed facial features`;
+          ? `${basePrompt}, photorealistic portrait, preserve facial features only, exclude clothing and collars, natural skin texture, detailed eyes and mouth, face-focused composition, no shirts or ties visible, professional headshot style, 8k quality`
+          : `${basePrompt}, creative character transformation, artistic interpretation, detailed facial features, no clothing elements from original`;
 
-        console.log(`🎭 Using ${faceMode} mode with face-optimized SDXL settings...`);
-        console.log('🎯 Enhanced prompt for face preservation:', enhancedPrompt);
+        console.log(`🎭 Using ${faceMode} mode with clothing-free SDXL Inpainting...`);
+        console.log('🎯 Enhanced prompt (clothing exclusion):', enhancedPrompt);
         
-        await animateProgress(55, 70, 1500, 'generating', isMobile ? 'Processing with mobile-optimized SDXL...' : 'Processing with SDXL AI...');
-        
-        // CRITICAL: Use lower strength for better face preservation
-        const optimizedStrength = faceMode === 'preserve_face' ? 0.25 : 0.5; // Much lower for better likeness
+        await animateProgress(55, 70, 1500, 'generating', 'Processing with SDXL AI...');
         
         const generationPromise = generateWithStability({
           prompt: enhancedPrompt,
@@ -1001,20 +642,20 @@ export default function Photobooth() {
           mode: 'inpaint',
           maskData: maskData,
           facePreservationMode: faceMode,
-          strength: optimizedStrength, // Key fix: lower strength preserves likeness better
-          cfgScale: 7.0, // Slightly lower for better adherence to input
-          steps: 30, // More steps for better quality
+          strength: faceMode === 'preserve_face' ? 0.4 : 0.7,
+          cfgScale: 8.0,
+          steps: 25,
           useControlNet: currentConfig.use_controlnet ?? true,
           controlNetType: currentConfig.controlnet_type || 'auto'
         });
 
         const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error('SDXL generation timed out. Please try again.')), 180000);
+          setTimeout(() => reject(new Error('SDXL Inpainting generation timed out. Please try again.')), 180000);
         });
 
         const progressPromise = async () => {
           await animateProgress(70, 80, 3000, 'generating', 'Applying AI transformation...');
-          await animateProgress(80, 88, 2500, 'generating', 'Preserving facial features...');
+          await animateProgress(80, 88, 2500, 'generating', 'Refining details...');
           await animateProgress(88, 90, 1000, 'generating', 'Almost done...');
           return await generationPromise;
         };
@@ -1022,7 +663,6 @@ export default function Photobooth() {
         let rawAiContent = await Promise.race([progressPromise(), timeoutPromise]);
         
         // Apply overlay if configured
-        console.log('🎨 Applying overlay to AI generated content...');
         await animateProgress(90, 95, 800, 'uploading', 'Applying overlay...');
         aiContent = await applyConfiguredOverlay(rawAiContent);
       }
@@ -1042,8 +682,7 @@ export default function Photobooth() {
         contentType: typeof aiContent,
         length: aiContent.length,
         startsWithData: aiContent.startsWith('data:'),
-        preview: aiContent.substring(0, 100) + '...',
-        optimizedForFaces: true
+        preview: aiContent.substring(0, 100) + '...'
       });
 
       if (aiContent.startsWith('data:')) {
@@ -1053,7 +692,7 @@ export default function Photobooth() {
             console.log('✅ SDXL generated image loads successfully:', {
               width: testImg.width,
               height: testImg.height,
-              model: 'SDXL Optimized for Face Preservation'
+              model: 'SDXL Inpainting'
             });
             resolve();
           };
@@ -1071,25 +710,24 @@ export default function Photobooth() {
 
       await animateProgress(98, 100, 600, 'uploading', 'Finalizing magic...');
 
-      console.log('✅ SDXL face-optimized generation completed successfully:', {
+      console.log('✅ SDXL Inpainting generation completed successfully:', {
         type: currentModelType,
         format: aiContent.startsWith('data:') ? 'data URL' : 'blob URL',
         size: aiContent.length,
         faceMode: faceMode,
-        optimizedStrength: faceMode === 'preserve_face' ? 0.25 : 0.5,
-        model: 'SDXL Face-Optimized'
+        model: 'SDXL Inpainting'
       });
 
       setProcessedMedia(aiContent);
       setError(null);
 
-      console.log('🎯 SDXL face-optimized process completed - automatic upload should trigger via useEffect');
+      console.log('🎯 SDXL Inpainting process completed - automatic upload should trigger via useEffect');
 
     } catch (error) {
-      console.error('❌ === SDXL FACE-OPTIMIZED GENERATION FAILED ===');
+      console.error('❌ === SDXL INPAINTING GENERATION FAILED ===');
       console.error('📊 Generation error details:', error);
 
-      let errorMessage = 'Failed to generate AI content with face-optimized SDXL. Please try again.';
+      let errorMessage = 'Failed to generate AI content with SDXL Inpainting. Please try again.';
       let debugDetails: any = null;
       
       if (error instanceof Error) {
@@ -1100,32 +738,29 @@ export default function Photobooth() {
           debugDetails = {
             issue: 'Edge Function Error',
             suggestion: 'Check STABILITY_API_KEY in Supabase Edge Functions',
-            errorType: 'server_error',
-            optimized: true
+            errorType: 'server_error'
           };
         } else if (message.includes('api key') || message.includes('unauthorized') || message.includes('401')) {
           errorMessage = 'API authentication failed. Please check your Stability AI API key.';
-          debugDetails = { errorType: 'auth_error', optimized: true };
+          debugDetails = { errorType: 'auth_error' };
         } else if (message.includes('credits') || message.includes('insufficient') || message.includes('402')) {
           errorMessage = 'Insufficient Stability AI credits. Please check your account balance.';
-          debugDetails = { errorType: 'credits_error', optimized: true };
+          debugDetails = { errorType: 'credits_error' };
         } else if (message.includes('rate limit') || message.includes('429')) {
           errorMessage = 'Rate limit exceeded. Please wait a moment and try again.';
-          debugDetails = { errorType: 'rate_limit_error', optimized: true };
+          debugDetails = { errorType: 'rate_limit_error' };
         } else if (message.includes('timeout')) {
           errorMessage = 'SDXL generation timed out. Please try again with a simpler prompt.';
-          debugDetails = { errorType: 'timeout_error', optimized: true };
+          debugDetails = { errorType: 'timeout_error' };
         } else if (message.includes('face detection')) {
-          errorMessage = isMobile ? 
-            'Mobile face detection failed. Please ensure good lighting and face the camera directly.' :
-            'Face detection failed. Please ensure the photo shows clear facial features.';
-          debugDetails = { errorType: 'face_detection_error', optimized: true };
+          errorMessage = 'Face detection failed. Please ensure the photo shows clear facial features.';
+          debugDetails = { errorType: 'face_detection_error' };
         } else if (message.includes('mask')) {
           errorMessage = 'Mask generation failed. Please try taking a new photo.';
-          debugDetails = { errorType: 'mask_error', optimized: true };
+          debugDetails = { errorType: 'mask_error' };
         } else {
-          errorMessage = `SDXL face-optimized error: ${error.message}`;
-          debugDetails = { errorType: 'general_error', originalMessage: error.message, optimized: true };
+          errorMessage = `SDXL Inpainting error: ${error.message}`;
+          debugDetails = { errorType: 'general_error', originalMessage: error.message };
         }
       }
 
@@ -1136,10 +771,9 @@ export default function Photobooth() {
     } finally {
       setProcessing(false);
     }
-  }, [currentModelType, generationAttempts, config, animateProgress, isMobile]);
+  }, [currentModelType, generationAttempts, config, animateProgress]);
 
-  // Enhanced mobile video constraints for better face capture
-  const getMobileVideoConstraintsEnhanced = () => {
+  const getMobileVideoConstraints = () => {
     if (!isMobile) {
       return {
         width: 1280,
@@ -1148,25 +782,11 @@ export default function Photobooth() {
       };
     }
 
-    // Optimized for mobile face capture
-    const userAgent = navigator.userAgent.toLowerCase();
-    const isIOS = /iphone|ipad|ipod/.test(userAgent);
-    
     return {
-      width: { ideal: isIOS ? 1280 : 1920, max: 1920 },
-      height: { ideal: isIOS ? 720 : 1080, max: 1920 },
+      width: { ideal: 1920, max: 1920 },
+      height: { ideal: 1080, max: 1080 },
       facingMode: "user",
-      frameRate: { ideal: 30, max: 30 },
-      // Enhanced mobile camera settings
-      ...(isIOS ? {
-        // iOS optimizations
-        exposureMode: "continuous",
-        whiteBalanceMode: "continuous",
-        focusMode: "continuous"
-      } : {
-        // Android optimizations  
-        aspectRatio: { ideal: 1.777 } // 16:9
-      })
+      frameRate: { ideal: 30, max: 30 }
     };
   };
 
@@ -1179,66 +799,52 @@ export default function Photobooth() {
           borderBottomColor: config?.primary_color ? `${config.primary_color}30` : undefined
         }}
       >
-        <div className="container mx-auto px-3 py-3 max-w-lg">
-          <div className="flex items-center justify-between gap-2">
-            <h1 className="text-lg sm:text-2xl font-bold flex items-center gap-2 min-w-0 flex-shrink">
-              <Camera className="w-6 h-6 sm:w-8 sm:h-8 flex-shrink-0" style={{ color: config?.primary_color }} />
-              <span className="truncate">{config?.brand_name || 'AI Photobooth'}</span>
+        <div className="container mx-auto px-4 py-4 max-w-lg">
+          <div className="flex items-center justify-between">
+            <h1 className="text-2xl font-bold flex items-center gap-3">
+              <Camera className="w-8 h-8" style={{ color: config?.primary_color }} />
+              {config?.brand_name || 'AI Photobooth'}
             </h1>
-            <div className="flex items-center gap-1 flex-wrap">
-              <div className="bg-gray-800 px-2 py-1 rounded-lg text-xs flex items-center gap-1 whitespace-nowrap">
+            <div className="flex items-center gap-2">
+              <div className="bg-gray-800 px-3 py-1 rounded-lg text-xs flex items-center gap-1">
                 {currentModelType === 'video' ? (
                   <>
-                    <Video className="w-3 h-3 text-purple-400 flex-shrink-0" />
-                    <span className="hidden xs:inline">Video Mode</span>
-                    <span className="xs:hidden">Video</span>
+                    <Video className="w-3 h-3 text-purple-400" />
+                    <span>Video Mode</span>
                   </>
                 ) : (
                   <>
-                    <ImageIcon className="w-3 h-3 text-blue-400 flex-shrink-0" />
-                    <span className="hidden xs:inline">SDXL Image</span>
-                    <span className="xs:hidden">SDXL</span>
+                    <ImageIcon className="w-3 h-3 text-blue-400" />
+                    <span>SDXL Image</span>
                   </>
                 )}
               </div>
               
-              <div className="bg-gray-800 px-2 py-1 rounded-lg text-xs flex items-center gap-1 whitespace-nowrap">
+              <div className="bg-gray-800 px-3 py-1 rounded-lg text-xs flex items-center gap-1">
                 {config?.face_preservation_mode === 'preserve_face' ? (
                   <>
-                    <Users className="w-3 h-3 text-green-400 flex-shrink-0" />
-                    <span className="text-green-400 hidden xs:inline">Face Preserved</span>
-                    <span className="text-green-400 xs:hidden">Face+</span>
+                    <Users className="w-3 h-3 text-green-400" />
+                    <span className="text-green-400">Face Preserved</span>
                   </>
                 ) : (
                   <>
-                    <UserX className="w-3 h-3 text-orange-400 flex-shrink-0" />
-                    <span className="text-orange-400 hidden xs:inline">New Character</span>
-                    <span className="text-orange-400 xs:hidden">New</span>
+                    <UserX className="w-3 h-3 text-orange-400" />
+                    <span className="text-orange-400">New Character</span>
                   </>
                 )}
               </div>
               
-              {isMobile && (
-                <div className="bg-gray-800 px-2 py-1 rounded-lg text-xs flex items-center gap-1 whitespace-nowrap">
-                  <Smartphone className="w-3 h-3 text-blue-400 flex-shrink-0" />
-                  <span className="text-blue-400 hidden xs:inline">Mobile+</span>
-                  <span className="text-blue-400 xs:hidden">📱</span>
-                </div>
-              )}
-              
               {processedMedia && (
-                <div className="bg-gray-800 px-2 py-1 rounded-lg text-xs flex items-center gap-1 whitespace-nowrap">
+                <div className="bg-gray-800 px-3 py-1 rounded-lg text-xs flex items-center gap-1">
                   {uploading ? (
                     <>
-                      <RefreshCw className="w-3 h-3 animate-spin text-blue-400 flex-shrink-0" />
-                      <span className="text-blue-400 hidden xs:inline">Saving...</span>
-                      <span className="text-blue-400 xs:hidden">💾</span>
+                      <RefreshCw className="w-3 h-3 animate-spin text-blue-400" />
+                      <span className="text-blue-400">Saving...</span>
                     </>
                   ) : uploadSuccess ? (
                     <>
-                      <ImageIcon className="w-3 h-3 text-green-400 flex-shrink-0" />
-                      <span className="text-green-400 hidden xs:inline">Saved!</span>
-                      <span className="text-green-400 xs:hidden">✅</span>
+                      <ImageIcon className="w-3 h-3 text-green-400" />
+                      <span className="text-green-400">Saved!</span>
                     </>
                   ) : null}
                 </div>
@@ -1246,7 +852,7 @@ export default function Photobooth() {
             </div>
           </div>
           {config?.global_prompt && (
-            <p className="text-gray-300 text-xs sm:text-sm mt-2 px-1 leading-relaxed break-words">
+            <p className="text-gray-300 text-sm mt-2 px-2">
               {config.global_prompt}
             </p>
           )}
@@ -1258,35 +864,35 @@ export default function Photobooth() {
           <div className="mb-6 bg-gradient-to-br from-blue-900/20 to-purple-900/20 border border-blue-500/30 rounded-xl p-5">
             <h3 className="text-white font-semibold mb-4 flex items-center gap-2">
               <Lightbulb className="w-5 h-5 text-yellow-400" />
-              {isMobile ? 'Mobile Face Swap Tips' : 'Get the Best Face Results'}
+              Get the Best SDXL Results
             </h3>
             <div className="space-y-3 text-sm">
               <div className="flex items-start gap-3">
                 <Lightbulb className="w-4 h-4 text-yellow-400 mt-0.5 flex-shrink-0" />
                 <div>
-                  <span className="text-white font-medium">{isMobile ? 'Good Mobile Lighting:' : 'Good Lighting:'}</span>
-                  <span className="text-gray-300"> {isMobile ? 'Use natural light, avoid harsh shadows on your face' : 'Face the light source, avoid harsh shadows'}</span>
+                  <span className="text-white font-medium">Good Lighting:</span>
+                  <span className="text-gray-300"> Face the light source, avoid harsh shadows</span>
                 </div>
               </div>
               <div className="flex items-start gap-3">
                 <Eye className="w-4 h-4 text-green-400 mt-0.5 flex-shrink-0" />
                 <div>
-                  <span className="text-white font-medium">{isMobile ? 'Hold Steady:' : 'Face the Camera:'}</span>
-                  <span className="text-gray-300"> {isMobile ? 'Keep phone steady, look directly at front camera' : 'Look directly at the lens for optimal face detection'}</span>
+                  <span className="text-white font-medium">Face the Camera:</span>
+                  <span className="text-gray-300"> Look directly at the lens for optimal face detection</span>
                 </div>
               </div>
               <div className="flex items-start gap-3">
                 <User className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" />
                 <div>
-                  <span className="text-white font-medium">Better Likeness:</span>
-                  <span className="text-gray-300"> Optimized settings preserve your facial features more accurately</span>
+                  <span className="text-white font-medium">Face-Only Preservation:</span>
+                  <span className="text-gray-300"> Only facial features preserved, clothing like collars and ties excluded</span>
                 </div>
               </div>
               <div className="flex items-start gap-3">
                 <Wand2 className="w-4 h-4 text-purple-400 mt-0.5 flex-shrink-0" />
                 <div>
-                  <span className="text-white font-medium">{isMobile ? 'Mobile SDXL:' : 'SDXL Face-Optimized:'}</span>
-                  <span className="text-gray-300"> {isMobile ? 'Enhanced AI processing for mobile photos' : 'Advanced AI optimized for face preservation'}</span>
+                  <span className="text-white font-medium">SDXL Inpainting:</span>
+                  <span className="text-gray-300"> Advanced AI for superior face preservation</span>
                 </div>
               </div>
             </div>
@@ -1326,19 +932,11 @@ export default function Photobooth() {
                 ref={webcamRef}
                 audio={false}
                 screenshotFormat="image/png"
-                screenshotQuality={0.95}
-                className={`w-full h-full ${
-                  isMobile 
-                    ? 'mobile-camera-preview ios-camera-fix android-camera-fix object-cover' 
-                    : 'object-cover'
-                }`}
-                videoConstraints={getMobileVideoConstraintsEnhanced()}
+                screenshotQuality={0.92}
+                className={`w-full h-full ${isMobile ? 'mobile-camera-preview ios-camera-fix object-cover' : 'object-cover'}`}
+                videoConstraints={getMobileVideoConstraints()}
                 onUserMedia={() => {
-                  console.log('✅ Webcam initialized successfully with mobile optimizations:', {
-                    cameraKey,
-                    isMobile,
-                    constraints: getMobileVideoConstraintsEnhanced()
-                  });
+                  console.log('✅ Webcam initialized successfully with key:', cameraKey);
                   setCameraReady(true);
                   setError(null);
                 }}
@@ -1350,7 +948,7 @@ export default function Photobooth() {
             {processedMedia && (
               <div className="absolute top-3 left-3 bg-black/70 text-white px-2 py-1 rounded-lg text-xs flex items-center gap-1">
                 <Wand2 className="w-3 h-3 text-purple-400" />
-                <span className="text-purple-400">SDXL {isMobile ? 'Mobile+' : 'Face-Optimized'}</span>
+                <span className="text-purple-400">SDXL Generated</span>
                 {uploading && (
                   <RefreshCw className="w-3 h-3 text-blue-400 animate-spin ml-1" />
                 )}
@@ -1360,14 +958,13 @@ export default function Photobooth() {
             {processing && (
               <div className="absolute top-3 left-3 bg-black/70 text-white px-2 py-1 rounded-lg text-xs flex items-center gap-1">
                 <Wand2 className="w-3 h-3 text-purple-400 animate-spin" />
-                <span className="text-purple-400">{isMobile ? 'Mobile AI...' : 'AI Processing...'}</span>
+                <span className="text-purple-400">AI Processing...</span>
               </div>
             )}
             
             {isMobile && !mediaData && !processedMedia && !processing && (
               <div className="absolute bottom-3 right-3 bg-black/70 text-white px-2 py-1 rounded-lg text-xs flex items-center gap-1">
-                <Smartphone className="w-3 h-3 text-green-400" />
-                <span className="text-green-400">📱 Face-Optimized</span>
+                <span className="text-green-400">📱 Mobile Optimized</span>
               </div>
             )}
           </div>
@@ -1382,17 +979,12 @@ export default function Photobooth() {
               style={{ backgroundColor: config?.primary_color || '#3B82F6' }}
             >
               <Camera className="w-7 h-7" />
-              {!cameraReady ? 
-                (isMobile ? 'Initializing Mobile Camera...' : 'Initializing Camera...') : 
-                (isMobile ? 'Take Mobile Photo' : 'Take Photo')
-              }
+              {!cameraReady ? 'Initializing Camera...' : 'Take Photo'}
             </button>
           ) : processing ? (
             <div className="text-center text-sm text-gray-400 bg-gray-800/50 rounded-lg p-4">
               <Wand2 className="w-6 h-6 animate-spin text-purple-400 mx-auto mb-2" />
-              <span className="text-purple-400">
-                {isMobile ? 'Mobile AI is creating your magic...' : 'AI is creating your magic...'}
-              </span>
+              <span className="text-purple-400">AI is creating your magic...</span>
             </div>
           ) : processedMedia ? (
             <button
@@ -1400,7 +992,7 @@ export default function Photobooth() {
               className="w-full flex items-center justify-center gap-2 py-4 bg-gray-600 rounded-xl hover:bg-gray-700 transition font-medium"
             >
               <Camera className="w-5 h-5" />
-              {isMobile ? 'Take New Mobile Photo' : 'Take New Photo'}
+              Take New Photo
             </button>
           ) : null}
 
@@ -1425,37 +1017,17 @@ export default function Photobooth() {
 
         {(process.env.NODE_ENV === 'development' || debugInfo) && (
           <div className="mt-4 p-4 bg-gray-800/50 rounded-lg text-xs text-gray-400 space-y-2">
-            <p><span className="text-purple-400 font-semibold">Model:</span> SDXL Face-Optimized + ControlNet</p>
+            <p><span className="text-purple-400 font-semibold">Model:</span> SDXL Inpainting + ControlNet</p>
             <p><span className="text-blue-400 font-semibold">Mode:</span> {currentModelType}</p>
             <p><span className="text-green-400 font-semibold">Face Mode:</span> {config?.face_preservation_mode || 'preserve_face'}</p>
             <p><span className="text-yellow-400 font-semibold">Attempts:</span> {generationAttempts}/3</p>
-            <p><span className="text-indigo-400 font-semibold">Strength:</span> {
-              config?.face_preservation_mode === 'preserve_face' ? '0.25 (Face-Optimized)' : '0.5 (Creative)'
-            }</p>
-            <p><span className="text-pink-400 font-semibold">CFG Scale:</span> 7.0 (Face-Balanced)</p>
-            <p><span className="text-cyan-400 font-semibold">Resolution:</span> {
-              capturedImageDimensions ? 
-                `${capturedImageDimensions.width}x${capturedImageDimensions.height} → 1024x1024 (Face-Optimized)` :
-                '1024x1024 (Face-Optimized)'
-            }</p>
-            <p><span className="text-orange-400 font-semibold">Steps:</span> 30 (Face-Enhanced)</p>
-            <p><span className="text-teal-400 font-semibold">Approach:</span> Face-Optimized Preservation {isMobile && '+ Mobile+'}</p>
-            <p><span className="text-violet-400 font-semibold">Mask Settings:</span> {
-              '15px feather, 1.2x expansion, Optimized for likeness'
-            }</p>
+            <p><span className="text-indigo-400 font-semibold">Strength:</span> {config?.face_preservation_mode === 'preserve_face' ? '0.4' : '0.7'}</p>
+            <p><span className="text-pink-400 font-semibold">CFG Scale:</span> 8.0</p>
+            <p><span className="text-cyan-400 font-semibold">Resolution:</span> 1024x1024 SDXL Native</p>
+            <p><span className="text-orange-400 font-semibold">Steps:</span> 25 (SDXL Optimized)</p>
+            <p><span className="text-teal-400 font-semibold">Approach:</span> Face-Only (No Clothing)</p>
+            <p><span className="text-violet-400 font-semibold">Mask Settings:</span> 20px feather, 1.2x expansion, clothing excluded</p>
             <p><span className="text-red-400 font-semibold">Camera Key:</span> {cameraKey} {isMobile && '(Mobile Mode)'}</p>
-            <p><span className="text-lime-400 font-semibold">Device:</span> {
-              isMobile ? 
-                `Mobile (${navigator.userAgent.includes('iPhone') ? 'iOS' : navigator.userAgent.includes('Android') ? 'Android' : 'Mobile'})` :
-                'Desktop'
-            }</p>
-            {capturedImageDimensions && (
-              <p><span className="text-emerald-400 font-semibold">Capture:</span> {
-                capturedImageDimensions.width}x{capturedImageDimensions.height} (AR: {
-                (capturedImageDimensions.width / capturedImageDimensions.height).toFixed(2)
-              }) {capturedImageDimensions.height > capturedImageDimensions.width ? '📱 Portrait' : '🖥️ Landscape'}
-              </p>
-            )}
             {debugInfo && (
               <div className="mt-2 p-2 bg-red-900/20 border border-red-500/30 rounded">
                 <p className="text-red-400 font-mono text-xs">
