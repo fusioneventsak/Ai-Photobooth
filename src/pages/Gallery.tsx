@@ -14,7 +14,7 @@
   }, [showShareMenu]);
 
   // Alternative sharing method that creates a temporary shareable page
-  const createShareablePage = (photo: Photo) => {
+  const createShareablePage = useCallback((photo: Photo) => {
     const shareWindow = window.open('', '_blank', 'width=600,height=400');
     
     if (shareWindow) {
@@ -99,7 +99,7 @@
       
       shareWindow.document.close();
     }
-  };import React, { useState, useEffect, useCallback } from 'react';
+  }, [generateOpenGraphTags, getDirectImageUrl]);import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Image as ImageIcon, 
@@ -401,6 +401,25 @@ export default function Gallery() {
     return photo.processed_url || photo.original_url || '';
   };
 
+  // Generate Open Graph meta tags for better social sharing
+  const generateOpenGraphTags = useCallback((photo: Photo) => {
+    const shareableUrl = getShareableUrl(photo);
+    const imageUrl = getDirectImageUrl(photo);
+    
+    return {
+      'og:title': 'AI Generated Photo',
+      'og:description': `"${photo.prompt}" - Created with AI technology`,
+      'og:image': imageUrl,
+      'og:url': shareableUrl,
+      'og:type': 'article',
+      'og:site_name': 'AI Photo Gallery',
+      'twitter:card': 'summary_large_image',
+      'twitter:title': 'AI Generated Photo',
+      'twitter:description': `"${photo.prompt}" - Created with AI technology`,
+      'twitter:image': imageUrl
+    };
+  }, [getShareableUrl, getDirectImageUrl]);
+
   const copyToClipboard = async (text: string, photoId: string) => {
     try {
       await navigator.clipboard.writeText(text);
@@ -412,7 +431,7 @@ export default function Gallery() {
     }
   };
 
-  const shareToFacebook = (photo: Photo) => {
+  const shareToFacebook = useCallback((photo: Photo) => {
     // Create a shareable page URL that can have proper Open Graph tags
     const shareableUrl = getShareableUrl(photo);
     
@@ -421,25 +440,25 @@ export default function Gallery() {
     
     window.open(shareUrl, '_blank', 'width=600,height=400');
     setShowShareMenu(null);
-  };
+  }, [getShareableUrl]);
 
-  const shareToTwitter = (photo: Photo) => {
+  const shareToTwitter = useCallback((photo: Photo) => {
     const shareableUrl = getShareableUrl(photo);
     const text = encodeURIComponent(`Check out this AI-generated photo: "${photo.prompt}" 🎨✨`);
     const shareUrl = `https://twitter.com/intent/tweet?text=${text}&url=${encodeURIComponent(shareableUrl)}`;
     window.open(shareUrl, '_blank', 'width=600,height=400');
     setShowShareMenu(null);
-  };
+  }, [getShareableUrl]);
 
-  const shareToWhatsApp = (photo: Photo) => {
+  const shareToWhatsApp = useCallback((photo: Photo) => {
     const shareableUrl = getShareableUrl(photo);
     const text = encodeURIComponent(`Check out this amazing AI-generated photo: "${photo.prompt}" ${shareableUrl}`);
     const shareUrl = `https://wa.me/?text=${text}`;
     window.open(shareUrl, '_blank');
     setShowShareMenu(null);
-  };
+  }, [getShareableUrl]);
 
-  const shareWithWebShareAPI = async (photo: Photo) => {
+  const shareWithWebShareAPI = useCallback(async (photo: Photo) => {
     if (navigator.share) {
       try {
         const shareableUrl = getShareableUrl(photo);
@@ -472,26 +491,7 @@ export default function Gallery() {
         }
       }
     }
-  };
-
-  // Generate Open Graph meta tags for better social sharing
-  const generateOpenGraphTags = (photo: Photo) => {
-    const shareableUrl = getShareableUrl(photo);
-    const imageUrl = getDirectImageUrl(photo);
-    
-    return {
-      'og:title': 'AI Generated Photo',
-      'og:description': `"${photo.prompt}" - Created with AI technology`,
-      'og:image': imageUrl,
-      'og:url': shareableUrl,
-      'og:type': 'article',
-      'og:site_name': 'AI Photo Gallery',
-      'twitter:card': 'summary_large_image',
-      'twitter:title': 'AI Generated Photo',
-      'twitter:description': `"${photo.prompt}" - Created with AI technology`,
-      'twitter:image': imageUrl
-    };
-  };
+  }, [getShareableUrl, getDirectImageUrl]);
 
   // Photo action buttons component
   const PhotoActions = ({ photo, className = "" }: { photo: Photo; className?: string }) => (
