@@ -40,6 +40,7 @@ export default function Photobooth() {
   });
   const [cameraKey, setCameraKey] = useState(0); // Add camera key for forcing re-initialization
   const [isMobile, setIsMobile] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false); // Add camera ready state
   
   const webcamRef = React.useRef<Webcam>(null);
 
@@ -252,7 +253,7 @@ export default function Photobooth() {
       setError(null);
       
       // Check if webcam ref exists and is ready
-      if (!webcamRef.current) {
+      if (!webcamRef.current || !cameraReady) {
         throw new Error('Camera not ready. Please wait a moment and try again.');
       }
       
@@ -289,7 +290,7 @@ export default function Photobooth() {
       setError(errorMessage);
       setMediaData(null);
     }
-  }, []);
+  }, [cameraReady]);
 
   const reset = () => {
     setMediaData(null);
@@ -302,6 +303,7 @@ export default function Photobooth() {
     setUploadAttempts(0);
     setDebugInfo(null);
     setProcessingState({ stage: 'detecting', progress: 0, message: 'Ready...' });
+    setCameraReady(false); // Reset camera ready state
     if (processedMedia && processedMedia.startsWith('blob:')) {
       URL.revokeObjectURL(processedMedia);
     }
@@ -317,6 +319,7 @@ export default function Photobooth() {
     const errorMessage = err instanceof DOMException ? err.message : err;
     console.error('Webcam error:', errorMessage);
     setError(`Camera error: ${errorMessage}`);
+    setCameraReady(false);
     
     // Try to recover by re-initializing camera
     setTimeout(() => {
@@ -872,6 +875,7 @@ export default function Photobooth() {
                 videoConstraints={getMobileVideoConstraints()}
                 onUserMedia={() => {
                   console.log('✅ Webcam initialized successfully with key:', cameraKey);
+                  setCameraReady(true);
                   setError(null); // Clear any previous camera errors
                 }}
                 onUserMediaError={handleWebcamError}
@@ -912,12 +916,12 @@ export default function Photobooth() {
           {!mediaData && !processing && !processedMedia ? (
             <button
               onClick={capturePhoto}
-              disabled={!!error || !webcamRef.current}
+              disabled={!!error || !cameraReady}
               className="w-full flex items-center justify-center gap-3 py-5 rounded-xl hover:opacity-90 transition disabled:opacity-50 text-lg font-semibold shadow-lg"
               style={{ backgroundColor: config?.primary_color || '#3B82F6' }}
             >
               <Camera className="w-7 h-7" />
-              {!webcamRef.current ? 'Initializing Camera...' : 'Take Photo'}
+              {!cameraReady ? 'Initializing Camera...' : 'Take Photo'}
             </button>
           ) : processing ? (
             <div className="text-center text-sm text-gray-400 bg-gray-800/50 rounded-lg p-4">
