@@ -210,7 +210,7 @@ export default function Photobooth() {
         
         const uploadResult = await uploadPhoto(
           processedMedia,
-          config.global_prompt || 'AI Generated Image',
+          currentConfig?.global_prompt || 'AI Generated Image',
           currentModelType
         );
         
@@ -442,8 +442,17 @@ export default function Photobooth() {
       return;
     }
 
-    if (!config) {
-      setError('Application configuration not loaded');
+    // Wait for config to load if it's not available yet
+    let currentConfig = config;
+    if (!currentConfig) {
+      console.log('⏳ Config not loaded yet, waiting...');
+      // Try to wait a bit for config to load
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      currentConfig = useConfigStore.getState().config;
+    }
+
+    if (!currentConfig) {
+      setError('Application configuration failed to load. Please refresh the page and try again.');
       return;
     }
 
@@ -461,9 +470,9 @@ export default function Photobooth() {
 
       console.log('🚀 Starting SDXL Inpainting generation process...');
       console.log('📋 Generation details:', {
-        prompt: config.global_prompt,
+        prompt: currentConfig.global_prompt,
         modelType: currentModelType,
-        faceMode: config.face_preservation_mode || 'preserve_face',
+        faceMode: currentConfig.face_preservation_mode || 'preserve_face',
         attempt: generationAttempts + 1
       });
 
@@ -486,7 +495,7 @@ export default function Photobooth() {
       setProcessingState({ stage: 'masking', progress: 30, message: 'Analyzing facial features...' });
       
       let maskData: string | undefined;
-      const faceMode = config.face_preservation_mode || 'preserve_face';
+      const faceMode = currentConfig.face_preservation_mode || 'preserve_face';
       
       try {
         // Create image element for face detection
@@ -534,10 +543,10 @@ export default function Photobooth() {
         console.log('🎬 Starting video generation with Replicate...');
         
         const videoPromise = generateWithReplicate({
-          prompt: config.global_prompt,
+          prompt: currentConfig.global_prompt || 'AI Generated Video',
           inputData: processedContent,
           type: 'video',
-          duration: config.video_duration || 5,
+          duration: currentConfig.video_duration || 5,
           preserveFace: faceMode === 'preserve_face'
         });
 
@@ -549,9 +558,10 @@ export default function Photobooth() {
         aiContent = await Promise.race([videoPromise, timeoutPromise]);
       } else {
         // Enhanced prompting for SDXL Inpainting with clothing exclusion
+        const basePrompt = currentConfig.global_prompt || 'AI Generated Portrait';
         const enhancedPrompt = faceMode === 'preserve_face' 
-          ? `${config.global_prompt}, photorealistic portrait, preserve facial features only, exclude clothing and collars, natural skin texture, detailed eyes and mouth, face-focused composition, no shirts or ties visible, professional headshot style, 8k quality`
-          : `${config.global_prompt}, creative character transformation, artistic interpretation, detailed facial features, no clothing elements from original`;
+          ? `${basePrompt}, photorealistic portrait, preserve facial features only, exclude clothing and collars, natural skin texture, detailed eyes and mouth, face-focused composition, no shirts or ties visible, professional headshot style, 8k quality`
+          : `${basePrompt}, creative character transformation, artistic interpretation, detailed facial features, no clothing elements from original`;
 
         console.log(`🎭 Using ${faceMode} mode with clothing-free SDXL Inpainting...`);
         console.log('🎯 Enhanced prompt (clothing exclusion):', enhancedPrompt);
@@ -565,8 +575,8 @@ export default function Photobooth() {
           strength: faceMode === 'preserve_face' ? 0.4 : 0.7, // Optimized for SDXL
           cfgScale: 8.0,  // Good balance for SDXL
           steps: 25,      // Optimal for SDXL quality/speed
-          useControlNet: config.use_controlnet ?? true,
-          controlNetType: config.controlnet_type || 'auto'
+          useControlNet: currentConfig.use_controlnet ?? true,
+          controlNetType: currentConfig.controlnet_type || 'auto'
         });
 
         const timeoutPromise = new Promise<never>((_, reject) => {
@@ -685,7 +695,7 @@ export default function Photobooth() {
     } finally {
       setProcessing(false);
     }
-  }, [config, currentModelType, generationAttempts]);
+  }, [currentModelType, generationAttempts]);
 
   // Get mobile-optimized video constraints
   const getMobileVideoConstraints = () => {
