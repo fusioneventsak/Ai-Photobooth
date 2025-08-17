@@ -1,5 +1,5 @@
 // src/pages/Photobooth.tsx
-// Enhanced Photobooth component matching original quality with improved UI
+// Enhanced Photobooth component with mobile optimization and camera fixes
 
 import React, { useState, useEffect } from 'react';
 import Webcam from 'react-webcam';
@@ -38,8 +38,25 @@ export default function Photobooth() {
     progress: 0,
     message: 'Starting...'
   });
+  const [cameraKey, setCameraKey] = useState(0); // Add camera key for forcing re-initialization
+  const [isMobile, setIsMobile] = useState(false);
   
   const webcamRef = React.useRef<Webcam>(null);
+
+  // Detect mobile device
+  useEffect(() => {
+    const checkMobile = () => {
+      const userAgent = navigator.userAgent.toLowerCase();
+      const isIOS = /iphone|ipad|ipod/.test(userAgent);
+      const isAndroid = /android/.test(userAgent);
+      const isMobileDevice = isIOS || isAndroid || window.innerWidth <= 768;
+      setIsMobile(isMobileDevice);
+    };
+
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // Add CSS for gradient animation
   React.useEffect(() => {
@@ -57,6 +74,35 @@ export default function Photobooth() {
       }
       .animate-gradient-x {
         animation: gradient-x 3s ease infinite;
+      }
+      
+      /* Mobile-specific camera fixes */
+      @media (max-width: 768px) {
+        .mobile-camera-container {
+          height: 100vw;
+          max-height: 80vh;
+        }
+        
+        .mobile-camera-preview {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+        }
+        
+        /* iOS specific fixes */
+        @supports (-webkit-touch-callout: none) {
+          .ios-camera-fix {
+            transform: scaleX(-1); /* Mirror for front camera */
+            -webkit-transform: scaleX(-1);
+          }
+        }
+      }
+      
+      /* Desktop camera styling */
+      @media (min-width: 769px) {
+        .desktop-camera-container {
+          aspect-ratio: 1;
+        }
       }
     `;
     document.head.appendChild(style);
@@ -255,12 +301,22 @@ export default function Photobooth() {
     }
     // Clear session storage for this session
     sessionStorage.clear();
+    
+    // Force camera re-initialization by updating the key
+    setCameraKey(prev => prev + 1);
+    console.log('🔄 Camera reset - forcing re-initialization');
   };
 
   const handleWebcamError = (err: string | DOMException) => {
     const errorMessage = err instanceof DOMException ? err.message : err;
     console.error('Webcam error:', errorMessage);
     setError(`Camera error: ${errorMessage}`);
+    
+    // Try to recover by re-initializing camera
+    setTimeout(() => {
+      setCameraKey(prev => prev + 1);
+      console.log('🔄 Attempting camera recovery...');
+    }, 1000);
   };
 
   const getErrorIcon = (error: string) => {
@@ -625,6 +681,25 @@ export default function Photobooth() {
     }
   };
 
+  // Get mobile-optimized video constraints
+  const getMobileVideoConstraints = () => {
+    if (!isMobile) {
+      return {
+        width: 1280,
+        height: 720,
+        facingMode: "user"
+      };
+    }
+
+    // Mobile-optimized constraints
+    return {
+      width: { ideal: 1920, max: 1920 },
+      height: { ideal: 1080, max: 1080 },
+      facingMode: "user",
+      frameRate: { ideal: 30, max: 30 }
+    };
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 text-white">
       <div 
@@ -740,7 +815,7 @@ export default function Photobooth() {
 
         {/* Main View - Camera Preview or AI Result */}
         <div className="bg-gray-800 rounded-xl overflow-hidden mb-6 shadow-2xl">
-          <div className="aspect-square bg-black relative">
+          <div className={`bg-black relative ${isMobile ? 'mobile-camera-container' : 'desktop-camera-container aspect-square'}`}>
             {processedMedia ? (
               // Show AI generated result
               currentModelType === 'video' ? (
@@ -750,13 +825,13 @@ export default function Photobooth() {
                   loop
                   muted
                   playsInline
-                  className="w-full h-full object-contain"
+                  className={`w-full h-full ${isMobile ? 'object-cover' : 'object-contain'}`}
                 />
               ) : (
                 <img
                   src={processedMedia}
                   alt="SDXL Generated"
-                  className="w-full h-full object-contain"
+                  className={`w-full h-full ${isMobile ? 'object-cover' : 'object-contain'}`}
                 />
               )
             ) : mediaData ? (
@@ -764,7 +839,7 @@ export default function Photobooth() {
               <img
                 src={mediaData}
                 alt="Captured"
-                className="w-full h-full object-contain"
+                className={`w-full h-full ${isMobile ? 'object-cover' : 'object-contain'}`}
               />
             ) : error ? (
               // Show error state
@@ -772,20 +847,19 @@ export default function Photobooth() {
             ) : (
               // Show webcam
               <Webcam
+                key={cameraKey} // Force re-initialization when key changes
                 ref={webcamRef}
                 audio={false}
                 screenshotFormat="image/png"
                 screenshotQuality={0.92}
-                className="w-full h-full object-cover"
-                videoConstraints={{
-                  width: 1280,
-                  height: 720,
-                  facingMode: "user"
-                }}
+                className={`w-full h-full ${isMobile ? 'mobile-camera-preview ios-camera-fix object-cover' : 'object-cover'}`}
+                videoConstraints={getMobileVideoConstraints()}
                 onUserMedia={() => {
-                  console.log('✅ Webcam initialized successfully');
+                  console.log('✅ Webcam initialized successfully with key:', cameraKey);
+                  setError(null); // Clear any previous camera errors
                 }}
                 onUserMediaError={handleWebcamError}
+                mirrored={isMobile} // Mirror on mobile for better UX
               />
             )}
             
@@ -806,6 +880,13 @@ export default function Photobooth() {
                 {uploading && (
                   <RefreshCw className="w-3 h-3 text-blue-400 animate-spin ml-1" />
                 )}
+              </div>
+            )}
+            
+            {/* Mobile optimization indicator */}
+            {isMobile && !mediaData && !processedMedia && (
+              <div className="absolute bottom-3 right-3 bg-black/70 text-white px-2 py-1 rounded-lg text-xs flex items-center gap-1">
+                <span className="text-green-400">📱 Mobile Optimized</span>
               </div>
             )}
           </div>
@@ -877,6 +958,7 @@ export default function Photobooth() {
             <p><span className="text-orange-400 font-semibold">Steps:</span> 25 (SDXL Optimized)</p>
             <p><span className="text-teal-400 font-semibold">Approach:</span> Face-Only (No Clothing)</p>
             <p><span className="text-violet-400 font-semibold">Mask Settings:</span> 20px feather, 1.2x expansion, clothing excluded</p>
+            <p><span className="text-red-400 font-semibold">Camera Key:</span> {cameraKey} {isMobile && '(Mobile Mode)'}</p>
             {debugInfo && (
               <div className="mt-2 p-2 bg-red-900/20 border border-red-500/30 rounded">
                 <p className="text-red-400 font-mono text-xs">
