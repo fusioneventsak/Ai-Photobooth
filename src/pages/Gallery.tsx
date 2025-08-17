@@ -173,16 +173,16 @@ export default function Gallery() {
   }, []);
 
   const shareToFacebook = useCallback((photo: Photo) => {
-    // Use direct image URL for better Facebook image preview
-    const imageUrl = getDirectImageUrl(photo);
+    // Use app URL for better Facebook sharing with proper meta tags
+    const shareableUrl = getShareableUrl(photo);
     const text = encodeURIComponent(`Check out this amazing AI-generated photo: "${photo.prompt}"`);
     
-    // Facebook sharer with image URL as the main URL for better preview
-    const shareUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(imageUrl)}&quote=${text}`;
+    // Facebook sharer with app URL so it can read proper Open Graph tags
+    const shareUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareableUrl)}&quote=${text}`;
     
     window.open(shareUrl, '_blank', 'width=600,height=400');
     setShowShareMenu(null);
-  }, [getDirectImageUrl]);
+  }, [getShareableUrl]);
 
   const shareToTwitter = useCallback((photo: Photo) => {
     const shareableUrl = getShareableUrl(photo);
@@ -547,17 +547,21 @@ export default function Gallery() {
             initial={{ opacity: 0, scale: 0.9, y: -10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: -10 }}
-            className="share-menu absolute right-0 top-full mt-2 bg-gray-900 rounded-lg shadow-2xl border-2 border-gray-600 p-3 min-w-52 z-20"
-            style={{ boxShadow: '0 10px 25px rgba(0,0,0,0.5)' }}
+            className="share-menu absolute right-0 top-full mt-2 bg-gray-900 rounded-lg shadow-2xl border-2 border-gray-600 p-3 w-56 z-30"
+            style={{ 
+              boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
+              maxHeight: '400px',
+              overflowY: 'auto'
+            }}
           >
             {navigator.share && (
               <>
                 <button
                   onClick={() => shareWithWebShareAPI(photo)}
-                  className="w-full flex items-center gap-3 px-3 py-3 text-sm text-gray-200 hover:text-white hover:bg-gray-700 rounded-lg transition"
+                  className="w-full flex items-center gap-3 px-3 py-3 text-sm text-gray-200 hover:text-white hover:bg-gray-700 rounded-lg transition whitespace-nowrap"
                 >
-                  <Share2 className="w-4 h-4" />
-                  Share...
+                  <Share2 className="w-4 h-4 flex-shrink-0" />
+                  <span className="truncate">Share...</span>
                 </button>
                 <div className="border-t border-gray-700 my-2"></div>
               </>
@@ -565,17 +569,17 @@ export default function Gallery() {
 
             <button
               onClick={() => copyToClipboard(getShareableUrl(photo), photo.id)}
-              className="w-full flex items-center gap-3 px-3 py-3 text-sm text-gray-200 hover:text-white hover:bg-gray-700 rounded-lg transition"
+              className="w-full flex items-center gap-3 px-3 py-3 text-sm text-gray-200 hover:text-white hover:bg-gray-700 rounded-lg transition whitespace-nowrap"
             >
               {copySuccess === photo.id ? (
                 <>
-                  <Check className="w-4 h-4 text-green-400" />
-                  <span className="text-green-400">Copied!</span>
+                  <Check className="w-4 h-4 text-green-400 flex-shrink-0" />
+                  <span className="text-green-400 truncate">Copied!</span>
                 </>
               ) : (
                 <>
-                  <Link className="w-4 h-4" />
-                  Copy Link
+                  <Link className="w-4 h-4 flex-shrink-0" />
+                  <span className="truncate">Copy Link</span>
                 </>
               )}
             </button>
@@ -584,40 +588,40 @@ export default function Gallery() {
 
             <button
               onClick={() => shareToFacebook(photo)}
-              className="w-full flex items-center gap-3 px-3 py-3 text-sm text-gray-200 hover:text-white hover:bg-blue-600/20 rounded-lg transition"
+              className="w-full flex items-center gap-3 px-3 py-3 text-sm text-gray-200 hover:text-white hover:bg-blue-600/20 rounded-lg transition whitespace-nowrap"
             >
-              <div className="w-4 h-4 bg-blue-600 rounded flex items-center justify-center">
+              <div className="w-4 h-4 bg-blue-600 rounded flex items-center justify-center flex-shrink-0">
                 <span className="text-white text-xs font-bold">f</span>
               </div>
-              Facebook
+              <span className="truncate">Facebook</span>
             </button>
 
             <button
               onClick={() => shareToTwitter(photo)}
-              className="w-full flex items-center gap-3 px-3 py-3 text-sm text-gray-200 hover:text-white hover:bg-blue-400/20 rounded-lg transition"
+              className="w-full flex items-center gap-3 px-3 py-3 text-sm text-gray-200 hover:text-white hover:bg-blue-400/20 rounded-lg transition whitespace-nowrap"
             >
-              <div className="w-4 h-4 bg-blue-400 rounded flex items-center justify-center">
+              <div className="w-4 h-4 bg-blue-400 rounded flex items-center justify-center flex-shrink-0">
                 <span className="text-white text-xs font-bold">𝕏</span>
               </div>
-              Twitter / X
+              <span className="truncate">Twitter / X</span>
             </button>
 
             <button
               onClick={() => shareToLinkedIn(photo)}
-              className="w-full flex items-center gap-3 px-3 py-3 text-sm text-gray-200 hover:text-white hover:bg-blue-700/20 rounded-lg transition"
+              className="w-full flex items-center gap-3 px-3 py-3 text-sm text-gray-200 hover:text-white hover:bg-blue-700/20 rounded-lg transition whitespace-nowrap"
             >
-              <div className="w-4 h-4 bg-blue-700 rounded flex items-center justify-center">
+              <div className="w-4 h-4 bg-blue-700 rounded flex items-center justify-center flex-shrink-0">
                 <span className="text-white text-xs font-bold">in</span>
               </div>
-              LinkedIn
+              <span className="truncate">LinkedIn</span>
             </button>
 
             <button
               onClick={() => shareToWhatsApp(photo)}
-              className="w-full flex items-center gap-3 px-3 py-3 text-sm text-gray-200 hover:text-white hover:bg-green-600/20 rounded-lg transition"
+              className="w-full flex items-center gap-3 px-3 py-3 text-sm text-gray-200 hover:text-white hover:bg-green-600/20 rounded-lg transition whitespace-nowrap"
             >
-              <MessageCircle className="w-4 h-4 text-green-500" />
-              WhatsApp
+              <MessageCircle className="w-4 h-4 text-green-500 flex-shrink-0" />
+              <span className="truncate">WhatsApp</span>
             </button>
           </motion.div>
         )}
