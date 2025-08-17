@@ -99,7 +99,9 @@ export async function updateConfig(updates: Partial<Config>): Promise<Config | n
       'global_prompt', 'gallery_animation', 'gallery_speed', 'gallery_layout',
       'stability_api_key', 'gallery_images_per_page', 'model_type', 
       'video_duration', 'image_provider', 'video_provider', 
-      'use_provider_fallback', 'face_preservation_mode'
+      'use_provider_fallback', 'face_preservation_mode',
+      // ControlNet fields that were missing in the original:
+      'use_controlnet', 'controlnet_type'
     ];
 
     Object.entries(updates).forEach(([key, value]) => {
