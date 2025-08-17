@@ -13,6 +13,7 @@ import {
   generateSmartFaceMask, 
   generateFallbackMask 
 } from '../lib/faceDetection';
+import { shouldApplyOverlay, getActiveOverlay, applyOverlayToImage } from '../lib/overlayUtils';
 
 interface ProcessingState {
   stage: 'detecting' | 'masking' | 'generating' | 'uploading' | 'complete';
@@ -461,6 +462,43 @@ export default function Photobooth() {
     </div>
   );
 
+  /**
+   * Apply overlay to the generated AI image if one is configured
+   */
+  const applyConfiguredOverlay = async (generatedImageData: string): Promise<string> => {
+    try {
+      // Check if overlay should be applied
+      if (!shouldApplyOverlay()) {
+        console.log('🎨 No overlay configured, returning original image');
+        return generatedImageData;
+      }
+
+      const overlayConfig = getActiveOverlay();
+      if (!overlayConfig) {
+        console.log('🎨 No active overlay found, returning original image');
+        return generatedImageData;
+      }
+
+      console.log('🎨 Applying overlay to AI generated image:', {
+        overlayName: overlayConfig.name,
+        overlayType: overlayConfig.type,
+        borderId: overlayConfig.borderId,
+        aspectRatio: overlayConfig.aspectRatio
+      });
+
+      // Apply the overlay
+      const imageWithOverlay = await applyOverlayToImage(generatedImageData, overlayConfig);
+      
+      console.log('✅ Overlay applied successfully to AI image');
+      return imageWithOverlay;
+
+    } catch (error) {
+      console.error('❌ Failed to apply overlay to AI image:', error);
+      // Return original image if overlay fails
+      return generatedImageData;
+    }
+  };
+
   const processMediaWithCapturedPhoto = React.useCallback(async (capturedImageData: string) => {
     if (!capturedImageData) {
       setError('No photo captured');
@@ -580,7 +618,11 @@ export default function Photobooth() {
           return await videoPromise;
         };
 
-        aiContent = await Promise.race([progressPromise(), timeoutPromise]);
+        let rawAiContent = await Promise.race([progressPromise(), timeoutPromise]);
+        
+        // Note: Overlays for video will be applied as a frame overlay in future versions
+        // For now, we skip overlay application for videos
+        aiContent = rawAiContent;
       } else {
         await animateProgress(45, 55, 1200, 'generating', 'Loading SDXL model...');
         
@@ -618,10 +660,14 @@ export default function Photobooth() {
           return await generationPromise;
         };
 
-        aiContent = await Promise.race([progressPromise(), timeoutPromise]);
+        let rawAiContent = await Promise.race([progressPromise(), timeoutPromise]);
+        
+        // Apply overlay if configured
+        await animateProgress(90, 95, 800, 'uploading', 'Applying overlay...');
+        aiContent = await applyConfiguredOverlay(rawAiContent);
       }
       
-      await animateProgress(90, 95, 800, 'generating', 'Validating result...');
+      await animateProgress(95, 98, 500, 'generating', 'Validating result...');
       
       if (!aiContent) {
         throw new Error('Generated content is empty. Please try again.');
@@ -662,7 +708,7 @@ export default function Photobooth() {
         });
       }
 
-      await animateProgress(95, 100, 600, 'uploading', 'Finalizing magic...');
+      await animateProgress(98, 100, 600, 'uploading', 'Finalizing magic...');
 
       console.log('✅ SDXL Inpainting generation completed successfully:', {
         type: currentModelType,
