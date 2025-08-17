@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  Image as ImageIcon, 
+  ImageIcon, 
   Download, 
   Trash2, 
   RefreshCw, 
@@ -23,7 +23,8 @@ import {
   Link,
   Facebook,
   Twitter,
-  MessageCircle
+  MessageCircle,
+  ExternalLink
 } from 'lucide-react';
 import { useConfigStore } from '../store/configStore';
 import { 
@@ -55,37 +56,266 @@ export default function Gallery() {
   const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
   const [showShareMenu, setShowShareMenu] = useState<string | null>(null);
   const [copySuccess, setCopySuccess] = useState<string | null>(null);
+  const [sharePageCache, setSharePageCache] = useState<Map<string, string>>(new Map());
 
   // Helper functions
   const getShareableUrl = useCallback((photo: Photo): string => {
-    return `${window.location.origin}/gallery/share/${photo.id}`;
-  }, []);
+    // Check if we have a cached share page URL
+    if (sharePageCache.has(photo.id)) {
+      return sharePageCache.get(photo.id)!;
+    }
+    
+    // For production, you'd want to create a proper server endpoint
+    // For now, we'll use a data URL approach for better social sharing
+    return `${window.location.origin}/share/${photo.id}`;
+  }, [sharePageCache]);
 
   const getDirectImageUrl = useCallback((photo: Photo): string => {
     return photo.processed_url || photo.original_url || '';
   }, []);
 
-  const generateOpenGraphTags = useCallback((photo: Photo) => {
-    const shareableUrl = getShareableUrl(photo);
+  const generateSharePageContent = useCallback((photo: Photo): string => {
     const imageUrl = getDirectImageUrl(photo);
+    const shareUrl = `${window.location.origin}/share/${photo.id}`;
+    const title = 'AI Generated Photo';
+    const description = `"${photo.prompt}" - Created with AI technology`;
     
-    return {
-      'og:title': 'AI Generated Photo',
-      'og:description': `"${photo.prompt}" - Created with AI technology`,
-      'og:image': imageUrl,
-      'og:image:width': '1200',
-      'og:image:height': '630',
-      'og:image:type': 'image/jpeg',
-      'og:url': shareableUrl,
-      'og:type': 'article',
-      'og:site_name': 'AI Photo Gallery',
-      'twitter:card': 'summary_large_image',
-      'twitter:title': 'AI Generated Photo',
-      'twitter:description': `"${photo.prompt}" - Created with AI technology`,
-      'twitter:image': imageUrl,
-      'twitter:image:alt': photo.prompt
-    };
-  }, [getShareableUrl, getDirectImageUrl]);
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${title}</title>
+  
+  <!-- Essential Open Graph tags for Facebook -->
+  <meta property="og:title" content="${title}" />
+  <meta property="og:description" content="${description}" />
+  <meta property="og:image" content="${imageUrl}" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:type" content="image/jpeg" />
+  <meta property="og:url" content="${shareUrl}" />
+  <meta property="og:type" content="article" />
+  <meta property="og:site_name" content="AI Photo Gallery" />
+  
+  <!-- Twitter Card tags -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="${title}" />
+  <meta name="twitter:description" content="${description}" />
+  <meta name="twitter:image" content="${imageUrl}" />
+  <meta name="twitter:image:alt" content="${photo.prompt}" />
+  
+  <!-- LinkedIn specific -->
+  <meta property="linkedin:card" content="summary_large_image" />
+  
+  <!-- WhatsApp and general -->
+  <meta name="description" content="${description}" />
+  <meta name="image" content="${imageUrl}" />
+  
+  <!-- Favicon -->
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      color: white;
+    }
+    
+    .container {
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(10px);
+      border-radius: 20px;
+      padding: 2rem;
+      max-width: 600px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+    
+    .title {
+      font-size: 2rem;
+      font-weight: bold;
+      margin-bottom: 1rem;
+      background: linear-gradient(45deg, #fff, #f0f0f0);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    
+    .image-container {
+      margin: 2rem 0;
+      border-radius: 15px;
+      overflow: hidden;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    }
+    
+    .photo {
+      width: 100%;
+      height: auto;
+      max-height: 400px;
+      object-fit: contain;
+      background: #000;
+    }
+    
+    .prompt {
+      font-size: 1.2rem;
+      font-style: italic;
+      margin: 1.5rem 0;
+      line-height: 1.6;
+      color: #f0f0f0;
+    }
+    
+    .share-buttons {
+      display: flex;
+      gap: 15px;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-top: 2rem;
+    }
+    
+    .share-btn {
+      padding: 12px 24px;
+      border: none;
+      border-radius: 25px;
+      color: white;
+      text-decoration: none;
+      font-weight: 600;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.9rem;
+    }
+    
+    .share-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+    }
+    
+    .facebook { background: linear-gradient(45deg, #1877f2, #42a5f5); }
+    .twitter { background: linear-gradient(45deg, #1da1f2, #42a5f5); }
+    .whatsapp { background: linear-gradient(45deg, #25d366, #4caf50); }
+    .linkedin { background: linear-gradient(45deg, #0077b5, #42a5f5); }
+    .gallery { background: linear-gradient(45deg, #667eea, #764ba2); }
+    
+    .footer {
+      margin-top: 2rem;
+      font-size: 0.9rem;
+      opacity: 0.8;
+    }
+    
+    @media (max-width: 768px) {
+      .container {
+        padding: 1.5rem;
+        margin: 10px;
+      }
+      
+      .title {
+        font-size: 1.5rem;
+      }
+      
+      .share-buttons {
+        flex-direction: column;
+        align-items: center;
+      }
+      
+      .share-btn {
+        width: 200px;
+        justify-content: center;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1 class="title">🎨 AI Generated Photo</h1>
+    
+    <div class="image-container">
+      <img src="${imageUrl}" alt="${photo.prompt}" class="photo" />
+    </div>
+    
+    <p class="prompt">"${photo.prompt}"</p>
+    
+    <div class="share-buttons">
+      <a href="https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}" 
+         class="share-btn facebook" target="_blank" rel="noopener">
+        📘 Facebook
+      </a>
+      
+      <a href="https://twitter.com/intent/tweet?text=${encodeURIComponent(`🎨 Check out this amazing AI-generated photo: "${photo.prompt}"`)}&url=${encodeURIComponent(shareUrl)}" 
+         class="share-btn twitter" target="_blank" rel="noopener">
+        🐦 Twitter
+      </a>
+      
+      <a href="https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareUrl)}" 
+         class="share-btn linkedin" target="_blank" rel="noopener">
+        💼 LinkedIn
+      </a>
+      
+      <a href="https://wa.me/?text=${encodeURIComponent(`🎨 Check out this amazing AI-generated photo: "${photo.prompt}" ${shareUrl}`)}" 
+         class="share-btn whatsapp" target="_blank" rel="noopener">
+        💬 WhatsApp
+      </a>
+      
+      <a href="${window.location.origin}/gallery" 
+         class="share-btn gallery">
+        🖼️ View Gallery
+      </a>
+    </div>
+    
+    <div class="footer">
+      <p>Created with AI • ${new Date(photo.created_at).toLocaleDateString()}</p>
+    </div>
+  </div>
+  
+  <script>
+    // Auto-copy URL to clipboard on mobile
+    if ('clipboard' in navigator) {
+      navigator.clipboard.writeText(window.location.href).catch(() => {});
+    }
+    
+    // Preload the main gallery
+    const link = document.createElement('link');
+    link.rel = 'prefetch';
+    link.href = '${window.location.origin}/gallery';
+    document.head.appendChild(link);
+  </script>
+</body>
+</html>`;
+  }, [getDirectImageUrl]);
+
+  const createOptimizedShareUrl = useCallback((photo: Photo): Promise<string> => {
+    return new Promise((resolve) => {
+      // Check cache first
+      if (sharePageCache.has(photo.id)) {
+        resolve(sharePageCache.get(photo.id)!);
+        return;
+      }
+
+      // Create a blob URL for the share page
+      const htmlContent = generateSharePageContent(photo);
+      const blob = new Blob([htmlContent], { type: 'text/html' });
+      const shareUrl = URL.createObjectURL(blob);
+      
+      // Cache the URL
+      setSharePageCache(prev => new Map(prev).set(photo.id, shareUrl));
+      
+      resolve(shareUrl);
+    });
+  }, [generateSharePageContent, sharePageCache]);
 
   // Load photos function
   const loadPhotos = useCallback(async () => {
@@ -176,53 +406,94 @@ export default function Gallery() {
     }
   }, []);
 
-  const shareToFacebook = useCallback((photo: Photo) => {
-    // Use app URL for better Facebook sharing with proper meta tags
-    const shareableUrl = getShareableUrl(photo);
-    const text = encodeURIComponent(`Check out this amazing AI-generated photo: "${photo.prompt}"`);
-    
-    // Facebook sharer with app URL so it can read proper Open Graph tags
-    const shareUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareableUrl)}&quote=${text}`;
-    
-    window.open(shareUrl, '_blank', 'width=600,height=400');
-    setShowShareMenu(null);
-  }, [getShareableUrl]);
+  const shareToFacebook = useCallback(async (photo: Photo) => {
+    try {
+      // Create optimized share URL with proper meta tags
+      const shareUrl = await createOptimizedShareUrl(photo);
+      
+      // Use Facebook's sharer with the optimized URL
+      const facebookUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`;
+      
+      // Open in new window
+      const shareWindow = window.open(facebookUrl, 'facebook-share', 'width=600,height=400,scrollbars=yes,resizable=yes');
+      
+      // Focus the window if it was successfully opened
+      if (shareWindow) {
+        shareWindow.focus();
+      }
+      
+      setShowShareMenu(null);
+    } catch (err) {
+      console.error('Failed to share to Facebook:', err);
+      setError('Failed to share to Facebook');
+    }
+  }, [createOptimizedShareUrl]);
 
-  const shareToTwitter = useCallback((photo: Photo) => {
-    const shareableUrl = getShareableUrl(photo);
-    const text = encodeURIComponent(`Check out this AI-generated photo: "${photo.prompt}" 🎨✨`);
-    const shareUrl = `https://twitter.com/intent/tweet?text=${text}&url=${encodeURIComponent(shareableUrl)}`;
-    window.open(shareUrl, '_blank', 'width=600,height=400');
-    setShowShareMenu(null);
-  }, [getShareableUrl]);
+  const shareToTwitter = useCallback(async (photo: Photo) => {
+    try {
+      const shareUrl = await createOptimizedShareUrl(photo);
+      const text = encodeURIComponent(`🎨 Check out this amazing AI-generated photo: "${photo.prompt}"`);
+      const twitterUrl = `https://twitter.com/intent/tweet?text=${text}&url=${encodeURIComponent(shareUrl)}`;
+      
+      const shareWindow = window.open(twitterUrl, 'twitter-share', 'width=600,height=400,scrollbars=yes,resizable=yes');
+      if (shareWindow) {
+        shareWindow.focus();
+      }
+      
+      setShowShareMenu(null);
+    } catch (err) {
+      console.error('Failed to share to Twitter:', err);
+      setError('Failed to share to Twitter');
+    }
+  }, [createOptimizedShareUrl]);
 
-  const shareToWhatsApp = useCallback((photo: Photo) => {
-    const shareableUrl = getShareableUrl(photo);
-    const text = encodeURIComponent(`Check out this amazing AI-generated photo: "${photo.prompt}" ${shareableUrl}`);
-    const shareUrl = `https://wa.me/?text=${text}`;
-    window.open(shareUrl, '_blank');
-    setShowShareMenu(null);
-  }, [getShareableUrl]);
+  const shareToLinkedIn = useCallback(async (photo: Photo) => {
+    try {
+      const shareUrl = await createOptimizedShareUrl(photo);
+      const linkedinUrl = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareUrl)}`;
+      
+      const shareWindow = window.open(linkedinUrl, 'linkedin-share', 'width=600,height=400,scrollbars=yes,resizable=yes');
+      if (shareWindow) {
+        shareWindow.focus();
+      }
+      
+      setShowShareMenu(null);
+    } catch (err) {
+      console.error('Failed to share to LinkedIn:', err);
+      setError('Failed to share to LinkedIn');
+    }
+  }, [createOptimizedShareUrl]);
 
-  const shareToLinkedIn = useCallback((photo: Photo) => {
-    const shareableUrl = getShareableUrl(photo);
-    const text = encodeURIComponent(`Check out this amazing AI-generated photo: "${photo.prompt}"`);
-    const shareUrl = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareableUrl)}&summary=${text}`;
-    window.open(shareUrl, '_blank', 'width=600,height=400');
-    setShowShareMenu(null);
-  }, [getShareableUrl]);
+  const shareToWhatsApp = useCallback(async (photo: Photo) => {
+    try {
+      const shareUrl = await createOptimizedShareUrl(photo);
+      const text = encodeURIComponent(`🎨 Check out this amazing AI-generated photo: "${photo.prompt}" ${shareUrl}`);
+      const whatsappUrl = `https://wa.me/?text=${text}`;
+      
+      const shareWindow = window.open(whatsappUrl, 'whatsapp-share');
+      if (shareWindow) {
+        shareWindow.focus();
+      }
+      
+      setShowShareMenu(null);
+    } catch (err) {
+      console.error('Failed to share to WhatsApp:', err);
+      setError('Failed to share to WhatsApp');
+    }
+  }, [createOptimizedShareUrl]);
 
   const shareWithWebShareAPI = useCallback(async (photo: Photo) => {
     if (navigator.share) {
       try {
-        const shareableUrl = getShareableUrl(photo);
+        const shareUrl = await createOptimizedShareUrl(photo);
         
         const shareData: ShareData = {
-          title: 'AI Generated Photo',
+          title: '🎨 AI Generated Photo',
           text: `Check out this amazing AI-generated photo: "${photo.prompt}"`,
-          url: shareableUrl
+          url: shareUrl
         };
 
+        // Try to include the actual image file for native sharing
         if (photo.content_type?.startsWith('image/')) {
           try {
             const imageUrl = getDirectImageUrl(photo);
@@ -244,93 +515,30 @@ export default function Gallery() {
         }
       }
     }
-  }, [getShareableUrl, getDirectImageUrl]);
+  }, [createOptimizedShareUrl, getDirectImageUrl]);
 
-  const createShareablePage = useCallback((photo: Photo) => {
-    const shareWindow = window.open('', '_blank', 'width=600,height=400');
-    
-    if (shareWindow) {
-      const ogTags = generateOpenGraphTags(photo);
-      const imageUrl = getDirectImageUrl(photo);
+  const openSharePage = useCallback(async (photo: Photo) => {
+    try {
+      const shareUrl = await createOptimizedShareUrl(photo);
+      const shareWindow = window.open(shareUrl, '_blank', 'width=800,height=600,scrollbars=yes,resizable=yes');
       
-      shareWindow.document.write(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>AI Generated Photo</title>
-          <meta property="og:title" content="${ogTags['og:title']}" />
-          <meta property="og:description" content="${ogTags['og:description']}" />
-          <meta property="og:image" content="${imageUrl}" />
-          <meta property="og:url" content="${window.location.origin}/gallery/share/${photo.id}" />
-          <meta property="og:type" content="article" />
-          <meta property="og:site_name" content="AI Photo Gallery" />
-          <meta name="twitter:card" content="summary_large_image" />
-          <meta name="twitter:title" content="${ogTags['twitter:title']}" />
-          <meta name="twitter:description" content="${ogTags['twitter:description']}" />
-          <meta name="twitter:image" content="${imageUrl}" />
-          <style>
-            body { 
-              font-family: Arial, sans-serif; 
-              margin: 0; 
-              padding: 20px; 
-              background: #1a1a1a; 
-              color: white; 
-              text-align: center; 
-            }
-            img { 
-              max-width: 100%; 
-              max-height: 70vh; 
-              border-radius: 8px; 
-              box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-            }
-            .prompt { 
-              margin: 20px 0; 
-              font-size: 18px; 
-              font-style: italic; 
-            }
-            .share-buttons {
-              margin-top: 20px;
-              display: flex;
-              gap: 10px;
-              justify-content: center;
-              flex-wrap: wrap;
-            }
-            .share-btn {
-              padding: 10px 20px;
-              border: none;
-              border-radius: 5px;
-              color: white;
-              text-decoration: none;
-              font-weight: bold;
-              cursor: pointer;
-            }
-            .facebook { background: #1877f2; }
-            .twitter { background: #1da1f2; }
-            .whatsapp { background: #25d366; }
-          </style>
-        </head>
-        <body>
-          <h1>AI Generated Photo</h1>
-          <img src="${imageUrl}" alt="${photo.prompt}" />
-          <div class="prompt">"${photo.prompt}"</div>
-          <div class="share-buttons">
-            <a href="https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(window.location.href)}" 
-               class="share-btn facebook" target="_blank">Share on Facebook</a>
-            <a href="https://twitter.com/intent/tweet?text=${encodeURIComponent(`Check out this AI-generated photo: "${photo.prompt}" 🎨✨`)}&url=${encodeURIComponent(window.location.href)}" 
-               class="share-btn twitter" target="_blank">Share on Twitter</a>
-            <a href="https://wa.me/?text=${encodeURIComponent(`Check out this amazing AI-generated photo: "${photo.prompt}" ${window.location.href}`)}" 
-               class="share-btn whatsapp" target="_blank">Share on WhatsApp</a>
-          </div>
-          <script>
-            setTimeout(() => window.close(), 30000);
-          </script>
-        </body>
-        </html>
-      `);
+      if (shareWindow) {
+        shareWindow.focus();
+        
+        // Auto-close after 2 minutes
+        setTimeout(() => {
+          if (!shareWindow.closed) {
+            shareWindow.close();
+          }
+        }, 120000);
+      }
       
-      shareWindow.document.close();
+      setShowShareMenu(null);
+    } catch (err) {
+      console.error('Failed to open share page:', err);
+      setError('Failed to open share page');
     }
-  }, [generateOpenGraphTags, getDirectImageUrl]);
+  }, [createOptimizedShareUrl]);
 
   // Delete functions
   const handleDeletePhoto = useCallback(async (photoId: string) => {
@@ -349,6 +557,13 @@ export default function Gallery() {
       if (carouselIndex >= photos.length - 1) {
         setCarouselIndex(Math.max(0, photos.length - 2));
       }
+      
+      // Clean up cached share URL
+      setSharePageCache(prev => {
+        const newCache = new Map(prev);
+        newCache.delete(photoId);
+        return newCache;
+      });
       
       console.log('✅ Photo deleted successfully');
     } catch (err) {
@@ -396,6 +611,9 @@ export default function Gallery() {
       setPhotos([]);
       setSelectedPhoto(null);
       setCarouselIndex(0);
+      
+      // Clear share URL cache
+      setSharePageCache(new Map());
       
       console.log('✅ All photos deleted successfully');
     } catch (err) {
@@ -483,35 +701,16 @@ export default function Gallery() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showShareMenu]);
 
+  // Cleanup blob URLs when component unmounts
   useEffect(() => {
-    if (selectedPhoto) {
-      const ogTags = generateOpenGraphTags(selectedPhoto);
-      
-      Object.entries(ogTags).forEach(([property, content]) => {
-        let metaTag = document.querySelector(`meta[property="${property}"]`) || 
-                     document.querySelector(`meta[name="${property}"]`);
-        
-        if (!metaTag) {
-          metaTag = document.createElement('meta');
-          if (property.startsWith('twitter:')) {
-            metaTag.setAttribute('name', property);
-          } else {
-            metaTag.setAttribute('property', property);
-          }
-          document.head.appendChild(metaTag);
+    return () => {
+      sharePageCache.forEach(url => {
+        if (url.startsWith('blob:')) {
+          URL.revokeObjectURL(url);
         }
-        
-        metaTag.setAttribute('content', content);
       });
-
-      const originalTitle = document.title;
-      document.title = `AI Generated Photo: "${selectedPhoto.prompt}"`;
-      
-      return () => {
-        document.title = originalTitle;
-      };
-    }
-  }, [selectedPhoto, generateOpenGraphTags]);
+    };
+  }, [sharePageCache]);
 
   // Photo action buttons component
   const PhotoActions = ({ photo, className = "" }: { photo: Photo; className?: string }) => (
@@ -551,10 +750,10 @@ export default function Gallery() {
             initial={{ opacity: 0, scale: 0.9, y: -10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: -10 }}
-            className="share-menu absolute left-0 top-full mt-2 bg-gray-900 rounded-lg shadow-2xl border-2 border-gray-600 p-1 w-64 z-30"
+            className="share-menu absolute left-0 top-full mt-2 bg-gray-900 rounded-lg shadow-2xl border-2 border-gray-600 p-1 w-72 z-30"
             style={{ 
               boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
-              maxHeight: '320px',
+              maxHeight: '380px',
               overflowY: 'auto',
               scrollbarWidth: 'thin',
               scrollbarColor: '#4B5563 #1F2937'
@@ -568,11 +767,19 @@ export default function Gallery() {
                     className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-200 hover:text-white hover:bg-gray-700 rounded-lg transition"
                   >
                     <Share2 className="w-4 h-4 flex-shrink-0" />
-                    <span className="text-left">Share...</span>
+                    <span className="text-left">Share with apps...</span>
                   </button>
                   <div className="border-t border-gray-700 my-1"></div>
                 </>
               )}
+
+              <button
+                onClick={() => openSharePage(photo)}
+                className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-200 hover:text-white hover:bg-gray-700 rounded-lg transition"
+              >
+                <ExternalLink className="w-4 h-4 flex-shrink-0" />
+                <span className="text-left">Open share page</span>
+              </button>
 
               <button
                 onClick={() => copyToClipboard(getShareableUrl(photo), photo.id)}
@@ -586,7 +793,7 @@ export default function Gallery() {
                 ) : (
                   <>
                     <Link className="w-4 h-4 flex-shrink-0" />
-                    <span className="text-left">Copy Link</span>
+                    <span className="text-left">Copy link</span>
                   </>
                 )}
               </button>
@@ -600,7 +807,7 @@ export default function Gallery() {
                 <div className="w-4 h-4 bg-blue-600 rounded flex items-center justify-center flex-shrink-0">
                   <span className="text-white text-xs font-bold">f</span>
                 </div>
-                <span className="text-left">Facebook</span>
+                <span className="text-left">Share on Facebook</span>
               </button>
 
               <button
@@ -610,7 +817,7 @@ export default function Gallery() {
                 <div className="w-4 h-4 bg-blue-400 rounded flex items-center justify-center flex-shrink-0">
                   <span className="text-white text-xs font-bold">𝕏</span>
                 </div>
-                <span className="text-left">Twitter / X</span>
+                <span className="text-left">Share on Twitter / X</span>
               </button>
 
               <button
@@ -620,7 +827,7 @@ export default function Gallery() {
                 <div className="w-4 h-4 bg-blue-700 rounded flex items-center justify-center flex-shrink-0">
                   <span className="text-white text-xs font-bold">in</span>
                 </div>
-                <span className="text-left">LinkedIn</span>
+                <span className="text-left">Share on LinkedIn</span>
               </button>
 
               <button
@@ -628,8 +835,16 @@ export default function Gallery() {
                 className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-200 hover:text-white hover:bg-green-600/20 rounded-lg transition"
               >
                 <MessageCircle className="w-4 h-4 text-green-500 flex-shrink-0" />
-                <span className="text-left">WhatsApp</span>
+                <span className="text-left">Share on WhatsApp</span>
               </button>
+
+              <div className="border-t border-gray-700 my-1"></div>
+              
+              <div className="px-4 py-2">
+                <p className="text-xs text-gray-500 text-center">
+                  Optimized for social media previews
+                </p>
+              </div>
             </div>
           </motion.div>
         )}
