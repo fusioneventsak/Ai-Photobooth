@@ -119,9 +119,9 @@ const BUILT_IN_BORDERS: BuiltInBorder[] = [
 
 // Aspect ratio configurations
 const ASPECT_RATIOS = {
-  '1:1': { width: 512, height: 512, label: 'Square (1:1)', icon: Square },
-  '9:16': { width: 512, height: 910, label: 'Portrait (9:16)', icon: Smartphone },
-  '16:9': { width: 910, height: 512, label: 'Landscape (16:9)', icon: Monitor }
+  '1:1': { width: 512, height: 512, label: 'Square (1:1)' },
+  '9:16': { width: 512, height: 910, label: 'Portrait (9:16)' },
+  '16:9': { width: 910, height: 512, label: 'Landscape (16:9)' }
 };
 
 export default function OverlayIntegration() {
@@ -693,23 +693,22 @@ export default function OverlayIntegration() {
                   <div className="mb-4">
                     <label className="block text-sm font-medium mb-2">Target Aspect Ratio</label>
                     <div className="flex gap-2">
-                      {Object.entries(ASPECT_RATIOS).map(([ratio, config]) => {
-                        const IconComponent = config.icon;
-                        return (
-                          <button
-                            key={ratio}
-                            onClick={() => handleAspectRatioChange(ratio as AspectRatio)}
-                            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition ${
-                              selectedAspectRatio === ratio
-                                ? 'bg-blue-600 text-white'
-                                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                            }`}
-                          >
-                            <IconComponent className="w-4 h-4" />
-                            {config.label}
-                          </button>
-                        );
-                      })}
+                      {Object.entries(ASPECT_RATIOS).map(([ratio, config]) => (
+                        <button
+                          key={ratio}
+                          onClick={() => handleAspectRatioChange(ratio as AspectRatio)}
+                          className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition ${
+                            selectedAspectRatio === ratio
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                          }`}
+                        >
+                          {ratio === '1:1' && <Square className="w-4 h-4" />}
+                          {ratio === '9:16' && <Smartphone className="w-4 h-4" />}
+                          {ratio === '16:9' && <Monitor className="w-4 h-4" />}
+                          {config.label}
+                        </button>
+                      ))}
                     </div>
                   </div>
                   
@@ -878,9 +877,9 @@ export default function OverlayIntegration() {
               {testImage && (
                 <div className="mb-4 p-3 bg-blue-900/20 rounded-lg border border-blue-500/30">
                   <div className="flex items-center gap-2 text-blue-300">
-                    {ASPECT_RATIOS[testImageAspectRatio].icon && (
-                      <ASPECT_RATIOS[testImageAspectRatio].icon className="w-4 h-4" />
-                    )}
+                    {testImageAspectRatio === '1:1' && <Square className="w-4 h-4" />}
+                    {testImageAspectRatio === '9:16' && <Smartphone className="w-4 h-4" />}
+                    {testImageAspectRatio === '16:9' && <Monitor className="w-4 h-4" />}
                     <span className="text-sm">
                       Detected: {ASPECT_RATIOS[testImageAspectRatio].label}
                     </span>
