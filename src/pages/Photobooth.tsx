@@ -112,7 +112,7 @@ export default function Photobooth() {
     };
   }, []);
 
-  // Enhanced image resizing for SDXL optimal input (EXACT COPY from original)
+  // Enhanced image resizing for SDXL optimal input
   const resizeImage = (dataUrl: string, targetSize: number = 1024): Promise<string> => {
     return new Promise((resolve, reject) => {
       const img = new Image();
@@ -210,7 +210,7 @@ export default function Photobooth() {
         
         const uploadResult = await uploadPhoto(
           processedMedia,
-          currentConfig?.global_prompt || 'AI Generated Image',
+          config.global_prompt || 'AI Generated Image',
           currentModelType
         );
         
