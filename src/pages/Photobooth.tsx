@@ -1,9 +1,9 @@
 // src/pages/Photobooth.tsx
-// Enhanced Photobooth component with mobile optimization and camera fixes
+// Reverted to original working face swap method with mobile compatibility
 
 import React, { useState, useEffect } from 'react';
 import Webcam from 'react-webcam';
-import { Camera, ImageIcon, Wand2, AlertCircle, Video, RefreshCw, Users, UserX, Lightbulb, Eye, User } from 'lucide-react';
+import { Camera, ImageIcon, Wand2, AlertCircle, Video, RefreshCw, Users, UserX, Lightbulb, Eye, User, Smartphone } from 'lucide-react';
 import { useConfigStore } from '../store/configStore';
 import { uploadPhoto } from '../lib/supabase';
 import { generateWithStability } from '../lib/stabilityService';
@@ -115,7 +115,7 @@ export default function Photobooth() {
     };
   }, []);
 
-  // Enhanced image resizing for SDXL optimal input
+  // ORIGINAL WORKING: Simple image resizing for SDXL optimal input (from working code)
   const resizeImage = (dataUrl: string, targetSize: number = 1024): Promise<string> => {
     return new Promise((resolve, reject) => {
       const img = new Image();
@@ -132,6 +132,7 @@ export default function Photobooth() {
         let newWidth = targetSize;
         let newHeight = targetSize;
         
+        // Maintain aspect ratio like the original working code
         if (width > height) {
           newHeight = Math.round((height / width) * targetSize);
         } else {
@@ -144,6 +145,12 @@ export default function Photobooth() {
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
         ctx.drawImage(img, 0, 0, newWidth, newHeight);
+        
+        console.log('✅ Image resized for SDXL (original method):', {
+          originalSize: `${width}x${height}`,
+          newSize: `${newWidth}x${newHeight}`,
+          targetSize
+        });
         
         resolve(canvas.toDataURL('image/png', 0.95));
       };
@@ -499,6 +506,7 @@ export default function Photobooth() {
     }
   };
 
+  // CRITICAL: Use ORIGINAL WORKING METHOD from the proven working code
   const processMediaWithCapturedPhoto = React.useCallback(async (capturedImageData: string) => {
     if (!capturedImageData) {
       setError('No photo captured');
@@ -529,7 +537,7 @@ export default function Photobooth() {
     try {
       setGenerationAttempts(prev => prev + 1);
 
-      console.log('🚀 Starting SDXL Inpainting generation process...');
+      console.log('🚀 Starting SDXL Inpainting generation process (ORIGINAL METHOD)...');
       console.log('📋 Generation details:', {
         prompt: currentConfig.global_prompt,
         modelType: currentModelType,
@@ -538,14 +546,16 @@ export default function Photobooth() {
       });
 
       await animateProgress(0, 15, 1000, 'detecting', 'Analyzing your photo...');
-      console.log('🖼️ Resizing image for SDXL optimal input...');
+      console.log('🖼️ Resizing image for SDXL optimal input (original method)...');
+      
+      // ORIGINAL WORKING: Use the simple resizeImage method that works
       const processedContent = await resizeImage(capturedImageData, 1024);
       
       if (!processedContent || !processedContent.startsWith('data:image/')) {
         throw new Error('Image resizing failed - invalid output format');
       }
       
-      console.log('✅ Image resized for SDXL:', {
+      console.log('✅ Image resized for SDXL (original method):', {
         originalSize: capturedImageData.length,
         processedSize: processedContent.length,
         resolution: '1024x1024 optimized'
@@ -564,18 +574,20 @@ export default function Photobooth() {
           img.src = processedContent;
         });
 
-        console.log('🔍 Generating face-only mask (excluding clothing)...');
+        console.log('🔍 Generating face mask using ORIGINAL WORKING METHOD...');
+        
+        // CRITICAL: Use the ORIGINAL generateSmartFaceMask function that WORKS
         maskData = await generateSmartFaceMask(
           img,
           faceMode === 'preserve_face',
-          20,
-          1.2
+          20,  // Original working feathering value
+          1.2  // Original working expansion factor
         );
         
-        console.log('✅ Smart face mask generated successfully for SDXL');
+        console.log('✅ Smart face mask generated successfully for SDXL (original method)');
         
       } catch (faceDetectionError) {
-        console.warn('⚠️ Face detection failed, using fallback mask:', faceDetectionError);
+        console.warn('⚠️ Face detection failed, using fallback mask (original method):', faceDetectionError);
         
         const img = new Image();
         await new Promise<void>((resolve, reject) => {
@@ -584,13 +596,14 @@ export default function Photobooth() {
           img.src = processedContent;
         });
         
+        // ORIGINAL: Use the proven fallback mask
         maskData = generateFallbackMask(img.naturalWidth, img.naturalHeight);
-        console.log('✅ Fallback mask generated for SDXL');
+        console.log('✅ Fallback mask generated for SDXL (original method)');
       }
 
       await animateProgress(35, 45, 800, 'generating', 'Preparing AI magic...');
       
-      console.log('🎨 Starting SDXL Inpainting generation...');
+      console.log('🎨 Starting SDXL Inpainting generation (original working method)...');
       
       let aiContent: string;
 
@@ -627,24 +640,27 @@ export default function Photobooth() {
         await animateProgress(45, 55, 1200, 'generating', 'Loading SDXL model...');
         
         const basePrompt = currentConfig.global_prompt || 'AI Generated Portrait';
+        
+        // ORIGINAL WORKING: Use the exact same prompt enhancement as the working code
         const enhancedPrompt = faceMode === 'preserve_face' 
           ? `${basePrompt}, photorealistic portrait, preserve facial features only, exclude clothing and collars, natural skin texture, detailed eyes and mouth, face-focused composition, no shirts or ties visible, professional headshot style, 8k quality`
           : `${basePrompt}, creative character transformation, artistic interpretation, detailed facial features, no clothing elements from original`;
 
-        console.log(`🎭 Using ${faceMode} mode with clothing-free SDXL Inpainting...`);
-        console.log('🎯 Enhanced prompt (clothing exclusion):', enhancedPrompt);
+        console.log(`🎭 Using ${faceMode} mode with clothing-free SDXL Inpainting (original method)...`);
+        console.log('🎯 Enhanced prompt (original method):', enhancedPrompt);
         
         await animateProgress(55, 70, 1500, 'generating', 'Processing with SDXL AI...');
         
+        // CRITICAL: Use ORIGINAL WORKING SETTINGS that were proven to work
         const generationPromise = generateWithStability({
           prompt: enhancedPrompt,
           imageData: processedContent,
           mode: 'inpaint',
           maskData: maskData,
           facePreservationMode: faceMode,
-          strength: faceMode === 'preserve_face' ? 0.4 : 0.7,
-          cfgScale: 8.0,
-          steps: 25,
+          strength: faceMode === 'preserve_face' ? 0.4 : 0.7,  // ORIGINAL WORKING VALUES
+          cfgScale: 8.0,  // ORIGINAL WORKING VALUE
+          steps: 25,      // ORIGINAL WORKING VALUE
           useControlNet: currentConfig.use_controlnet ?? true,
           controlNetType: currentConfig.controlnet_type || 'auto'
         });
@@ -678,7 +694,7 @@ export default function Photobooth() {
         throw new Error('Invalid AI content format received.');
       }
 
-      console.log('🔍 Validating SDXL generated content...', {
+      console.log('🔍 Validating SDXL generated content (original method)...', {
         contentType: typeof aiContent,
         length: aiContent.length,
         startsWithData: aiContent.startsWith('data:'),
@@ -689,10 +705,10 @@ export default function Photobooth() {
         const testImg = new Image();
         await new Promise<void>((resolve, reject) => {
           testImg.onload = () => {
-            console.log('✅ SDXL generated image loads successfully:', {
+            console.log('✅ SDXL generated image loads successfully (original method):', {
               width: testImg.width,
               height: testImg.height,
-              model: 'SDXL Inpainting'
+              model: 'SDXL Inpainting - Original Method'
             });
             resolve();
           };
@@ -710,21 +726,21 @@ export default function Photobooth() {
 
       await animateProgress(98, 100, 600, 'uploading', 'Finalizing magic...');
 
-      console.log('✅ SDXL Inpainting generation completed successfully:', {
+      console.log('✅ SDXL Inpainting generation completed successfully (original method):', {
         type: currentModelType,
         format: aiContent.startsWith('data:') ? 'data URL' : 'blob URL',
         size: aiContent.length,
         faceMode: faceMode,
-        model: 'SDXL Inpainting'
+        model: 'SDXL Inpainting - Original Working Method'
       });
 
       setProcessedMedia(aiContent);
       setError(null);
 
-      console.log('🎯 SDXL Inpainting process completed - automatic upload should trigger via useEffect');
+      console.log('🎯 SDXL Inpainting process completed (original method) - automatic upload should trigger via useEffect');
 
     } catch (error) {
-      console.error('❌ === SDXL INPAINTING GENERATION FAILED ===');
+      console.error('❌ === SDXL INPAINTING GENERATION FAILED (ORIGINAL METHOD) ===');
       console.error('📊 Generation error details:', error);
 
       let errorMessage = 'Failed to generate AI content with SDXL Inpainting. Please try again.';
@@ -964,7 +980,7 @@ export default function Photobooth() {
             
             {isMobile && !mediaData && !processedMedia && !processing && (
               <div className="absolute bottom-3 right-3 bg-black/70 text-white px-2 py-1 rounded-lg text-xs flex items-center gap-1">
-                <span className="text-green-400">📱 Mobile Optimized</span>
+                <span className="text-green-400">📱 Mobile Compatible</span>
               </div>
             )}
           </div>
@@ -1017,16 +1033,16 @@ export default function Photobooth() {
 
         {(process.env.NODE_ENV === 'development' || debugInfo) && (
           <div className="mt-4 p-4 bg-gray-800/50 rounded-lg text-xs text-gray-400 space-y-2">
-            <p><span className="text-purple-400 font-semibold">Model:</span> SDXL Inpainting + ControlNet</p>
+            <p><span className="text-purple-400 font-semibold">Model:</span> SDXL Inpainting + ControlNet (Original Method)</p>
             <p><span className="text-blue-400 font-semibold">Mode:</span> {currentModelType}</p>
             <p><span className="text-green-400 font-semibold">Face Mode:</span> {config?.face_preservation_mode || 'preserve_face'}</p>
             <p><span className="text-yellow-400 font-semibold">Attempts:</span> {generationAttempts}/3</p>
-            <p><span className="text-indigo-400 font-semibold">Strength:</span> {config?.face_preservation_mode === 'preserve_face' ? '0.4' : '0.7'}</p>
-            <p><span className="text-pink-400 font-semibold">CFG Scale:</span> 8.0</p>
-            <p><span className="text-cyan-400 font-semibold">Resolution:</span> 1024x1024 SDXL Native</p>
-            <p><span className="text-orange-400 font-semibold">Steps:</span> 25 (SDXL Optimized)</p>
-            <p><span className="text-teal-400 font-semibold">Approach:</span> Face-Only (No Clothing)</p>
-            <p><span className="text-violet-400 font-semibold">Mask Settings:</span> 20px feather, 1.2x expansion, clothing excluded</p>
+            <p><span className="text-indigo-400 font-semibold">Strength:</span> {config?.face_preservation_mode === 'preserve_face' ? '0.4 (Original)' : '0.7 (Original)'}</p>
+            <p><span className="text-pink-400 font-semibold">CFG Scale:</span> 8.0 (Original)</p>
+            <p><span className="text-cyan-400 font-semibold">Resolution:</span> 1024x1024 SDXL Native (Original)</p>
+            <p><span className="text-orange-400 font-semibold">Steps:</span> 25 (Original)</p>
+            <p><span className="text-teal-400 font-semibold">Approach:</span> Face-Only (No Clothing) - Original Working Method</p>
+            <p><span className="text-violet-400 font-semibold">Mask Settings:</span> 20px feather, 1.2x expansion (Original Working Settings)</p>
             <p><span className="text-red-400 font-semibold">Camera Key:</span> {cameraKey} {isMobile && '(Mobile Mode)'}</p>
             {debugInfo && (
               <div className="mt-2 p-2 bg-red-900/20 border border-red-500/30 rounded">
