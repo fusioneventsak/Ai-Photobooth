@@ -1,4 +1,4 @@
-const getErrorIcon = (error: string) => {// src/pages/Photobooth.tsx
+// src/pages/Photobooth.tsx
 // Enhanced Photobooth component with mobile optimization and camera fixes
 
 import React, { useState, useEffect } from 'react';
@@ -38,10 +38,10 @@ export default function Photobooth() {
     progress: 0,
     message: 'Starting...'
   });
-  const [cameraKey, setCameraKey] = useState(0); // Add camera key for forcing re-initialization
+  const [cameraKey, setCameraKey] = useState(0);
   const [isMobile, setIsMobile] = useState(false);
-  const [cameraReady, setCameraReady] = useState(false); // Add camera ready state
-  const [progressInterval, setProgressInterval] = useState<NodeJS.Timeout | null>(null); // For smooth progress animation
+  const [cameraReady, setCameraReady] = useState(false);
+  const [progressInterval, setProgressInterval] = useState<NodeJS.Timeout | null>(null);
   
   const webcamRef = React.useRef<Webcam>(null);
 
@@ -94,7 +94,7 @@ export default function Photobooth() {
         /* iOS specific fixes */
         @supports (-webkit-touch-callout: none) {
           .ios-camera-fix {
-            transform: scaleX(-1); /* Mirror for front camera */
+            transform: scaleX(-1);
             -webkit-transform: scaleX(-1);
           }
         }
@@ -127,7 +127,6 @@ export default function Photobooth() {
           return;
         }
 
-        // Calculate dimensions to maintain aspect ratio
         const { width, height } = img;
         let newWidth = targetSize;
         let newHeight = targetSize;
@@ -141,11 +140,8 @@ export default function Photobooth() {
         canvas.width = newWidth;
         canvas.height = newHeight;
 
-        // Use high-quality scaling
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
-        
-        // Draw the resized image
         ctx.drawImage(img, 0, 0, newWidth, newHeight);
         
         resolve(canvas.toDataURL('image/png', 0.95));
@@ -165,7 +161,6 @@ export default function Photobooth() {
     
     checkEnv();
     
-    // Load face detection models
     loadFaceApiModels().catch(error => {
       console.warn('Failed to load face detection models:', error);
     });
@@ -187,7 +182,6 @@ export default function Photobooth() {
       if (processedMedia && processedMedia.startsWith('blob:')) {
         URL.revokeObjectURL(processedMedia);
       }
-      // Cleanup progress interval
       if (progressInterval) {
         clearInterval(progressInterval);
       }
@@ -223,7 +217,6 @@ export default function Photobooth() {
         if (uploadResult) {
           console.log('✅ Auto-upload successful:', uploadResult.id);
           
-          // Dispatch gallery event immediately
           window.dispatchEvent(new CustomEvent('galleryUpdate', {
             detail: { 
               newPhoto: uploadResult,
@@ -248,16 +241,47 @@ export default function Photobooth() {
       }
     };
 
-    // Upload immediately - no delays
     automaticUploadNow();
-
   }, [processedMedia, config, currentModelType]);
+
+  // Smooth progress animation function
+  const animateProgress = (startProgress: number, endProgress: number, duration: number, stage: ProcessingState['stage'], message: string) => {
+    return new Promise<void>((resolve) => {
+      if (progressInterval) {
+        clearInterval(progressInterval);
+      }
+
+      const startTime = Date.now();
+      const progressDiff = endProgress - startProgress;
+      
+      const interval = setInterval(() => {
+        const elapsed = Date.now() - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        
+        const easeProgress = 1 - Math.pow(1 - progress, 3);
+        const currentProgress = startProgress + (progressDiff * easeProgress);
+        
+        setProcessingState({
+          stage,
+          progress: Math.round(currentProgress),
+          message
+        });
+        
+        if (progress >= 1) {
+          clearInterval(interval);
+          setProgressInterval(null);
+          resolve();
+        }
+      }, 50);
+      
+      setProgressInterval(interval);
+    });
+  };
 
   const capturePhoto = React.useCallback(() => {
     try {
       setError(null);
       
-      // Check if webcam ref exists and is ready
       if (!webcamRef.current || !cameraReady) {
         throw new Error('Camera not ready. Please wait a moment and try again.');
       }
@@ -267,7 +291,6 @@ export default function Photobooth() {
         throw new Error('Failed to capture photo. Please ensure camera permissions are granted and try again.');
       }
       
-      // Validate the captured image data
       if (!imageSrc.startsWith('data:image/')) {
         throw new Error('Invalid image format captured. Please try again.');
       }
@@ -284,10 +307,9 @@ export default function Photobooth() {
       setDebugInfo(null);
       setProcessingState({ stage: 'detecting', progress: 0, message: 'Photo captured! Starting AI generation...' });
       
-      // Automatically start processing after capture
       setTimeout(() => {
         processMediaWithCapturedPhoto(imageSrc);
-      }, 500); // Small delay to show the processing state
+      }, 500);
       
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to capture photo';
@@ -308,9 +330,8 @@ export default function Photobooth() {
     setUploadAttempts(0);
     setDebugInfo(null);
     setProcessingState({ stage: 'detecting', progress: 0, message: 'Ready...' });
-    setCameraReady(false); // Reset camera ready state
+    setCameraReady(false);
     
-    // Clear progress interval
     if (progressInterval) {
       clearInterval(progressInterval);
       setProgressInterval(null);
@@ -319,10 +340,8 @@ export default function Photobooth() {
     if (processedMedia && processedMedia.startsWith('blob:')) {
       URL.revokeObjectURL(processedMedia);
     }
-    // Clear session storage for this session
-    sessionStorage.clear();
     
-    // Force camera re-initialization by updating the key
+    sessionStorage.clear();
     setCameraKey(prev => prev + 1);
     console.log('🔄 Camera reset - forcing re-initialization');
   };
@@ -333,47 +352,10 @@ export default function Photobooth() {
     setError(`Camera error: ${errorMessage}`);
     setCameraReady(false);
     
-    // Try to recover by re-initializing camera
     setTimeout(() => {
       setCameraKey(prev => prev + 1);
       console.log('🔄 Attempting camera recovery...');
     }, 1000);
-  };
-
-  // Smooth progress animation function
-  const animateProgress = (startProgress: number, endProgress: number, duration: number, stage: ProcessingState['stage'], message: string) => {
-    return new Promise<void>((resolve) => {
-      // Clear any existing interval
-      if (progressInterval) {
-        clearInterval(progressInterval);
-      }
-
-      const startTime = Date.now();
-      const progressDiff = endProgress - startProgress;
-      
-      const interval = setInterval(() => {
-        const elapsed = Date.now() - startTime;
-        const progress = Math.min(elapsed / duration, 1);
-        
-        // Use easeOutCubic for smooth deceleration
-        const easeProgress = 1 - Math.pow(1 - progress, 3);
-        const currentProgress = startProgress + (progressDiff * easeProgress);
-        
-        setProcessingState({
-          stage,
-          progress: Math.round(currentProgress),
-          message
-        });
-        
-        if (progress >= 1) {
-          clearInterval(interval);
-          setProgressInterval(null);
-          resolve();
-        }
-      }, 50); // Update every 50ms for smooth animation
-      
-      setProgressInterval(interval);
-    });
   };
 
   const getErrorIcon = (error: string) => {
@@ -418,10 +400,8 @@ export default function Photobooth() {
     </div>
   );
 
-  // Enhanced processing indicator with beautiful animations
   const ProcessingIndicator = ({ state }: { state: ProcessingState }) => (
     <div className="text-center space-y-4">
-      {/* Animated Magic Wand */}
       <div className="relative">
         <Wand2 className="w-20 h-20 mx-auto text-purple-400 animate-pulse" />
         <div className="absolute inset-0 w-20 h-20 mx-auto">
@@ -430,16 +410,13 @@ export default function Photobooth() {
         <div className="absolute inset-2 w-16 h-16 mx-auto">
           <div className="w-full h-full rounded-full border-2 border-blue-400/50 animate-spin"></div>
         </div>
-        {/* Floating sparkles */}
         <div className="absolute -top-2 -right-2 w-3 h-3 bg-yellow-400 rounded-full animate-bounce"></div>
         <div className="absolute -bottom-2 -left-2 w-2 h-2 bg-pink-400 rounded-full animate-bounce" style={{ animationDelay: '0.5s' }}></div>
         <div className="absolute top-4 -left-4 w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '1s' }}></div>
       </div>
       
-      {/* Message with typewriter effect */}
       <div className="text-lg font-medium text-white animate-pulse">{state.message}</div>
       
-      {/* Enhanced progress bar */}
       <div className="w-full bg-gray-700 rounded-full h-4 overflow-hidden">
         <div 
           className="h-4 rounded-full transition-all duration-1000 ease-out bg-gradient-to-r from-purple-500 via-pink-500 to-blue-500 animate-gradient-x" 
@@ -447,10 +424,8 @@ export default function Photobooth() {
         />
       </div>
       
-      {/* Progress percentage */}
       <div className="text-sm text-gray-300">{state.progress}% Complete</div>
       
-      {/* Stage-specific animations */}
       <div className="text-sm text-purple-300 flex items-center justify-center gap-2">
         {state.stage === 'detecting' && (
           <>
@@ -486,18 +461,15 @@ export default function Photobooth() {
     </div>
   );
 
-  // ENHANCED processMedia function with SDXL Inpainting - takes captured photo as parameter
   const processMediaWithCapturedPhoto = React.useCallback(async (capturedImageData: string) => {
     if (!capturedImageData) {
       setError('No photo captured');
       return;
     }
 
-    // Wait for config to load if it's not available yet
     let currentConfig = config;
     if (!currentConfig) {
       console.log('⏳ Config not loaded yet, waiting...');
-      // Try to wait a bit for config to load
       await new Promise(resolve => setTimeout(resolve, 1000));
       currentConfig = useConfigStore.getState().config;
     }
@@ -527,7 +499,6 @@ export default function Photobooth() {
         attempt: generationAttempts + 1
       });
 
-      // Stage 1: Image preparation with smooth animation (0-15%)
       await animateProgress(0, 15, 1000, 'detecting', 'Analyzing your photo...');
       console.log('🖼️ Resizing image for SDXL optimal input...');
       const processedContent = await resizeImage(capturedImageData, 1024);
@@ -542,14 +513,12 @@ export default function Photobooth() {
         resolution: '1024x1024 optimized'
       });
 
-      // Stage 2: Face detection with animation (15-35%)
       await animateProgress(15, 35, 1500, 'masking', 'Detecting facial features...');
       
       let maskData: string | undefined;
       const faceMode = currentConfig.face_preservation_mode || 'preserve_face';
       
       try {
-        // Create image element for face detection
         const img = new Image();
         await new Promise<void>((resolve, reject) => {
           img.onload = () => resolve();
@@ -560,9 +529,9 @@ export default function Photobooth() {
         console.log('🔍 Generating face-only mask (excluding clothing)...');
         maskData = await generateSmartFaceMask(
           img,
-          faceMode === 'preserve_face', // true = preserve faces, false = replace faces
-          20,  // Reduced feather radius for sharper clothing exclusion
-          1.2  // Reduced expansion to focus on face only, not neck/collar
+          faceMode === 'preserve_face',
+          20,
+          1.2
         );
         
         console.log('✅ Smart face mask generated successfully for SDXL');
@@ -570,7 +539,6 @@ export default function Photobooth() {
       } catch (faceDetectionError) {
         console.warn('⚠️ Face detection failed, using fallback mask:', faceDetectionError);
         
-        // Generate fallback mask if face detection fails
         const img = new Image();
         await new Promise<void>((resolve, reject) => {
           img.onload = () => resolve();
@@ -582,7 +550,6 @@ export default function Photobooth() {
         console.log('✅ Fallback mask generated for SDXL');
       }
 
-      // Stage 3: AI Generation preparation (35-45%)
       await animateProgress(35, 45, 800, 'generating', 'Preparing AI magic...');
       
       console.log('🎨 Starting SDXL Inpainting generation...');
@@ -590,7 +557,6 @@ export default function Photobooth() {
       let aiContent: string;
 
       if (currentModelType === 'video') {
-        // Video generation with extended progress (45-90%)
         await animateProgress(45, 60, 2000, 'generating', 'Initializing video AI...');
         
         console.log('🎬 Starting video generation with Replicate...');
@@ -604,10 +570,9 @@ export default function Photobooth() {
         });
 
         const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error('Video generation timed out. Please try again.')), 300000); // 5 minutes for video
+          setTimeout(() => reject(new Error('Video generation timed out. Please try again.')), 300000);
         });
 
-        // Simulate video generation progress
         const progressPromise = async () => {
           await animateProgress(60, 75, 8000, 'generating', 'Generating video frames...');
           await animateProgress(75, 85, 6000, 'generating', 'Applying face preservation...');
@@ -617,10 +582,8 @@ export default function Photobooth() {
 
         aiContent = await Promise.race([progressPromise(), timeoutPromise]);
       } else {
-        // Image generation with smooth progress (45-90%)
         await animateProgress(45, 55, 1200, 'generating', 'Loading SDXL model...');
         
-        // Enhanced prompting for SDXL Inpainting with clothing exclusion
         const basePrompt = currentConfig.global_prompt || 'AI Generated Portrait';
         const enhancedPrompt = faceMode === 'preserve_face' 
           ? `${basePrompt}, photorealistic portrait, preserve facial features only, exclude clothing and collars, natural skin texture, detailed eyes and mouth, face-focused composition, no shirts or ties visible, professional headshot style, 8k quality`
@@ -634,12 +597,12 @@ export default function Photobooth() {
         const generationPromise = generateWithStability({
           prompt: enhancedPrompt,
           imageData: processedContent,
-          mode: 'inpaint', // Always use inpainting for best face preservation
+          mode: 'inpaint',
           maskData: maskData,
           facePreservationMode: faceMode,
-          strength: faceMode === 'preserve_face' ? 0.4 : 0.7, // Optimized for SDXL
-          cfgScale: 8.0,  // Good balance for SDXL
-          steps: 25,      // Optimal for SDXL quality/speed
+          strength: faceMode === 'preserve_face' ? 0.4 : 0.7,
+          cfgScale: 8.0,
+          steps: 25,
           useControlNet: currentConfig.use_controlnet ?? true,
           controlNetType: currentConfig.controlnet_type || 'auto'
         });
@@ -648,7 +611,6 @@ export default function Photobooth() {
           setTimeout(() => reject(new Error('SDXL Inpainting generation timed out. Please try again.')), 180000);
         });
 
-        // Simulate realistic AI generation progress
         const progressPromise = async () => {
           await animateProgress(70, 80, 3000, 'generating', 'Applying AI transformation...');
           await animateProgress(80, 88, 2500, 'generating', 'Refining details...');
@@ -659,7 +621,6 @@ export default function Photobooth() {
         aiContent = await Promise.race([progressPromise(), timeoutPromise]);
       }
       
-      // Stage 4: Validation (90-95%)
       await animateProgress(90, 95, 800, 'generating', 'Validating result...');
       
       if (!aiContent) {
@@ -678,7 +639,6 @@ export default function Photobooth() {
         preview: aiContent.substring(0, 100) + '...'
       });
 
-      // Test if the generated image can be loaded
       if (aiContent.startsWith('data:')) {
         const testImg = new Image();
         await new Promise<void>((resolve, reject) => {
@@ -702,7 +662,6 @@ export default function Photobooth() {
         });
       }
 
-      // Stage 5: Finalize (95-100%)
       await animateProgress(95, 100, 600, 'uploading', 'Finalizing magic...');
 
       console.log('✅ SDXL Inpainting generation completed successfully:', {
@@ -713,7 +672,6 @@ export default function Photobooth() {
         model: 'SDXL Inpainting'
       });
 
-      // Update UI - this will trigger the automatic upload via useEffect
       setProcessedMedia(aiContent);
       setError(null);
 
@@ -767,9 +725,8 @@ export default function Photobooth() {
     } finally {
       setProcessing(false);
     }
-  }, [currentModelType, generationAttempts]);
+  }, [currentModelType, generationAttempts, config, animateProgress]);
 
-  // Get mobile-optimized video constraints
   const getMobileVideoConstraints = () => {
     if (!isMobile) {
       return {
@@ -779,7 +736,6 @@ export default function Photobooth() {
       };
     }
 
-    // Mobile-optimized constraints
     return {
       width: { ideal: 1920, max: 1920 },
       height: { ideal: 1080, max: 1080 },
@@ -804,7 +760,6 @@ export default function Photobooth() {
               {config?.brand_name || 'AI Photobooth'}
             </h1>
             <div className="flex items-center gap-2">
-              {/* Model Type Badge */}
               <div className="bg-gray-800 px-3 py-1 rounded-lg text-xs flex items-center gap-1">
                 {currentModelType === 'video' ? (
                   <>
@@ -819,7 +774,6 @@ export default function Photobooth() {
                 )}
               </div>
               
-              {/* Face Mode Badge */}
               <div className="bg-gray-800 px-3 py-1 rounded-lg text-xs flex items-center gap-1">
                 {config?.face_preservation_mode === 'preserve_face' ? (
                   <>
@@ -834,7 +788,6 @@ export default function Photobooth() {
                 )}
               </div>
               
-              {/* Upload Status */}
               {processedMedia && (
                 <div className="bg-gray-800 px-3 py-1 rounded-lg text-xs flex items-center gap-1">
                   {uploading ? (
@@ -861,7 +814,6 @@ export default function Photobooth() {
       </div>
 
       <div className="container mx-auto px-4 py-6 max-w-lg">
-        {/* Photography Instructions */}
         {showInstructions && !mediaData && (
           <div className="mb-6 bg-gradient-to-br from-blue-900/20 to-purple-900/20 border border-blue-500/30 rounded-xl p-5">
             <h3 className="text-white font-semibold mb-4 flex items-center gap-2">
@@ -901,11 +853,9 @@ export default function Photobooth() {
           </div>
         )}
 
-        {/* Main View - Camera Preview or AI Result */}
         <div className="bg-gray-800 rounded-xl overflow-hidden mb-6 shadow-2xl">
           <div className={`bg-black relative ${isMobile ? 'mobile-camera-container' : 'desktop-camera-container aspect-square'}`}>
             {processedMedia ? (
-              // Show AI generated result
               currentModelType === 'video' ? (
                 <video
                   src={processedMedia}
@@ -923,19 +873,16 @@ export default function Photobooth() {
                 />
               )
             ) : processing || (mediaData && !error) ? (
-              // Show processing screen (either actively processing or about to start)
               <div className="w-full h-full bg-black flex items-center justify-center">
                 <div className="text-center max-w-sm mx-auto p-8">
                   <ProcessingIndicator state={processingState} />
                 </div>
               </div>
             ) : error ? (
-              // Show error state
               <ErrorDisplay error={error} attempts={generationAttempts} />
             ) : (
-              // Show webcam
               <Webcam
-                key={cameraKey} // Force re-initialization when key changes
+                key={cameraKey}
                 ref={webcamRef}
                 audio={false}
                 screenshotFormat="image/png"
@@ -945,14 +892,13 @@ export default function Photobooth() {
                 onUserMedia={() => {
                   console.log('✅ Webcam initialized successfully with key:', cameraKey);
                   setCameraReady(true);
-                  setError(null); // Clear any previous camera errors
+                  setError(null);
                 }}
                 onUserMediaError={handleWebcamError}
-                mirrored={isMobile} // Mirror on mobile for better UX
+                mirrored={isMobile}
               />
             )}
             
-            {/* Status badges */}
             {processedMedia && (
               <div className="absolute top-3 left-3 bg-black/70 text-white px-2 py-1 rounded-lg text-xs flex items-center gap-1">
                 <Wand2 className="w-3 h-3 text-purple-400" />
@@ -963,7 +909,6 @@ export default function Photobooth() {
               </div>
             )}
             
-            {/* Processing badge */}
             {processing && (
               <div className="absolute top-3 left-3 bg-black/70 text-white px-2 py-1 rounded-lg text-xs flex items-center gap-1">
                 <Wand2 className="w-3 h-3 text-purple-400 animate-spin" />
@@ -971,7 +916,6 @@ export default function Photobooth() {
               </div>
             )}
             
-            {/* Mobile optimization indicator */}
             {isMobile && !mediaData && !processedMedia && !processing && (
               <div className="absolute bottom-3 right-3 bg-black/70 text-white px-2 py-1 rounded-lg text-xs flex items-center gap-1">
                 <span className="text-green-400">📱 Mobile Optimized</span>
@@ -980,7 +924,6 @@ export default function Photobooth() {
           </div>
         </div>
 
-        {/* Action Buttons */}
         <div className="space-y-4 mb-6">
           {!mediaData && !processing && !processedMedia ? (
             <button
@@ -1007,7 +950,6 @@ export default function Photobooth() {
             </button>
           ) : null}
 
-          {/* Auto-upload status message */}
           {processedMedia && (
             <div className="text-center text-sm text-gray-400 bg-gray-800/50 rounded-lg p-3">
               {uploading ? (
@@ -1027,7 +969,6 @@ export default function Photobooth() {
           )}
         </div>
 
-        {/* Enhanced Debug Info */}
         {(process.env.NODE_ENV === 'development' || debugInfo) && (
           <div className="mt-4 p-4 bg-gray-800/50 rounded-lg text-xs text-gray-400 space-y-2">
             <p><span className="text-purple-400 font-semibold">Model:</span> SDXL Inpainting + ControlNet</p>
