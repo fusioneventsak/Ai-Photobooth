@@ -388,7 +388,7 @@ export default function Photobooth() {
 
         // Apply mobile-optimized blending with tighter core area
         const coreRadius = Math.min(faceWidth, faceHeight) * 0.18;
-        const featherRadius = coreRadius + mobileFeather;
+        const blendRadius = coreRadius + mobileFeather;
         
         ctx.fillStyle = createMobileGradient(coreRadius, featherRadius);
         ctx.beginPath();
