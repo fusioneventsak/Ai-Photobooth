@@ -18,7 +18,12 @@ import {
   Layers,
   Copy,
   Check,
-  X
+  X,
+  Share2,
+  Link,
+  Facebook,
+  Twitter,
+  MessageCircle
 } from 'lucide-react';
 import { useConfigStore } from '../store/configStore';
 import { 
@@ -50,6 +55,8 @@ export default function Gallery() {
   // Confirmation states
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
+  const [showShareMenu, setShowShareMenu] = useState<string | null>(null);
+  const [copySuccess, setCopySuccess] = useState<string | null>(null);
 
   // Load photos
   const loadPhotos = useCallback(async () => {
@@ -281,8 +288,80 @@ export default function Gallery() {
     setCarouselIndex(prev => (prev - 1 + photos.length) % photos.length);
   };
 
-  const toggleCarouselPlay = () => {
-    setCarouselPlaying(!carouselPlaying);
+  // Social sharing functions
+  const getShareableUrl = (photo: Photo): string => {
+    // Use the photo's public URL or fallback to current page with photo ID
+    return photo.processed_url || photo.original_url || `${window.location.origin}${window.location.pathname}?photo=${photo.id}`;
+  };
+
+  const copyToClipboard = async (text: string, photoId: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopySuccess(photoId);
+      setTimeout(() => setCopySuccess(null), 2000);
+    } catch (err) {
+      console.error('Failed to copy to clipboard:', err);
+      setError('Failed to copy to clipboard');
+    }
+  };
+
+  const shareToFacebook = (photo: Photo) => {
+    const url = getShareableUrl(photo);
+    const text = encodeURIComponent(`Check out this amazing AI-generated photo: "${photo.prompt}"`);
+    const shareUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}&quote=${text}`;
+    window.open(shareUrl, '_blank', 'width=600,height=400');
+    setShowShareMenu(null);
+  };
+
+  const shareToTwitter = (photo: Photo) => {
+    const url = getShareableUrl(photo);
+    const text = encodeURIComponent(`Check out this AI-generated photo: "${photo.prompt}" 🎨✨`);
+    const shareUrl = `https://twitter.com/intent/tweet?text=${text}&url=${encodeURIComponent(url)}`;
+    window.open(shareUrl, '_blank', 'width=600,height=400');
+    setShowShareMenu(null);
+  };
+
+  const shareToWhatsApp = (photo: Photo) => {
+    const url = getShareableUrl(photo);
+    const text = encodeURIComponent(`Check out this amazing AI-generated photo: "${photo.prompt}" ${url}`);
+    const shareUrl = `https://wa.me/?text=${text}`;
+    window.open(shareUrl, '_blank');
+    setShowShareMenu(null);
+  };
+
+  const shareWithWebShareAPI = async (photo: Photo) => {
+    if (navigator.share) {
+      try {
+        // For images, we can try to share the actual file
+        const url = getShareableUrl(photo);
+        
+        const shareData: ShareData = {
+          title: 'AI Generated Photo',
+          text: `Check out this amazing AI-generated photo: "${photo.prompt}"`,
+          url: url
+        };
+
+        // Try to include the image file if possible
+        if (photo.content_type?.startsWith('image/')) {
+          try {
+            const response = await fetch(url);
+            const blob = await response.blob();
+            const file = new File([blob], `ai-photo-${photo.id.substring(0, 8)}.jpg`, { type: blob.type });
+            shareData.files = [file];
+          } catch (fileError) {
+            console.log('Could not include file in share, sharing URL only');
+          }
+        }
+
+        await navigator.share(shareData);
+        setShowShareMenu(null);
+      } catch (err) {
+        if ((err as Error).name !== 'AbortError') {
+          console.error('Error sharing:', err);
+          setError('Failed to share photo');
+        }
+      }
+    }
   };
 
   // Photo action buttons component
@@ -308,35 +387,119 @@ export default function Gallery() {
           <Download className="w-5 h-5" />
         )}
       </button>
+
+      {/* Share button with dropdown */}
+      <div className="relative">
+        <button
+          onClick={() => setShowShareMenu(showShareMenu === photo.id ? null : photo.id)}
+          className="share-button p-2 bg-white bg-opacity-20 rounded-full hover:bg-opacity-30 transition"
+          title="Share photo"
+        >
+          <Share2 className="w-5 h-5" />
+        </button>
+
+        {/* Share dropdown menu */}
+        {showShareMenu === photo.id && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9, y: -10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.9, y: -10 }}
+            className="share-menu absolute right-0 top-full mt-2 bg-gray-800 rounded-lg shadow-xl border border-gray-700 p-2 min-w-48 z-10"
+          >
+            {/* Native share API (if supported) */}
+            {navigator.share && (
+              <button
+                onClick={() => shareWithWebShareAPI(photo)}
+                className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-300 hover:text-white hover:bg-gray-700 rounded transition"
+              >
+                <Share2 className="w-4 h-4" />
+                Share...
+              </button>
+            )}
+
+            {/* Copy link */}
+            <button
+              onClick={() => copyToClipboard(getShareableUrl(photo), photo.id)}
+              className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-300 hover:text-white hover:bg-gray-700 rounded transition"
+            >
+              {copySuccess === photo.id ? (
+                <>
+                  <Check className="w-4 h-4 text-green-400" />
+                  <span className="text-green-400">Copied!</span>
+                </>
+              ) : (
+                <>
+                  <Link className="w-4 h-4" />
+                  Copy Link
+                </>
+              )}
+            </button>
+
+            <div className="border-t border-gray-700 my-2"></div>
+
+            {/* Social media shares */}
+            <button
+              onClick={() => shareToFacebook(photo)}
+              className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-300 hover:text-white hover:bg-gray-700 rounded transition"
+            >
+              <div className="w-4 h-4 bg-blue-600 rounded flex items-center justify-center">
+                <span className="text-white text-xs font-bold">f</span>
+              </div>
+              Facebook
+            </button>
+
+            <button
+              onClick={() => shareToTwitter(photo)}
+              className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-300 hover:text-white hover:bg-gray-700 rounded transition"
+            >
+              <div className="w-4 h-4 bg-blue-400 rounded flex items-center justify-center">
+                <span className="text-white text-xs font-bold">𝕏</span>
+              </div>
+              Twitter / X
+            </button>
+
+            <button
+              onClick={() => shareToWhatsApp(photo)}
+              className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-300 hover:text-white hover:bg-gray-700 rounded transition"
+            >
+              <MessageCircle className="w-4 h-4 text-green-500" />
+              WhatsApp
+            </button>
+          </motion.div>
+        )}
+      </div>
+      
+      {/* Always show delete buttons, but style them differently based on admin mode */}
+      <button
+        onClick={() => showAdmin ? setShowDeleteConfirm(photo.id) : setShowAdmin(true)}
+        disabled={deleting === photo.id}
+        className={`p-2 rounded-full transition disabled:opacity-50 ${
+          showAdmin 
+            ? 'bg-red-500 bg-opacity-20 hover:bg-opacity-30' 
+            : 'bg-gray-500 bg-opacity-20 hover:bg-opacity-30'
+        }`}
+        title={showAdmin ? "Delete photo" : "Enable admin mode to delete"}
+      >
+        {deleting === photo.id ? (
+          <RefreshCw className="w-5 h-5 animate-spin" />
+        ) : (
+          <Trash2 className="w-5 h-5" />
+        )}
+      </button>
       
       {showAdmin && (
-        <>
-          <button
-            onClick={() => setShowDeleteConfirm(photo.id)}
-            disabled={deleting === photo.id}
-            className="p-2 bg-red-500 bg-opacity-20 rounded-full hover:bg-opacity-30 transition disabled:opacity-50"
-            title="Delete photo"
-          >
-            {deleting === photo.id ? (
-              <RefreshCw className="w-5 h-5 animate-spin" />
-            ) : (
-              <Trash2 className="w-5 h-5" />
-            )}
-          </button>
-          
-          <button
-            onClick={() => setShowDeleteConfirm(`${photo.id}-duplicates`)}
-            disabled={deleting === photo.id}
-            className="p-2 bg-orange-500 bg-opacity-20 rounded-full hover:bg-opacity-30 transition disabled:opacity-50"
-            title="Delete this photo and all duplicates"
-          >
-            {deleting === photo.id ? (
-              <RefreshCw className="w-5 h-5 animate-spin" />
-            ) : (
-              <Copy className="w-5 h-5" />
-            )}
-          </button>
-        </>
+        <button
+          onClick={() => setShowDeleteConfirm(`${photo.id}-duplicates`)}
+          disabled={deleting === photo.id}
+          className="p-2 bg-orange-500 bg-opacity-20 rounded-full hover:bg-opacity-30 transition disabled:opacity-50"
+          title="Delete this photo and all duplicates"
+        >
+          {deleting === photo.id ? (
+            <RefreshCw className="w-5 h-5 animate-spin" />
+          ) : (
+            <Copy className="w-5 h-5" />
+          )}
+        </button>
       )}
     </div>
   );
@@ -546,6 +709,13 @@ export default function Gallery() {
               >
                 {showAdmin ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
               </button>
+              
+              {/* Admin status indicator */}
+              {showAdmin && (
+                <div className="px-2 py-1 bg-blue-600 text-white text-xs rounded">
+                  ADMIN MODE
+                </div>
+              )}
             </div>
           </div>
 
