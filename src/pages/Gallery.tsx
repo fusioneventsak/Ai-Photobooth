@@ -1,19 +1,234 @@
-// Close share menu when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (showShareMenu) {
-        const target = event.target as Element;
-        if (!target.closest('.share-menu') && !target.closest('.share-button')) {
-          setShowShareMenu(null);
+import React, { useState, useEffect, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { 
+  Image as ImageIcon, 
+  Download, 
+  Trash2, 
+  RefreshCw, 
+  AlertCircle,
+  Eye,
+  EyeOff,
+  Settings,
+  ChevronLeft,
+  ChevronRight,
+  Play,
+  Pause,
+  Grid,
+  List,
+  Layers,
+  Copy,
+  Check,
+  X,
+  Share2,
+  Link,
+  Facebook,
+  Twitter,
+  MessageCircle
+} from 'lucide-react';
+import { useConfigStore } from '../store/configStore';
+import { 
+  getPublicPhotos, 
+  deletePhoto, 
+  deleteAllPhotos, 
+  deletePhotoAndAllDuplicates 
+} from '../lib/supabase';
+import type { Photo } from '../types/supabase';
+
+export default function Gallery() {
+  const { config } = useConfigStore();
+  
+  // State declarations
+  const [photos, setPhotos] = useState<Photo[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState<string | null>(null);
+  const [showAdmin, setShowAdmin] = useState(false);
+  const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(true);
+  const [carouselIndex, setCarouselIndex] = useState(0);
+  const [carouselPlaying, setCarouselPlaying] = useState(true);
+  const [debugMode, setDebugMode] = useState(false);
+  const [forceRefresh, setForceRefresh] = useState(0);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+  const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
+  const [showShareMenu, setShowShareMenu] = useState<string | null>(null);
+  const [copySuccess, setCopySuccess] = useState<string | null>(null);
+
+  // Helper functions
+  const getShareableUrl = useCallback((photo: Photo): string => {
+    return `${window.location.origin}/gallery/share/${photo.id}`;
+  }, []);
+
+  const getDirectImageUrl = useCallback((photo: Photo): string => {
+    return photo.processed_url || photo.original_url || '';
+  }, []);
+
+  const generateOpenGraphTags = useCallback((photo: Photo) => {
+    const shareableUrl = getShareableUrl(photo);
+    const imageUrl = getDirectImageUrl(photo);
+    
+    return {
+      'og:title': 'AI Generated Photo',
+      'og:description': `"${photo.prompt}" - Created with AI technology`,
+      'og:image': imageUrl,
+      'og:url': shareableUrl,
+      'og:type': 'article',
+      'og:site_name': 'AI Photo Gallery',
+      'twitter:card': 'summary_large_image',
+      'twitter:title': 'AI Generated Photo',
+      'twitter:description': `"${photo.prompt}" - Created with AI technology`,
+      'twitter:image': imageUrl
+    };
+  }, [getShareableUrl, getDirectImageUrl]);
+
+  // Load photos function
+  const loadPhotos = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const timestamp = Date.now();
+      console.log(`🔄 Loading photos with cache bust: ${timestamp}`);
+      
+      const fetchedPhotos = await getPublicPhotos();
+      
+      console.log('📊 Detailed photo analysis:', {
+        totalPhotos: fetchedPhotos.length,
+        uniquePrompts: new Set(fetchedPhotos.map(p => p.prompt)).size,
+        duplicateGroups: Object.entries(
+          fetchedPhotos.reduce((acc, photo) => {
+            acc[photo.prompt] = (acc[photo.prompt] || 0) + 1;
+            return acc;
+          }, {} as Record<string, number>)
+        ).filter(([_, count]) => count > 1),
+        photoIds: fetchedPhotos.map(p => ({ id: p.id.substring(0, 8), prompt: p.prompt.substring(0, 30) }))
+      });
+      
+      setPhotos(fetchedPhotos);
+      console.log('📸 Gallery loaded:', fetchedPhotos.length, 'photos at', new Date().toISOString());
+    } catch (err) {
+      console.error('❌ Failed to load photos:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load photos');
+    } finally {
+      setLoading(false);
+    }
+  }, [forceRefresh]);
+
+  // Force refresh handler
+  const handleForceRefresh = useCallback(() => {
+    setForceRefresh(prev => prev + 1);
+  }, []);
+
+  // Download photo function
+  const handleDownloadPhoto = useCallback(async (photo: Photo, filename?: string) => {
+    try {
+      setDownloading(photo.id);
+      console.log('📥 Starting download for photo:', photo.id);
+
+      const imageUrl = photo.processed_url || photo.original_url;
+      if (!imageUrl) {
+        throw new Error('No image URL available');
+      }
+
+      const response = await fetch(imageUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch image: ${response.statusText}`);
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      
+      const extension = photo.content_type === 'video' ? 'mp4' : 'jpg';
+      const defaultFilename = `photo_${new Date(photo.created_at).toISOString().split('T')[0]}_${photo.id.substring(0, 8)}.${extension}`;
+      link.download = filename || defaultFilename;
+      
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      console.log('✅ Photo downloaded successfully');
+    } catch (err) {
+      console.error('❌ Failed to download photo:', err);
+      setError(err instanceof Error ? err.message : 'Failed to download photo');
+    } finally {
+      setDownloading(null);
+    }
+  }, []);
+
+  // Social sharing functions
+  const copyToClipboard = useCallback(async (text: string, photoId: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopySuccess(photoId);
+      setTimeout(() => setCopySuccess(null), 2000);
+    } catch (err) {
+      console.error('Failed to copy to clipboard:', err);
+      setError('Failed to copy to clipboard');
+    }
+  }, []);
+
+  const shareToFacebook = useCallback((photo: Photo) => {
+    const shareableUrl = getShareableUrl(photo);
+    const shareUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareableUrl)}`;
+    window.open(shareUrl, '_blank', 'width=600,height=400');
+    setShowShareMenu(null);
+  }, [getShareableUrl]);
+
+  const shareToTwitter = useCallback((photo: Photo) => {
+    const shareableUrl = getShareableUrl(photo);
+    const text = encodeURIComponent(`Check out this AI-generated photo: "${photo.prompt}" 🎨✨`);
+    const shareUrl = `https://twitter.com/intent/tweet?text=${text}&url=${encodeURIComponent(shareableUrl)}`;
+    window.open(shareUrl, '_blank', 'width=600,height=400');
+    setShowShareMenu(null);
+  }, [getShareableUrl]);
+
+  const shareToWhatsApp = useCallback((photo: Photo) => {
+    const shareableUrl = getShareableUrl(photo);
+    const text = encodeURIComponent(`Check out this amazing AI-generated photo: "${photo.prompt}" ${shareableUrl}`);
+    const shareUrl = `https://wa.me/?text=${text}`;
+    window.open(shareUrl, '_blank');
+    setShowShareMenu(null);
+  }, [getShareableUrl]);
+
+  const shareWithWebShareAPI = useCallback(async (photo: Photo) => {
+    if (navigator.share) {
+      try {
+        const shareableUrl = getShareableUrl(photo);
+        
+        const shareData: ShareData = {
+          title: 'AI Generated Photo',
+          text: `Check out this amazing AI-generated photo: "${photo.prompt}"`,
+          url: shareableUrl
+        };
+
+        if (photo.content_type?.startsWith('image/')) {
+          try {
+            const imageUrl = getDirectImageUrl(photo);
+            const response = await fetch(imageUrl);
+            const blob = await response.blob();
+            const file = new File([blob], `ai-photo-${photo.id.substring(0, 8)}.jpg`, { type: blob.type });
+            shareData.files = [file];
+          } catch (fileError) {
+            console.log('Could not include file in share, sharing URL only');
+          }
+        }
+
+        await navigator.share(shareData);
+        setShowShareMenu(null);
+      } catch (err) {
+        if ((err as Error).name !== 'AbortError') {
+          console.error('Error sharing:', err);
+          setError('Failed to share photo');
         }
       }
-    };
+    }
+  }, [getShareableUrl, getDirectImageUrl]);
 
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showShareMenu]);
-
-  // Alternative sharing method that creates a temporary shareable page
   const createShareablePage = useCallback((photo: Photo) => {
     const shareWindow = window.open('', '_blank', 'width=600,height=400');
     
@@ -90,7 +305,6 @@
                class="share-btn whatsapp" target="_blank">Share on WhatsApp</a>
           </div>
           <script>
-            // Auto-close after 30 seconds
             setTimeout(() => window.close(), 30000);
           </script>
         </body>
@@ -99,111 +313,105 @@
       
       shareWindow.document.close();
     }
-  }, [generateOpenGraphTags, getDirectImageUrl]);import React, { useState, useEffect, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Image as ImageIcon, 
-  Download, 
-  Trash2, 
-  RefreshCw, 
-  AlertCircle,
-  Eye,
-  EyeOff,
-  Settings,
-  ChevronLeft,
-  ChevronRight,
-  Play,
-  Pause,
-  Grid,
-  List,
-  Layers,
-  Copy,
-  Check,
-  X,
-  Share2,
-  Link,
-  Facebook,
-  Twitter,
-  MessageCircle
-} from 'lucide-react';
-import { useConfigStore } from '../store/configStore';
-import { 
-  getPublicPhotos, 
-  deletePhoto, 
-  deleteAllPhotos, 
-  deletePhotoAndAllDuplicates 
-} from '../lib/supabase';
-import type { Photo } from '../types/supabase';
+  }, [generateOpenGraphTags, getDirectImageUrl]);
 
-export default function Gallery() {
-  const { config } = useConfigStore();
-  const [photos, setPhotos] = useState<Photo[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState<string | null>(null);
-  const [downloading, setDownloading] = useState<string | null>(null);
-  const [showAdmin, setShowAdmin] = useState(false);
-  const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(true);
+  // Delete functions
+  const handleDeletePhoto = useCallback(async (photoId: string) => {
+    try {
+      setDeleting(photoId);
+      console.log('🗑️ Deleting photo:', photoId);
+      
+      await deletePhoto(photoId);
+      
+      setPhotos(prev => prev.filter(p => p.id !== photoId));
+      
+      if (selectedPhoto?.id === photoId) {
+        setSelectedPhoto(null);
+      }
+      
+      if (carouselIndex >= photos.length - 1) {
+        setCarouselIndex(Math.max(0, photos.length - 2));
+      }
+      
+      console.log('✅ Photo deleted successfully');
+    } catch (err) {
+      console.error('❌ Failed to delete photo:', err);
+      setError(err instanceof Error ? err.message : 'Failed to delete photo');
+      loadPhotos();
+    } finally {
+      setDeleting(null);
+      setShowDeleteConfirm(null);
+    }
+  }, [selectedPhoto, carouselIndex, photos.length, loadPhotos]);
 
-  // Carousel state
-  const [carouselIndex, setCarouselIndex] = useState(0);
-  const [carouselPlaying, setCarouselPlaying] = useState(true);
-  const [debugMode, setDebugMode] = useState(false);
-  const [forceRefresh, setForceRefresh] = useState(0);
+  const handleDeletePhotoAndDuplicates = useCallback(async (photoId: string) => {
+    try {
+      setDeleting(photoId);
+      console.log('🗑️ Deleting photo and duplicates:', photoId);
+      
+      const result = await deletePhotoAndAllDuplicates(photoId);
+      
+      await loadPhotos();
+      
+      console.log(`✅ Deleted ${result.deletedCount} photos (including duplicates)`);
+      
+      if (result.errors.length > 0) {
+        console.warn('⚠️ Some deletions failed:', result.errors);
+        setError(`Deleted ${result.deletedCount} photos, but ${result.errors.length} failed`);
+      }
+    } catch (err) {
+      console.error('❌ Failed to delete photos:', err);
+      setError(err instanceof Error ? err.message : 'Failed to delete photos');
+      loadPhotos();
+    } finally {
+      setDeleting(null);
+      setShowDeleteConfirm(null);
+    }
+  }, [loadPhotos]);
 
-  // Confirmation states
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
-  const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
-  const [showShareMenu, setShowShareMenu] = useState<string | null>(null);
-  const [copySuccess, setCopySuccess] = useState<string | null>(null);
-
-  // Load photos
-  const loadPhotos = useCallback(async () => {
+  const handleDeleteAll = useCallback(async () => {
     try {
       setLoading(true);
-      setError(null);
+      console.log('🗑️ Deleting all photos');
       
-      // Force cache bust
-      const timestamp = Date.now();
-      console.log(`🔄 Loading photos with cache bust: ${timestamp}`);
+      await deleteAllPhotos();
       
-      const fetchedPhotos = await getPublicPhotos();
+      setPhotos([]);
+      setSelectedPhoto(null);
+      setCarouselIndex(0);
       
-      // Log detailed photo info for debugging
-      console.log('📊 Detailed photo analysis:', {
-        totalPhotos: fetchedPhotos.length,
-        uniquePrompts: new Set(fetchedPhotos.map(p => p.prompt)).size,
-        duplicateGroups: Object.entries(
-          fetchedPhotos.reduce((acc, photo) => {
-            acc[photo.prompt] = (acc[photo.prompt] || 0) + 1;
-            return acc;
-          }, {} as Record<string, number>)
-        ).filter(([_, count]) => count > 1),
-        photoIds: fetchedPhotos.map(p => ({ id: p.id.substring(0, 8), prompt: p.prompt.substring(0, 30) }))
-      });
-      
-      setPhotos(fetchedPhotos);
-      console.log('📸 Gallery loaded:', fetchedPhotos.length, 'photos at', new Date().toISOString());
+      console.log('✅ All photos deleted successfully');
     } catch (err) {
-      console.error('❌ Failed to load photos:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load photos');
+      console.error('❌ Failed to delete all photos:', err);
+      setError(err instanceof Error ? err.message : 'Failed to delete all photos');
+      loadPhotos();
     } finally {
       setLoading(false);
+      setShowDeleteAllConfirm(false);
     }
-  }, [forceRefresh]);
+  }, [loadPhotos]);
 
-  // Initial load
+  // Carousel functions
+  const nextSlide = useCallback(() => {
+    setCarouselIndex(prev => (prev + 1) % photos.length);
+  }, [photos.length]);
+
+  const prevSlide = useCallback(() => {
+    setCarouselIndex(prev => (prev - 1 + photos.length) % photos.length);
+  }, [photos.length]);
+
+  const toggleCarouselPlay = useCallback(() => {
+    setCarouselPlaying(!carouselPlaying);
+  }, [carouselPlaying]);
+
+  // useEffect hooks
   useEffect(() => {
     loadPhotos();
   }, [loadPhotos]);
 
-  // Listen for gallery updates
   useEffect(() => {
     const handleGalleryUpdate = (event: CustomEvent) => {
       console.log('🔄 Gallery update event received:', event.detail);
-      // Force a complete refresh
       setForceRefresh(prev => prev + 1);
     };
 
@@ -214,7 +422,6 @@ export default function Gallery() {
     };
   }, []);
 
-  // Keyboard shortcuts
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.shiftKey && e.key === 'A') {
@@ -233,9 +440,8 @@ export default function Gallery() {
 
     window.addEventListener('keydown', handleKeyPress);
     return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [showAdmin, debugMode]);
+  }, [showAdmin, debugMode, handleForceRefresh]);
 
-  // Carousel auto-play
   useEffect(() => {
     if (config?.gallery_layout === 'carousel' && carouselPlaying && photos.length > 1) {
       const interval = setInterval(() => {
@@ -246,252 +452,49 @@ export default function Gallery() {
     }
   }, [config?.gallery_layout, config?.gallery_speed, carouselPlaying, photos.length]);
 
-  // Force refresh handler
-  const handleForceRefresh = useCallback(() => {
-    setForceRefresh(prev => prev + 1);
-  }, []);
-
-  // Download photo
-  const handleDownloadPhoto = async (photo: Photo, filename?: string) => {
-    try {
-      setDownloading(photo.id);
-      console.log('📥 Starting download for photo:', photo.id);
-
-      const imageUrl = photo.processed_url || photo.original_url;
-      if (!imageUrl) {
-        throw new Error('No image URL available');
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (showShareMenu) {
+        const target = event.target as Element;
+        if (!target.closest('.share-menu') && !target.closest('.share-button')) {
+          setShowShareMenu(null);
+        }
       }
-
-      // Fetch the image
-      const response = await fetch(imageUrl);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch image: ${response.statusText}`);
-      }
-
-      const blob = await response.blob();
-      
-      // Create download link
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      
-      // Generate filename
-      const extension = photo.content_type === 'video' ? 'mp4' : 'jpg';
-      const defaultFilename = `photo_${new Date(photo.created_at).toISOString().split('T')[0]}_${photo.id.substring(0, 8)}.${extension}`;
-      link.download = filename || defaultFilename;
-      
-      // Trigger download
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-      
-      console.log('✅ Photo downloaded successfully');
-    } catch (err) {
-      console.error('❌ Failed to download photo:', err);
-      setError(err instanceof Error ? err.message : 'Failed to download photo');
-    } finally {
-      setDownloading(null);
-    }
-  };
-
-  // Delete photo with confirmation
-  const handleDeletePhoto = async (photoId: string) => {
-    try {
-      setDeleting(photoId);
-      console.log('🗑️ Deleting photo:', photoId);
-      
-      await deletePhoto(photoId);
-      
-      // Update local state immediately for better UX
-      setPhotos(prev => prev.filter(p => p.id !== photoId));
-      
-      // Close any open modals if this photo was selected
-      if (selectedPhoto?.id === photoId) {
-        setSelectedPhoto(null);
-      }
-      
-      // Update carousel index if needed
-      if (carouselIndex >= photos.length - 1) {
-        setCarouselIndex(Math.max(0, photos.length - 2));
-      }
-      
-      console.log('✅ Photo deleted successfully');
-    } catch (err) {
-      console.error('❌ Failed to delete photo:', err);
-      setError(err instanceof Error ? err.message : 'Failed to delete photo');
-      // Refresh gallery to get accurate state
-      loadPhotos();
-    } finally {
-      setDeleting(null);
-      setShowDeleteConfirm(null);
-    }
-  };
-
-  // Delete photo and all duplicates
-  const handleDeletePhotoAndDuplicates = async (photoId: string) => {
-    try {
-      setDeleting(photoId);
-      console.log('🗑️ Deleting photo and duplicates:', photoId);
-      
-      const result = await deletePhotoAndAllDuplicates(photoId);
-      
-      // Refresh the gallery to show updated state
-      await loadPhotos();
-      
-      console.log(`✅ Deleted ${result.deletedCount} photos (including duplicates)`);
-      
-      if (result.errors.length > 0) {
-        console.warn('⚠️ Some deletions failed:', result.errors);
-        setError(`Deleted ${result.deletedCount} photos, but ${result.errors.length} failed`);
-      }
-    } catch (err) {
-      console.error('❌ Failed to delete photos:', err);
-      setError(err instanceof Error ? err.message : 'Failed to delete photos');
-      loadPhotos();
-    } finally {
-      setDeleting(null);
-      setShowDeleteConfirm(null);
-    }
-  };
-
-  // Delete all photos
-  const handleDeleteAll = async () => {
-    try {
-      setLoading(true);
-      console.log('🗑️ Deleting all photos');
-      
-      await deleteAllPhotos();
-      
-      // Clear local state immediately
-      setPhotos([]);
-      setSelectedPhoto(null);
-      setCarouselIndex(0);
-      
-      console.log('✅ All photos deleted successfully');
-    } catch (err) {
-      console.error('❌ Failed to delete all photos:', err);
-      setError(err instanceof Error ? err.message : 'Failed to delete all photos');
-      // Refresh to get accurate state
-      loadPhotos();
-    } finally {
-      setLoading(false);
-      setShowDeleteAllConfirm(false);
-    }
-  };
-
-  // Carousel navigation
-  const nextSlide = () => {
-    setCarouselIndex(prev => (prev + 1) % photos.length);
-  };
-
-  const prevSlide = () => {
-    setCarouselIndex(prev => (prev - 1 + photos.length) % photos.length);
-  };
-
-  // Social sharing functions
-  const getShareableUrl = (photo: Photo): string => {
-    // Create a shareable URL that points to your app with the photo ID
-    // This allows you to control Open Graph tags on your server
-    return `${window.location.origin}/gallery/share/${photo.id}`;
-  };
-
-  const getDirectImageUrl = (photo: Photo): string => {
-    // Return the direct image URL for cases where we need the actual image
-    return photo.processed_url || photo.original_url || '';
-  };
-
-  // Generate Open Graph meta tags for better social sharing
-  const generateOpenGraphTags = useCallback((photo: Photo) => {
-    const shareableUrl = getShareableUrl(photo);
-    const imageUrl = getDirectImageUrl(photo);
-    
-    return {
-      'og:title': 'AI Generated Photo',
-      'og:description': `"${photo.prompt}" - Created with AI technology`,
-      'og:image': imageUrl,
-      'og:url': shareableUrl,
-      'og:type': 'article',
-      'og:site_name': 'AI Photo Gallery',
-      'twitter:card': 'summary_large_image',
-      'twitter:title': 'AI Generated Photo',
-      'twitter:description': `"${photo.prompt}" - Created with AI technology`,
-      'twitter:image': imageUrl
     };
-  }, [getShareableUrl, getDirectImageUrl]);
 
-  const copyToClipboard = async (text: string, photoId: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopySuccess(photoId);
-      setTimeout(() => setCopySuccess(null), 2000);
-    } catch (err) {
-      console.error('Failed to copy to clipboard:', err);
-      setError('Failed to copy to clipboard');
-    }
-  };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showShareMenu]);
 
-  const shareToFacebook = useCallback((photo: Photo) => {
-    // Create a shareable page URL that can have proper Open Graph tags
-    const shareableUrl = getShareableUrl(photo);
-    
-    // Facebook's sharer with proper URL encoding
-    const shareUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareableUrl)}`;
-    
-    window.open(shareUrl, '_blank', 'width=600,height=400');
-    setShowShareMenu(null);
-  }, [getShareableUrl]);
-
-  const shareToTwitter = useCallback((photo: Photo) => {
-    const shareableUrl = getShareableUrl(photo);
-    const text = encodeURIComponent(`Check out this AI-generated photo: "${photo.prompt}" 🎨✨`);
-    const shareUrl = `https://twitter.com/intent/tweet?text=${text}&url=${encodeURIComponent(shareableUrl)}`;
-    window.open(shareUrl, '_blank', 'width=600,height=400');
-    setShowShareMenu(null);
-  }, [getShareableUrl]);
-
-  const shareToWhatsApp = useCallback((photo: Photo) => {
-    const shareableUrl = getShareableUrl(photo);
-    const text = encodeURIComponent(`Check out this amazing AI-generated photo: "${photo.prompt}" ${shareableUrl}`);
-    const shareUrl = `https://wa.me/?text=${text}`;
-    window.open(shareUrl, '_blank');
-    setShowShareMenu(null);
-  }, [getShareableUrl]);
-
-  const shareWithWebShareAPI = useCallback(async (photo: Photo) => {
-    if (navigator.share) {
-      try {
-        const shareableUrl = getShareableUrl(photo);
+  useEffect(() => {
+    if (selectedPhoto) {
+      const ogTags = generateOpenGraphTags(selectedPhoto);
+      
+      Object.entries(ogTags).forEach(([property, content]) => {
+        let metaTag = document.querySelector(`meta[property="${property}"]`) || 
+                     document.querySelector(`meta[name="${property}"]`);
         
-        const shareData: ShareData = {
-          title: 'AI Generated Photo',
-          text: `Check out this amazing AI-generated photo: "${photo.prompt}"`,
-          url: shareableUrl
-        };
-
-        // Try to include the image file if possible
-        if (photo.content_type?.startsWith('image/')) {
-          try {
-            const imageUrl = getDirectImageUrl(photo);
-            const response = await fetch(imageUrl);
-            const blob = await response.blob();
-            const file = new File([blob], `ai-photo-${photo.id.substring(0, 8)}.jpg`, { type: blob.type });
-            shareData.files = [file];
-          } catch (fileError) {
-            console.log('Could not include file in share, sharing URL only');
+        if (!metaTag) {
+          metaTag = document.createElement('meta');
+          if (property.startsWith('twitter:')) {
+            metaTag.setAttribute('name', property);
+          } else {
+            metaTag.setAttribute('property', property);
           }
+          document.head.appendChild(metaTag);
         }
+        
+        metaTag.setAttribute('content', content);
+      });
 
-        await navigator.share(shareData);
-        setShowShareMenu(null);
-      } catch (err) {
-        if ((err as Error).name !== 'AbortError') {
-          console.error('Error sharing:', err);
-          setError('Failed to share photo');
-        }
-      }
+      const originalTitle = document.title;
+      document.title = `AI Generated Photo: "${selectedPhoto.prompt}"`;
+      
+      return () => {
+        document.title = originalTitle;
+      };
     }
-  }, [getShareableUrl, getDirectImageUrl]);
+  }, [selectedPhoto, generateOpenGraphTags]);
 
   // Photo action buttons component
   const PhotoActions = ({ photo, className = "" }: { photo: Photo; className?: string }) => (
@@ -517,7 +520,6 @@ export default function Gallery() {
         )}
       </button>
 
-      {/* Share button with dropdown */}
       <div className="relative">
         <button
           onClick={() => setShowShareMenu(showShareMenu === photo.id ? null : photo.id)}
@@ -527,7 +529,6 @@ export default function Gallery() {
           <Share2 className="w-5 h-5" />
         </button>
 
-        {/* Share dropdown menu */}
         {showShareMenu === photo.id && (
           <motion.div
             initial={{ opacity: 0, scale: 0.9, y: -10 }}
@@ -535,7 +536,6 @@ export default function Gallery() {
             exit={{ opacity: 0, scale: 0.9, y: -10 }}
             className="share-menu absolute right-0 top-full mt-2 bg-gray-800 rounded-lg shadow-xl border border-gray-700 p-2 min-w-48 z-10"
           >
-            {/* Native share API (if supported) */}
             {navigator.share && (
               <button
                 onClick={() => shareWithWebShareAPI(photo)}
@@ -546,7 +546,6 @@ export default function Gallery() {
               </button>
             )}
 
-            {/* Copy link */}
             <button
               onClick={() => copyToClipboard(getShareableUrl(photo), photo.id)}
               className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-300 hover:text-white hover:bg-gray-700 rounded transition"
@@ -566,7 +565,6 @@ export default function Gallery() {
 
             <div className="border-t border-gray-700 my-2"></div>
 
-            {/* Social media shares */}
             <button
               onClick={() => shareToFacebook(photo)}
               className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-300 hover:text-white hover:bg-gray-700 rounded transition"
@@ -608,7 +606,6 @@ export default function Gallery() {
         )}
       </div>
       
-      {/* Always show delete buttons, but style them differently based on admin mode */}
       <button
         onClick={() => showAdmin ? setShowDeleteConfirm(photo.id) : setShowAdmin(true)}
         disabled={deleting === photo.id}
@@ -830,7 +827,6 @@ export default function Gallery() {
             </h1>
             
             <div className="flex items-center gap-4">
-              {/* Layout indicator */}
               <div className="flex items-center gap-2 text-sm text-gray-400">
                 {config?.gallery_layout === 'grid' && <Grid className="w-4 h-4" />}
                 {config?.gallery_layout === 'masonry' && <Layers className="w-4 h-4" />}
@@ -838,7 +834,6 @@ export default function Gallery() {
                 <span className="capitalize">{config?.gallery_layout || 'grid'}</span>
               </div>
 
-              {/* Admin toggle */}
               <button
                 onClick={() => setShowAdmin(!showAdmin)}
                 className={`p-2 rounded-lg transition ${
@@ -849,7 +844,6 @@ export default function Gallery() {
                 {showAdmin ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
               </button>
               
-              {/* Admin status indicator */}
               {showAdmin && (
                 <div className="px-2 py-1 bg-blue-600 text-white text-xs rounded">
                   ADMIN MODE
@@ -858,7 +852,6 @@ export default function Gallery() {
             </div>
           </div>
 
-          {/* Admin Controls */}
           {showAdmin && (
             <motion.div
               initial={{ opacity: 0, height: 0 }}
@@ -938,13 +931,11 @@ export default function Gallery() {
                         />
                       )}
                       
-                      {/* Overlay controls */}
                       <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all duration-200 flex items-center justify-center opacity-0 group-hover:opacity-100">
                         <PhotoActions photo={photo} />
                       </div>
                     </div>
                     
-                    {/* Photo info */}
                     <div className="p-4">
                       <p className="text-sm text-gray-400 line-clamp-2">
                         {photo.prompt}
@@ -988,13 +979,11 @@ export default function Gallery() {
                         />
                       )}
                       
-                      {/* Overlay controls */}
                       <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all duration-200 flex items-center justify-center opacity-0 group-hover:opacity-100">
                         <PhotoActions photo={photo} />
                       </div>
                     </div>
                     
-                    {/* Photo info */}
                     <div className="p-4">
                       <p className="text-sm text-gray-400 line-clamp-2">
                         {photo.prompt}
@@ -1012,7 +1001,6 @@ export default function Gallery() {
             {config?.gallery_layout === 'carousel' && (
               <div className="max-w-4xl mx-auto">
                 <div className="relative bg-gray-800 rounded-lg overflow-hidden shadow-2xl">
-                  {/* Main carousel display */}
                   <div className="aspect-video relative">
                     <AnimatePresence mode="wait">
                       <motion.div
@@ -1042,7 +1030,6 @@ export default function Gallery() {
                       </motion.div>
                     </AnimatePresence>
 
-                    {/* Navigation arrows */}
                     <button
                       onClick={prevSlide}
                       className="absolute left-4 top-1/2 transform -translate-y-1/2 p-3 bg-black bg-opacity-50 rounded-full hover:bg-opacity-70 transition"
@@ -1057,7 +1044,6 @@ export default function Gallery() {
                       <ChevronRight className="w-6 h-6" />
                     </button>
 
-                    {/* Play/Pause button */}
                     <button
                       onClick={toggleCarouselPlay}
                       className="absolute top-4 right-4 p-3 bg-black bg-opacity-50 rounded-full hover:bg-opacity-70 transition"
@@ -1065,12 +1051,10 @@ export default function Gallery() {
                       {carouselPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
                     </button>
 
-                    {/* Photo counter */}
                     <div className="absolute top-4 left-4 px-3 py-1 bg-black bg-opacity-50 rounded-full text-sm">
                       {carouselIndex + 1} / {photos.length}
                     </div>
 
-                    {/* Action controls overlay */}
                     <div className="absolute bottom-4 right-4">
                       <PhotoActions 
                         photo={photos[carouselIndex]} 
@@ -1079,7 +1063,6 @@ export default function Gallery() {
                     </div>
                   </div>
 
-                  {/* Photo info */}
                   <div className="p-6 bg-gray-800">
                     <h3 className="text-lg font-semibold mb-2">
                       {photos[carouselIndex]?.prompt}
@@ -1089,7 +1072,6 @@ export default function Gallery() {
                     </p>
                   </div>
 
-                  {/* Thumbnail strip */}
                   <div className="p-4 bg-gray-700">
                     <div className="flex gap-2 overflow-x-auto pb-2">
                       {photos.map((photo, index) => (
@@ -1152,7 +1134,6 @@ export default function Gallery() {
                 />
               )}
               
-              {/* Modal controls */}
               <div className="absolute top-4 right-4 flex gap-2">
                 <PhotoActions photo={selectedPhoto} />
                 <button
@@ -1163,7 +1144,6 @@ export default function Gallery() {
                 </button>
               </div>
 
-              {/* Photo info overlay */}
               <div className="absolute bottom-4 left-4 bg-black bg-opacity-50 rounded-lg p-4 max-w-md">
                 <p className="text-white text-sm mb-1">{selectedPhoto.prompt}</p>
                 <p className="text-gray-300 text-xs">
