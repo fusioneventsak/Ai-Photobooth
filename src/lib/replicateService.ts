@@ -11,6 +11,10 @@ export const REPLICATE_MODELS = {
   }
 } as const;
 
+// Type definitions for model selection
+export type ImageModel = 'flux-schnell' | 'flux-dev' | 'sdxl' | 'realvisxl';
+export type VideoModel = 'stable-video-diffusion' | 'animatediff' | 'zeroscope' | 'wan-video' | 'hailuo';
+
 interface GenerationOptions {
   prompt: string;
   inputData: string;
@@ -71,17 +75,70 @@ export async function generateWithReplicate({
   }
 }
 
+// Test Replicate connection function
+export async function testReplicateConnection(): Promise<{ success: boolean; error?: string; model?: string }> {
+  try {
+    console.log('🔄 Testing Replicate connection...');
+
+    // Test the connection by calling the edge function with minimal test data
+    const testImageData = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+    
+    const { data, error } = await supabase.functions.invoke('generate-replicate-content', {
+      body: {
+        prompt: 'test connection',
+        inputData: testImageData,
+        type: 'image',
+        test: true // Add a test flag to indicate this is a connection test
+      }
+    });
+
+    if (error) {
+      console.error('❌ Replicate connection test failed:', error);
+      return {
+        success: false,
+        error: error.message || 'Connection test failed'
+      };
+    }
+
+    if (data?.success === false) {
+      return {
+        success: false,
+        error: data.error || 'Connection test failed'
+      };
+    }
+
+    console.log('✅ Replicate connection test successful');
+    return {
+      success: true,
+      model: data?.model || 'Replicate API'
+    };
+
+  } catch (error) {
+    console.error('❌ Replicate connection test error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown connection error'
+    };
+  }
+}
+
 // Helper functions for admin panel use only
 export function getAvailableVideoModels() {
   return [
     { id: 'wan-video', name: 'WAN Video 2.2 (Fast)', description: 'High-quality video generation', version: REPLICATE_MODELS.VIDEO.WAN_VIDEO },
-    { id: 'hailuo', name: 'Hailuo 02 (Fast)', description: 'Alternative video generation model', version: REPLICATE_MODELS.VIDEO.HAILUO }
+    { id: 'hailuo', name: 'Hailuo 02 (Fast)', description: 'Alternative video generation model', version: REPLICATE_MODELS.VIDEO.HAILUO },
+    { id: 'stable-video-diffusion', name: 'Stable Video Diffusion', description: 'High-quality video generation' },
+    { id: 'animatediff', name: 'AnimateDiff', description: 'Animation-focused video generation' },
+    { id: 'zeroscope', name: 'ZeroScope', description: 'Fast video generation' }
   ];
 }
 
 export function getAvailableImageModels() {
   return [
-    { id: 'flux', name: 'FLUX Schnell', description: 'Fast image generation', version: REPLICATE_MODELS.IMAGE.FLUX }
+    { id: 'flux-schnell', name: 'FLUX Schnell', description: 'Fast image generation', version: REPLICATE_MODELS.IMAGE.FLUX },
+    { id: 'flux-dev', name: 'FLUX Dev', description: 'High-quality image generation' },
+    { id: 'sdxl', name: 'Stable Diffusion XL', description: 'Stable Diffusion XL model' },
+    { id: 'realvisxl', name: 'RealVis XL', description: 'Realistic image generation' }
   ];
 }
 
