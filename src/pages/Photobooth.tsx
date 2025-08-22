@@ -1,5 +1,5 @@
 // src/pages/Photobooth.tsx
-// Enhanced with provider configuration support while maintaining all original functionality
+// Reverted to original working face swap method with mobile compatibility
 
 import React, { useState, useEffect } from 'react';
 import Webcam from 'react-webcam';
@@ -193,7 +193,7 @@ export default function Photobooth() {
   // Environment variable checker for debugging
   useEffect(() => {
     const checkEnv = () => {
-      console.log('🔍 Using secure Supabase Edge Functions for AI generation');
+      console.log('🔍 Using secure Supabase Edge Functions for SDXL Inpainting');
       console.log('✅ API keys are now securely stored server-side');
     };
     
@@ -480,7 +480,7 @@ export default function Photobooth() {
         {state.stage === 'generating' && (
           <>
             <div className="w-2 h-2 bg-pink-400 rounded-full animate-spin"></div>
-            <span>✨ Creating AI magic...</span>
+            <span>✨ Creating AI magic with SDXL...</span>
           </>
         )}
         {state.stage === 'uploading' && (
@@ -536,7 +536,7 @@ export default function Photobooth() {
     }
   };
 
-  // ENHANCED: Provider-aware generation logic
+  // CRITICAL: Use ORIGINAL WORKING METHOD from the proven working code
   const processMediaWithCapturedPhoto = React.useCallback(async (capturedImageData: string) => {
     if (!capturedImageData) {
       setError('No photo captured');
@@ -567,14 +567,12 @@ export default function Photobooth() {
     try {
       setGenerationAttempts(prev => prev + 1);
 
-      console.log('🚀 Starting AI generation process...');
+      console.log('🚀 Starting SDXL Inpainting generation process (ORIGINAL METHOD)...');
       console.log('📋 Generation details:', {
         prompt: currentConfig.global_prompt,
         modelType: currentModelType,
         faceMode: currentConfig.face_preservation_mode || 'preserve_face',
-        attempt: generationAttempts + 1,
-        imageProvider: currentConfig.image_provider || 'stability',
-        videoProvider: currentConfig.video_provider || 'stability'
+        attempt: generationAttempts + 1
       });
 
       await animateProgress(0, 15, 1000, 'detecting', 'Analyzing your photo...');
@@ -587,7 +585,7 @@ export default function Photobooth() {
         throw new Error('Image conversion failed - invalid output format');
       }
       
-      console.log('✅ Mobile to landscape conversion completed:', {
+      console.log('✅ Mobile to landscape conversion for SDXL:', {
         originalSize: capturedImageData.length,
         processedSize: processedContent.length,
         resolution: '1024x576 (16:9 landscape)',
@@ -607,8 +605,9 @@ export default function Photobooth() {
           img.src = processedContent;
         });
 
-        console.log('🔍 Generating face mask...');
+        console.log('🔍 Generating face mask using ORIGINAL WORKING METHOD...');
         
+        // CRITICAL: Use the ORIGINAL generateSmartFaceMask function that WORKS
         maskData = await generateSmartFaceMask(
           img,
           faceMode === 'preserve_face',
@@ -616,10 +615,10 @@ export default function Photobooth() {
           1.2  // Original working expansion factor
         );
         
-        console.log('✅ Smart face mask generated successfully');
+        console.log('✅ Smart face mask generated successfully for SDXL (original method)');
         
       } catch (faceDetectionError) {
-        console.warn('⚠️ Face detection failed, using fallback mask:', faceDetectionError);
+        console.warn('⚠️ Face detection failed, using fallback mask (original method):', faceDetectionError);
         
         const img = new Image();
         await new Promise<void>((resolve, reject) => {
@@ -628,46 +627,29 @@ export default function Photobooth() {
           img.src = processedContent;
         });
         
+        // ORIGINAL: Use the proven fallback mask
         maskData = generateFallbackMask(img.naturalWidth, img.naturalHeight);
-        console.log('✅ Fallback mask generated');
+        console.log('✅ Fallback mask generated for SDXL (original method)');
       }
 
       await animateProgress(35, 45, 800, 'generating', 'Preparing AI magic...');
       
-      console.log('🎨 Starting AI generation...');
+      console.log('🎨 Starting SDXL Inpainting generation (original working method)...');
       
       let aiContent: string;
 
       if (currentModelType === 'video') {
         await animateProgress(45, 60, 2000, 'generating', 'Initializing video AI...');
         
-        // Check video provider configuration
-        const videoProvider = currentConfig.video_provider || 'stability';
-        console.log(`📹 Using ${videoProvider} for video generation`);
+        console.log('🎬 Starting video generation with Replicate...');
         
-        let videoPromise: Promise<string>;
-        
-        if (videoProvider === 'replicate') {
-          console.log('🎬 Starting video generation with Replicate...');
-          videoPromise = generateWithReplicate({
-            prompt: currentConfig.global_prompt || 'AI Generated Video',
-            inputData: processedContent,
-            type: 'video',
-            duration: currentConfig.video_duration || 5,
-            preserveFace: faceMode === 'preserve_face'
-          });
-        } else {
-          console.log('🎬 Starting video generation with Stability AI...');
-          // Stability AI doesn't have video generation, so fallback to Replicate
-          console.warn('⚠️ Stability AI video not implemented, using Replicate fallback');
-          videoPromise = generateWithReplicate({
-            prompt: currentConfig.global_prompt || 'AI Generated Video',
-            inputData: processedContent,
-            type: 'video',
-            duration: currentConfig.video_duration || 5,
-            preserveFace: faceMode === 'preserve_face'
-          });
-        }
+        const videoPromise = generateWithReplicate({
+          prompt: currentConfig.global_prompt || 'AI Generated Video',
+          inputData: processedContent,
+          type: 'video',
+          duration: currentConfig.video_duration || 5,
+          preserveFace: faceMode === 'preserve_face'
+        });
 
         const timeoutPromise = new Promise<never>((_, reject) => {
           setTimeout(() => reject(new Error('Video generation timed out. Please try again.')), 300000);
@@ -686,11 +668,7 @@ export default function Photobooth() {
         // For now, we skip overlay application for videos
         aiContent = rawAiContent;
       } else {
-        // IMAGE GENERATION - Check provider configuration
-        const imageProvider = currentConfig.image_provider || 'stability';
-        console.log(`🖼️ Using ${imageProvider} for image generation`);
-        
-        await animateProgress(45, 55, 1200, 'generating', `Loading ${imageProvider} model...`);
+        await animateProgress(45, 55, 1200, 'generating', 'Loading SDXL model...');
         
         const basePrompt = currentConfig.global_prompt || 'AI Generated Portrait';
         
@@ -699,43 +677,27 @@ export default function Photobooth() {
           ? `${basePrompt}, photorealistic portrait, preserve facial features only, exclude clothing and collars, natural skin texture, detailed eyes and mouth, cinematic composition, professional photography, 16:9 landscape format, wide shot, environmental background, no shirts or ties visible, 8k quality`
           : `${basePrompt}, creative character transformation, artistic interpretation, detailed facial features, cinematic landscape composition, 16:9 wide format, environmental setting, no clothing elements from original`;
 
-        console.log(`🎭 Using ${faceMode} mode with 16:9 landscape generation via ${imageProvider}...`);
+        console.log(`🎭 Using ${faceMode} mode with 16:9 landscape SDXL generation (original working method)...`);
         console.log('🎯 Enhanced landscape prompt:', enhancedPrompt);
         
-        await animateProgress(55, 70, 1500, 'generating', `Processing with ${imageProvider} AI...`);
+        await animateProgress(55, 70, 1500, 'generating', 'Processing with SDXL AI...');
         
-        let generationPromise: Promise<string>;
-        let timeoutDuration: number;
-        
-        if (imageProvider === 'replicate') {
-          console.log('🔄 Using Replicate for image generation...');
-          generationPromise = generateWithReplicate({
-            prompt: enhancedPrompt,
-            inputData: processedContent,
-            type: 'image',
-            preserveFace: faceMode === 'preserve_face'
-          });
-          timeoutDuration = 180000; // 3 minutes for Replicate
-        } else {
-          console.log('🔄 Using Stability AI for image generation...');
-          // Use original Stability AI settings that work
-          generationPromise = generateWithStability({
-            prompt: enhancedPrompt,
-            imageData: processedContent,
-            mode: 'inpaint',
-            maskData: maskData,
-            facePreservationMode: faceMode,
-            strength: faceMode === 'preserve_face' ? 0.4 : 0.7,  // Original working values
-            cfgScale: 8.0,  // Original working value
-            steps: 25,      // Original working value
-            useControlNet: currentConfig.use_controlnet ?? true,
-            controlNetType: currentConfig.controlnet_type || 'auto'
-          });
-          timeoutDuration = 180000; // 3 minutes for Stability AI
-        }
+        // CRITICAL: Use ORIGINAL WORKING SETTINGS that were proven to work
+        const generationPromise = generateWithStability({
+          prompt: enhancedPrompt,
+          imageData: processedContent,
+          mode: 'inpaint',
+          maskData: maskData,
+          facePreservationMode: faceMode,
+          strength: faceMode === 'preserve_face' ? 0.4 : 0.7,  // ORIGINAL WORKING VALUES
+          cfgScale: 8.0,  // ORIGINAL WORKING VALUE
+          steps: 25,      // ORIGINAL WORKING VALUE
+          useControlNet: currentConfig.use_controlnet ?? true,
+          controlNetType: currentConfig.controlnet_type || 'auto'
+        });
 
         const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error(`${imageProvider} generation timed out. Please try again.`)), timeoutDuration);
+          setTimeout(() => reject(new Error('SDXL Inpainting generation timed out. Please try again.')), 180000);
         });
 
         const progressPromise = async () => {
@@ -763,7 +725,7 @@ export default function Photobooth() {
         throw new Error('Invalid AI content format received.');
       }
 
-      console.log('🔍 Validating generated content...', {
+      console.log('🔍 Validating SDXL generated content (original method)...', {
         contentType: typeof aiContent,
         length: aiContent.length,
         startsWithData: aiContent.startsWith('data:'),
@@ -774,17 +736,15 @@ export default function Photobooth() {
         const testImg = new Image();
         await new Promise<void>((resolve, reject) => {
           testImg.onload = () => {
-            console.log('✅ Generated image loads successfully:', {
+            console.log('✅ SDXL generated image loads successfully (original method):', {
               width: testImg.width,
               height: testImg.height,
-              provider: currentModelType === 'video' ? 
-                (currentConfig.video_provider || 'stability') : 
-                (currentConfig.image_provider || 'stability')
+              model: 'SDXL Inpainting - Original Method'
             });
             resolve();
           };
           testImg.onerror = () => {
-            console.error('❌ Generated image failed to load!');
+            console.error('❌ SDXL generated image failed to load!');
             reject(new Error('Generated image is corrupted'));
           };
           testImg.src = aiContent;
@@ -797,59 +757,48 @@ export default function Photobooth() {
 
       await animateProgress(98, 100, 600, 'uploading', 'Finalizing magic...');
 
-      const providerUsed = currentModelType === 'video' ? 
-        (currentConfig.video_provider || 'stability') : 
-        (currentConfig.image_provider || 'stability');
-
-      console.log('✅ AI generation completed successfully:', {
+      console.log('✅ SDXL Inpainting generation completed successfully (16:9 landscape method):', {
         type: currentModelType,
-        provider: providerUsed,
         format: aiContent.startsWith('data:') ? 'data URL' : 'blob URL',
         size: aiContent.length,
         faceMode: faceMode,
-        aspectRatio: '16:9 landscape'
+        aspectRatio: '16:9 landscape',
+        model: 'SDXL Inpainting - Mobile Portrait to Landscape'
       });
 
       setProcessedMedia(aiContent);
       setError(null);
 
-      console.log('🎯 Generation process completed - automatic upload should trigger via useEffect');
+      console.log('🎯 SDXL 16:9 landscape generation process completed - automatic upload should trigger via useEffect');
 
     } catch (error) {
-      console.log('❌ === AI GENERATION FAILED ===');
+              console.log('❌ === SDXL 16:9 LANDSCAPE GENERATION FAILED ===');
       console.error('📊 Generation error details:', error);
 
-      let errorMessage = 'Failed to generate AI content. Please try again.';
+      let errorMessage = 'Failed to generate AI content with SDXL Inpainting. Please try again.';
       let debugDetails: any = null;
       
       if (error instanceof Error) {
         const message = error.message.toLowerCase();
         
         if (message.includes('edge function returned a non-2xx status code')) {
-          const provider = currentModelType === 'video' ? 
-            (currentConfig.video_provider || 'stability') : 
-            (currentConfig.image_provider || 'stability');
-          errorMessage = `Server configuration issue. Please check your ${provider === 'stability' ? 'Stability AI' : 'Replicate'} API settings.`;
+          errorMessage = 'Server configuration issue. Please check your Stability AI API settings.';
           debugDetails = {
             issue: 'Edge Function Error',
-            suggestion: `Check ${provider === 'stability' ? 'STABILITY_API_KEY' : 'REPLICATE_API_KEY'} in Supabase Edge Functions`,
-            errorType: 'server_error',
-            provider: provider
+            suggestion: 'Check STABILITY_API_KEY in Supabase Edge Functions',
+            errorType: 'server_error'
           };
         } else if (message.includes('api key') || message.includes('unauthorized') || message.includes('401')) {
-          const provider = currentModelType === 'video' ? 
-            (currentConfig.video_provider || 'stability') : 
-            (currentConfig.image_provider || 'stability');
-          errorMessage = `API authentication failed. Please check your ${provider === 'stability' ? 'Stability AI' : 'Replicate'} API key.`;
-          debugDetails = { errorType: 'auth_error', provider: provider };
+          errorMessage = 'API authentication failed. Please check your Stability AI API key.';
+          debugDetails = { errorType: 'auth_error' };
         } else if (message.includes('credits') || message.includes('insufficient') || message.includes('402')) {
-          errorMessage = 'Insufficient API credits. Please check your account balance.';
+          errorMessage = 'Insufficient Stability AI credits. Please check your account balance.';
           debugDetails = { errorType: 'credits_error' };
         } else if (message.includes('rate limit') || message.includes('429')) {
           errorMessage = 'Rate limit exceeded. Please wait a moment and try again.';
           debugDetails = { errorType: 'rate_limit_error' };
         } else if (message.includes('timeout')) {
-          errorMessage = 'AI generation timed out. Please try again with a simpler prompt.';
+          errorMessage = 'SDXL generation timed out. Please try again with a simpler prompt.';
           debugDetails = { errorType: 'timeout_error' };
         } else if (message.includes('face detection')) {
           errorMessage = 'Face detection failed. Please ensure the photo shows clear facial features.';
@@ -858,7 +807,7 @@ export default function Photobooth() {
           errorMessage = 'Mask generation failed. Please try taking a new photo.';
           debugDetails = { errorType: 'mask_error' };
         } else {
-          errorMessage = `AI generation error: ${error.message}`;
+          errorMessage = `SDXL Inpainting error: ${error.message}`;
           debugDetails = { errorType: 'general_error', originalMessage: error.message };
         }
       }
@@ -889,18 +838,6 @@ export default function Photobooth() {
     };
   };
 
-  // Get current provider for display
-  const getCurrentProvider = () => {
-    if (!config) return 'stability';
-    return currentModelType === 'video' ? 
-      (config.video_provider || 'stability') : 
-      (config.image_provider || 'stability');
-  };
-
-  const getProviderDisplayName = (provider: string) => {
-    return provider === 'replicate' ? 'Replicate' : 'Stability AI';
-  };
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 text-white">
       <div 
@@ -926,7 +863,7 @@ export default function Photobooth() {
                 ) : (
                   <>
                     <ImageIcon className="w-3 h-3 text-blue-400" />
-                    <span>Image Mode</span>
+                    <span>SDXL Image</span>
                   </>
                 )}
               </div>
@@ -943,11 +880,6 @@ export default function Photobooth() {
                     <span className="text-orange-400">New Character</span>
                   </>
                 )}
-              </div>
-              
-              <div className="bg-gray-800 px-3 py-1 rounded-lg text-xs flex items-center gap-1">
-                <Wand2 className="w-3 h-3 text-cyan-400" />
-                <span className="text-cyan-400">{getProviderDisplayName(getCurrentProvider())}</span>
               </div>
               
               {processedMedia && (
@@ -980,7 +912,7 @@ export default function Photobooth() {
           <div className="mb-6 bg-gradient-to-br from-blue-900/20 to-purple-900/20 border border-blue-500/30 rounded-xl p-5">
             <h3 className="text-white font-semibold mb-4 flex items-center gap-2">
               <Lightbulb className="w-5 h-5 text-yellow-400" />
-              Get the Best AI Results
+              Get the Best SDXL Results
             </h3>
             <div className="space-y-3 text-sm">
               <div className="flex items-start gap-3">
@@ -1030,7 +962,7 @@ export default function Photobooth() {
               ) : (
                 <img
                   src={processedMedia}
-                  alt="AI Generated"
+                  alt="SDXL Generated"
                   className={`w-full h-full ${isMobile ? 'object-cover' : 'object-contain'}`}
                 />
               )
@@ -1064,7 +996,7 @@ export default function Photobooth() {
             {processedMedia && (
               <div className="absolute top-3 left-3 bg-black/70 text-white px-2 py-1 rounded-lg text-xs flex items-center gap-1">
                 <Wand2 className="w-3 h-3 text-purple-400" />
-                <span className="text-purple-400">AI Generated</span>
+                <span className="text-purple-400">SDXL Generated</span>
                 {uploading && (
                   <RefreshCw className="w-3 h-3 text-blue-400 animate-spin ml-1" />
                 )}
@@ -1133,12 +1065,14 @@ export default function Photobooth() {
 
         {(process.env.NODE_ENV === 'development' || debugInfo) && (
           <div className="mt-4 p-4 bg-gray-800/50 rounded-lg text-xs text-gray-400 space-y-2">
-            <p><span className="text-purple-400 font-semibold">Model:</span> 16:9 Landscape AI Generation</p>
+            <p><span className="text-purple-400 font-semibold">Model:</span> SDXL 16:9 Landscape + ControlNet</p>
             <p><span className="text-blue-400 font-semibold">Mode:</span> {currentModelType}</p>
-            <p><span className="text-cyan-400 font-semibold">Provider:</span> {getProviderDisplayName(getCurrentProvider())}</p>
             <p><span className="text-green-400 font-semibold">Face Mode:</span> {config?.face_preservation_mode || 'preserve_face'}</p>
             <p><span className="text-yellow-400 font-semibold">Attempts:</span> {generationAttempts}/3</p>
-            <p><span className="text-orange-400 font-semibold">Resolution:</span> 1024x576 (16:9 Landscape)</p>
+            <p><span className="text-indigo-400 font-semibold">Strength:</span> {config?.face_preservation_mode === 'preserve_face' ? '0.4 (Original)' : '0.7 (Original)'}</p>
+            <p><span className="text-pink-400 font-semibold">CFG Scale:</span> 8.0 (Original)</p>
+            <p><span className="text-cyan-400 font-semibold">Resolution:</span> 1024x576 (16:9 Landscape)</p>
+            <p><span className="text-orange-400 font-semibold">Steps:</span> 25 (Original)</p>
             <p><span className="text-teal-400 font-semibold">Approach:</span> Mobile Portrait → 16:9 Landscape AI Generation</p>
             <p><span className="text-violet-400 font-semibold">Conversion:</span> 9:16 Mobile → 16:9 Cinematic Wide</p>
             <p><span className="text-red-400 font-semibold">Camera Key:</span> {cameraKey} {isMobile && '(Mobile Mode)'}</p>
