@@ -1150,7 +1150,7 @@ const BUILT_IN_BORDERS: { [key: string]: (width: number, height: number) => stri
     ctx.fillText('12', width - border - 35, border + 25);
     
     ctx.font = 'bold 8px Arial';
-    ctx.fillText('QB', width - border - 35, border + 38);
+    ctx.fillText('QB', width - border - 35, border + 38); width - border - 35, border + 38);
     
     // Player name area
     const nameY = border + 55 + photoHeight;
@@ -1202,7 +1202,151 @@ const BUILT_IN_BORDERS: { [key: string]: (width: number, height: number) => stri
     ctx.fillRect(border + 10, border + 50, photoWidth, photoHeight);
     
     return canvas.toDataURL();
-  }, width - border - 35, border + 38);
+  },
+
+  'yugioh-classic': (width: number, height: number) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d')!;
+    
+    const border = 15;
+    const cardWidth = width - (border * 2);
+    const cardHeight = height - (border * 2);
+    const isLandscape = width > height;
+    const photoHeight = isLandscape ? cardHeight * 0.60 : cardHeight * 0.42;
+    const photoWidth = cardWidth - 20;
+    
+    // Yu-Gi-Oh tan/beige background
+    const yugiohGrad = ctx.createLinearGradient(0, 0, 0, height);
+    yugiohGrad.addColorStop(0, '#F5DEB3');
+    yugiohGrad.addColorStop(0.5, '#DDD8B8');
+    yugiohGrad.addColorStop(1, '#D2B48C');
+    
+    ctx.fillStyle = yugiohGrad;
+    ctx.fillRect(0, 0, width, height);
+    
+    // Card border with Egyptian styling
+    ctx.strokeStyle = '#8B4513';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(border, border, cardWidth, cardHeight);
+    
+    // Inner decorative border
+    ctx.strokeStyle = '#DAA520';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(border + 3, border + 3, cardWidth - 6, cardHeight - 6);
+    
+    // Monster name area
+    ctx.fillStyle = 'rgba(218, 165, 32, 0.9)';
+    ctx.fillRect(border + 8, border + 8, cardWidth - 16, 25);
+    ctx.strokeStyle = '#8B4513';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(border + 8, border + 8, cardWidth - 16, 25);
+    
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 12px Arial';
+    ctx.textAlign = 'left';
+    ctx.fillText('MONSTER NAME', border + 15, border + 25);
+    
+    // Attribute symbol (top right)
+    ctx.fillStyle = '#FF6347';
+    ctx.beginPath();
+    ctx.arc(width - border - 25, border + 45, 15, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#8B4513';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    
+    // Add attribute text
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = 'bold 8px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('FIRE', width - border - 25, border + 50);
+    
+    // Monster type/level area
+    ctx.fillStyle = 'rgba(139, 69, 19, 0.9)';
+    ctx.fillRect(border + 8, border + 38, cardWidth - 60, 25);
+    
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = '9px Arial';
+    ctx.textAlign = 'left';
+    ctx.fillText('[Dragon/Effect]', border + 15, border + 53);
+    
+    // Level stars
+    const starY = border + 70;
+    for (let i = 0; i < 7; i++) {
+      if (i < 5) { // 5-star monster
+        ctx.fillStyle = '#FFD700';
+        ctx.beginPath();
+        // Create star shape
+        const x = border + 15 + (i * 20);
+        const y = starY;
+        ctx.moveTo(x, y - 6);
+        ctx.lineTo(x + 2, y - 2);
+        ctx.lineTo(x + 6, y - 2);
+        ctx.lineTo(x + 3, y + 1);
+        ctx.lineTo(x + 4, y + 5);
+        ctx.lineTo(x, y + 3);
+        ctx.lineTo(x - 4, y + 5);
+        ctx.lineTo(x - 3, y + 1);
+        ctx.lineTo(x - 6, y - 2);
+        ctx.lineTo(x - 2, y - 2);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = '#B8860B';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+    }
+    
+    // Monster effect description
+    const effectY = border + 85 + photoHeight;
+    const effectHeight = isLandscape ? 35 : 60;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+    ctx.fillRect(border + 8, effectY, cardWidth - 16, effectHeight);
+    ctx.strokeStyle = '#8B4513';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(border + 8, effectY, cardWidth - 16, effectHeight);
+    
+    ctx.fillStyle = '#000000';
+    ctx.font = isLandscape ? '7px Arial' : '8px Arial';
+    ctx.textAlign = 'left';
+    if (isLandscape) {
+      ctx.fillText('When Normal Summoned: Add 1 "Blue-Eyes"', border + 12, effectY + 12);
+      ctx.fillText('monster from Deck to hand. Can attack directly.', border + 12, effectY + 23);
+    } else {
+      ctx.fillText('When this card is Normal Summoned:', border + 12, effectY + 12);
+      ctx.fillText('You can add 1 "Blue-Eyes" monster', border + 12, effectY + 23);
+      ctx.fillText('from your Deck to your hand.', border + 12, effectY + 34);
+      ctx.fillText('This card can attack directly.', border + 12, effectY + 45);
+    }
+    
+    // ATK/DEF section
+    const statsY = height - border - (isLandscape ? 25 : 35);
+    const statsHeight = isLandscape ? 15 : 25;
+    ctx.fillStyle = 'rgba(139, 69, 19, 0.9)';
+    ctx.fillRect(border + 8, statsY, cardWidth - 16, statsHeight);
+    
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = isLandscape ? 'bold 8px Arial' : 'bold 10px Arial';
+    ctx.textAlign = 'left';
+    ctx.fillText('ATK/2500', border + 15, statsY + (statsHeight/2) + 3);
+    
+    ctx.textAlign = 'right';
+    ctx.fillText('DEF/2000', width - border - 15, statsY + (statsHeight/2) + 3);
+    
+    // Set number
+    ctx.fillStyle = '#000000';
+    ctx.font = '6px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('LOB-001', width/2, height - border - 5);
+    
+    // Clear center for monster artwork
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.fillRect(border + 10, border + 80, photoWidth, photoHeight);
+    
+    return canvas.toDataURL();
+  } width - border - 35, border + 38);
     
     // Player name area
     const nameY = border + 55 + photoHeight;
