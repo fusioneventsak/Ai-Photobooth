@@ -1,19 +1,91 @@
 import { supabase } from './supabase';
 
-// Model constants for admin use only
-export const REPLICATE_MODELS = {
-  VIDEO: {
-    WAN_VIDEO: 'wan-video/wan-2.2-i2v-fast',
-    HAILUO: 'minimax/hailuo-02', // Updated to use the correct model name
-  },
-  IMAGE: {
-    FLUX: 'black-forest-labs/flux-schnell',
-  }
-} as const;
-
 // Type definitions for model selection
 export type ImageModel = 'flux-schnell' | 'flux-dev' | 'sdxl' | 'realvisxl';
 export type VideoModel = 'stable-video-diffusion' | 'animatediff' | 'zeroscope' | 'wan-video' | 'hailuo-02';
+
+// Model definitions with complete information for Admin panel
+export const REPLICATE_MODELS = {
+  // Image models - keyed by model ID for easy Admin access
+  image: {
+    'flux-schnell': {
+      name: 'FLUX Schnell',
+      description: 'Fast image generation with good quality',
+      speed: 'fast',
+      quality: 'good',
+      bestFor: 'Quick previews and testing',
+      modelPath: 'black-forest-labs/flux-schnell'
+    },
+    'flux-dev': {
+      name: 'FLUX Dev',
+      description: 'High-quality image generation (slower)',
+      speed: 'slow',
+      quality: 'excellent',
+      bestFor: 'High-quality final images',
+      modelPath: 'black-forest-labs/flux-dev'
+    },
+    'sdxl': {
+      name: 'Stable Diffusion XL',
+      description: 'Stable Diffusion XL model for detailed images',
+      speed: 'medium',
+      quality: 'very good',
+      bestFor: 'Detailed, artistic images',
+      modelPath: 'stability-ai/sdxl'
+    },
+    'realvisxl': {
+      name: 'RealVis XL',
+      description: 'Photorealistic image generation',
+      speed: 'medium',
+      quality: 'excellent',
+      bestFor: 'Photorealistic portraits and scenes',
+      modelPath: 'lucataco/realvisxl-v3'
+    }
+  },
+  
+  // Video models - keyed by model ID for easy Admin access
+  video: {
+    'hailuo-02': {
+      name: 'Hailuo 02',
+      description: 'High-quality cinematic video generation',
+      speed: 'slow',
+      quality: 'excellent',
+      bestFor: 'Cinematic quality videos',
+      modelPath: 'minimax/hailuo-02'
+    },
+    'stable-video-diffusion': {
+      name: 'Stable Video Diffusion',
+      description: 'Stable video generation from images',
+      speed: 'medium',
+      quality: 'very good',
+      bestFor: 'Image-to-video conversion',
+      modelPath: 'stability-ai/stable-video-diffusion'
+    },
+    'animatediff': {
+      name: 'AnimateDiff',
+      description: 'Animation-focused video generation',
+      speed: 'fast',
+      quality: 'good',
+      bestFor: 'Animated sequences',
+      modelPath: 'lucataco/animatediff'
+    },
+    'zeroscope': {
+      name: 'ZeroScope',
+      description: 'Fast video generation',
+      speed: 'fast',
+      quality: 'good',
+      bestFor: 'Quick video previews',
+      modelPath: 'cerspense/zeroscope_v2_xl'
+    },
+    'wan-video': {
+      name: 'WAN Video 2.2',
+      description: 'Fast video generation',
+      speed: 'fast',
+      quality: 'good',
+      bestFor: 'Quick video generation',
+      modelPath: 'wan-video/wan-2.2-i2v-fast'
+    }
+  }
+} as const;
 
 interface GenerationOptions {
   prompt: string;
@@ -152,29 +224,34 @@ export async function testReplicateConnection(): Promise<{ success: boolean; err
 
 // Helper functions for admin panel use only
 export function getAvailableVideoModels() {
-  return [
-    { id: 'hailuo-02', name: 'Hailuo 02', description: 'High-quality video generation from prompts', version: REPLICATE_MODELS.VIDEO.HAILUO },
-    { id: 'wan-video', name: 'WAN Video 2.2 (Fast)', description: 'High-quality video generation', version: REPLICATE_MODELS.VIDEO.WAN_VIDEO },
-    { id: 'stable-video-diffusion', name: 'Stable Video Diffusion', description: 'High-quality video generation from images' },
-    { id: 'animatediff', name: 'AnimateDiff', description: 'Animation-focused video generation' },
-    { id: 'zeroscope', name: 'ZeroScope', description: 'Fast video generation' }
-  ];
+  return Object.entries(REPLICATE_MODELS.video).map(([id, model]) => ({
+    id,
+    name: model.name,
+    description: model.description,
+    speed: model.speed,
+    quality: model.quality,
+    bestFor: model.bestFor,
+    modelPath: model.modelPath
+  }));
 }
 
 export function getAvailableImageModels() {
-  return [
-    { id: 'flux-schnell', name: 'FLUX Schnell', description: 'Fast image generation', version: REPLICATE_MODELS.IMAGE.FLUX },
-    { id: 'flux-dev', name: 'FLUX Dev', description: 'High-quality image generation' },
-    { id: 'sdxl', name: 'Stable Diffusion XL', description: 'Stable Diffusion XL model' },
-    { id: 'realvisxl', name: 'RealVis XL', description: 'Realistic image generation' }
-  ];
+  return Object.entries(REPLICATE_MODELS.image).map(([id, model]) => ({
+    id,
+    name: model.name,
+    description: model.description,
+    speed: model.speed,
+    quality: model.quality,
+    bestFor: model.bestFor,
+    modelPath: model.modelPath
+  }));
 }
 
 // Get model info by ID (for admin use)
 export function getModelInfo(modelId: string, type: 'image' | 'video') {
   if (type === 'video') {
-    return getAvailableVideoModels().find(model => model.id === modelId);
+    return REPLICATE_MODELS.video[modelId as keyof typeof REPLICATE_MODELS.video];
   } else {
-    return getAvailableImageModels().find(model => model.id === modelId);
+    return REPLICATE_MODELS.image[modelId as keyof typeof REPLICATE_MODELS.image];
   }
 }
