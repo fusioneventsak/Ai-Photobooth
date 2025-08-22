@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 
-// Model constants export (this fixes the import error)
+// Model constants for admin use only
 export const REPLICATE_MODELS = {
   VIDEO: {
     WAN_VIDEO: 'wan-video/wan-2.2-i2v-fast',
@@ -17,7 +17,7 @@ interface GenerationOptions {
   type: 'image' | 'video';
   duration?: number;
   preserveFace?: boolean;
-  model?: 'wan-video' | 'hailuo' | 'flux';
+  // Model selection removed from here - will come from config
 }
 
 export async function generateWithReplicate({ 
@@ -25,33 +25,21 @@ export async function generateWithReplicate({
   inputData, 
   type, 
   duration = 5,
-  preserveFace = true,
-  model
+  preserveFace = true
 }: GenerationOptions): Promise<string> {
   try {
     console.log(`🔄 Calling Replicate Edge Function for ${type} generation...`);
-    
-    // Determine default model based on type
-    let selectedModel = model;
-    if (type === 'video' && !model) {
-      selectedModel = 'wan-video'; // Default to wan-video for video generation
-    }
-    
-    if (selectedModel) {
-      console.log(`📊 Using ${selectedModel} model for ${type}`);
-    } else {
-      console.log(`📊 Using default model for ${type}`);
-    }
 
-    // Call Supabase Edge Function with updated parameters
+    // Model selection is now handled by the admin config
+    // The Edge Function will use the config to determine the model
     const { data, error } = await supabase.functions.invoke('generate-replicate-content', {
       body: {
         prompt,
         inputData,
         type,
         duration,
-        preserveFace,
-        model: selectedModel
+        preserveFace
+        // No model parameter - determined by admin config
       }
     });
 
@@ -69,7 +57,7 @@ export async function generateWithReplicate({
       console.log(`✅ Generation metadata:`, data.metadata);
     }
     
-    console.log(`✅ Replicate ${type} generation successful with model: ${data.model || 'default'}`);
+    console.log(`✅ Replicate ${type} generation successful with model: ${data.model || 'admin-configured'}`);
     return data.result;
 
   } catch (error) {
@@ -83,22 +71,25 @@ export async function generateWithReplicate({
   }
 }
 
-// Helper function to get available models
-export function getAvailableModels(type: 'image' | 'video') {
-  if (type === 'video') {
-    return [
-      { id: 'wan-video', name: 'WAN Video 2.2 (Fast)', description: 'High-quality video generation' },
-      { id: 'hailuo', name: 'Hailuo 02 (Fast)', description: 'Alternative video generation model' }
-    ];
-  } else {
-    return [
-      { id: 'flux', name: 'FLUX Schnell', description: 'Fast image generation' }
-    ];
-  }
+// Helper functions for admin panel use only
+export function getAvailableVideoModels() {
+  return [
+    { id: 'wan-video', name: 'WAN Video 2.2 (Fast)', description: 'High-quality video generation', version: REPLICATE_MODELS.VIDEO.WAN_VIDEO },
+    { id: 'hailuo', name: 'Hailuo 02 (Fast)', description: 'Alternative video generation model', version: REPLICATE_MODELS.VIDEO.HAILUO }
+  ];
 }
 
-// Get model info by ID
+export function getAvailableImageModels() {
+  return [
+    { id: 'flux', name: 'FLUX Schnell', description: 'Fast image generation', version: REPLICATE_MODELS.IMAGE.FLUX }
+  ];
+}
+
+// Get model info by ID (for admin use)
 export function getModelInfo(modelId: string, type: 'image' | 'video') {
-  const models = getAvailableModels(type);
-  return models.find(model => model.id === modelId);
+  if (type === 'video') {
+    return getAvailableVideoModels().find(model => model.id === modelId);
+  } else {
+    return getAvailableImageModels().find(model => model.id === modelId);
+  }
 }
