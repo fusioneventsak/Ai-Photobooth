@@ -1,6 +1,6 @@
-// src/pages/OverlayIntegration.tsx - Updated with aspect ratio support
+// src/pages/OverlayIntegration.tsx - Complete updated version with trading card overlays
 import React, { useState, useRef, ChangeEvent } from 'react';
-import { Upload, Wand2, AlertCircle, RefreshCw, Image as ImageIcon, Layers, Settings, Eye, Info, Palette, Frame, Smartphone, Monitor, Square } from 'lucide-react';
+import { Upload, Wand2, AlertCircle, RefreshCw, Image as ImageIcon, Layers, Settings, Eye, Info, Palette, Frame, Smartphone, Monitor, Square, Zap, Trophy } from 'lucide-react';
 import { useConfigStore } from '../store/configStore';
 import { saveOverlayConfig, generateBuiltInBorder } from '../lib/overlayUtils';
 
@@ -21,7 +21,7 @@ interface BuiltInBorder {
   id: string;
   name: string;
   description: string;
-  category: 'elegant' | 'modern' | 'decorative' | 'tech';
+  category: 'elegant' | 'modern' | 'decorative' | 'tech' | 'trading';
 }
 
 const BUILT_IN_BORDERS: BuiltInBorder[] = [
@@ -88,7 +88,7 @@ const BUILT_IN_BORDERS: BuiltInBorder[] = [
   {
     id: 'polaroid',
     name: 'Polaroid',
-    description: 'Instant photo border with shadow',
+    description: 'Instant photo border with transparent center',
     category: 'modern',
   },
   {
@@ -114,7 +114,44 @@ const BUILT_IN_BORDERS: BuiltInBorder[] = [
     name: 'Tech Grid',
     description: 'Futuristic grid pattern border',
     category: 'tech',
-  }
+  },
+  // NEW TRADING CARD OVERLAYS
+  {
+    id: 'pokemon-classic',
+    name: 'Pokemon Classic',
+    description: 'Classic Pokemon card design with energy symbols',
+    category: 'trading',
+  },
+  {
+    id: 'pokemon-gx',
+    name: 'Pokemon GX',
+    description: 'Modern GX card style with holographic effect',
+    category: 'trading',
+  },
+  {
+    id: 'sports-baseball',
+    name: 'Baseball Card',
+    description: 'Classic baseball card with team colors',
+    category: 'trading',
+  },
+  {
+    id: 'sports-basketball',
+    name: 'Basketball Card',
+    description: 'Modern basketball card with court design',
+    category: 'trading',
+  },
+  {
+    id: 'sports-football',
+    name: 'Football Card',
+    description: 'NFL-style card with field pattern',
+    category: 'trading',
+  },
+  {
+    id: 'yugioh-classic',
+    name: 'Yu-Gi-Oh Card',
+    description: 'Classic duel monsters card frame',
+    category: 'trading',
+  },
 ];
 
 // Aspect ratio configurations
@@ -145,6 +182,7 @@ export default function OverlayIntegration() {
   const [showPreview, setShowPreview] = useState(false);
   const [selectedBorder, setSelectedBorder] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'upload' | 'borders'>('borders');
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
 
   const overlayFileRef = useRef<HTMLInputElement>(null);
   const testFileRef = useRef<HTMLInputElement>(null);
@@ -332,7 +370,7 @@ export default function OverlayIntegration() {
         ...prev,
         position: 'center',
         scale: 1.0, // Will be auto-scaled to fit image
-        opacity: borderId.includes('holographic') || borderId.includes('aurora') ? 0.7 : 0.9,
+        opacity: borderId.includes('holographic') || borderId.includes('aurora') || borderId.includes('gx') ? 0.7 : 0.9,
         blendMode: borderId.includes('metallic') || borderId.includes('chrome') ? 'multiply' : 'normal',
         offsetX: 0,
         offsetY: 0
@@ -584,6 +622,23 @@ export default function OverlayIntegration() {
 
   const canSave = !!overlayImage && overlayName.trim().length > 0 && !processing;
 
+  // Filter borders by category
+  const filteredBorders = selectedCategory === 'all' 
+    ? BUILT_IN_BORDERS 
+    : BUILT_IN_BORDERS.filter(border => border.category === selectedCategory);
+
+  // Get category icon
+  const getCategoryIcon = (category: string) => {
+    switch (category) {
+      case 'modern': return <Square className="w-4 h-4" />;
+      case 'elegant': return <Palette className="w-4 h-4" />;
+      case 'decorative': return <Frame className="w-4 h-4" />;
+      case 'tech': return <Zap className="w-4 h-4" />;
+      case 'trading': return <Trophy className="w-4 h-4" />;
+      default: return <Layers className="w-4 h-4" />;
+    }
+  };
+
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="max-w-6xl mx-auto">
@@ -594,8 +649,8 @@ export default function OverlayIntegration() {
         
         <div className="mb-6 text-center">
           <p className="text-gray-300">
-            Upload a custom overlay or choose from built-in borders that will be automatically applied to all AI generated photos.
-            Now supports multiple aspect ratios: Square (1:1), Portrait (9:16), and Landscape (16:9).
+            Upload a custom overlay or choose from built-in borders including new trading card styles! 
+            Now supports multiple aspect ratios and improved transparency.
           </p>
           
           {/* Size recommendations */}
@@ -603,15 +658,13 @@ export default function OverlayIntegration() {
             <div className="flex items-start gap-3">
               <Info className="w-5 h-5 text-blue-400 mt-0.5 flex-shrink-0" />
               <div className="text-left">
-                <h3 className="font-semibold text-blue-400 mb-2">Overlay Size Recommendations:</h3>
+                <h3 className="font-semibold text-blue-400 mb-2">NEW: Trading Card Overlays!</h3>
                 <ul className="text-sm text-blue-200 space-y-1">
-                  <li>• <strong>Small logos/watermarks:</strong> 100x100 to 200x200 pixels</li>
-                  <li>• <strong>Large logos:</strong> 300x300 to 512x512 pixels</li>
-                  <li>• <strong>Square frames (1:1):</strong> 512x512 or 1024x1024 pixels</li>
-                  <li>• <strong>Portrait frames (9:16):</strong> 512x910 or 1024x1820 pixels</li>
-                  <li>• <strong>Landscape frames (16:9):</strong> 910x512 or 1820x1024 pixels</li>
-                  <li>• <strong>File format:</strong> PNG with transparency for best results</li>
-                  <li>• <strong>Max file size:</strong> 10MB</li>
+                  <li>• <strong>Pokemon cards:</strong> Classic and GX holographic styles</li>
+                  <li>• <strong>Sports cards:</strong> Baseball, Basketball, Football designs</li>
+                  <li>• <strong>Yu-Gi-Oh cards:</strong> Classic duel monsters frame</li>
+                  <li>• <strong>Improved Polaroid:</strong> Now with fully transparent center</li>
+                  <li>• <strong>Perfect for portraits:</strong> All cards work great with 9:16 aspect ratio</li>
                 </ul>
               </div>
             </div>
@@ -711,9 +764,41 @@ export default function OverlayIntegration() {
                       ))}
                     </div>
                   </div>
+
+                  {/* Category Filter */}
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium mb-2">Category Filter</label>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={() => setSelectedCategory('all')}
+                        className={`flex items-center gap-2 px-3 py-1 rounded text-sm transition ${
+                          selectedCategory === 'all'
+                            ? 'bg-purple-600 text-white'
+                            : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                        }`}
+                      >
+                        <Layers className="w-4 h-4" />
+                        All
+                      </button>
+                      {['modern', 'elegant', 'decorative', 'tech', 'trading'].map((category) => (
+                        <button
+                          key={category}
+                          onClick={() => setSelectedCategory(category)}
+                          className={`flex items-center gap-2 px-3 py-1 rounded text-sm transition capitalize ${
+                            selectedCategory === category
+                              ? 'bg-purple-600 text-white'
+                              : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                          }`}
+                        >
+                          {getCategoryIcon(category)}
+                          {category}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   
                   <div className="grid grid-cols-2 gap-3 max-h-96 overflow-y-auto">
-                    {BUILT_IN_BORDERS.map((border) => (
+                    {filteredBorders.map((border) => (
                       <div
                         key={border.id}
                         onClick={() => handleBorderSelect(border.id)}
@@ -726,12 +811,14 @@ export default function OverlayIntegration() {
                         <div className="text-center">
                           <div className="text-sm font-medium mb-1">{border.name}</div>
                           <div className="text-xs text-gray-400 mb-2">{border.description}</div>
-                          <div className={`text-xs px-2 py-1 rounded ${
+                          <div className={`text-xs px-2 py-1 rounded flex items-center justify-center gap-1 ${
                             border.category === 'modern' ? 'bg-blue-600/30 text-blue-300' :
                             border.category === 'elegant' ? 'bg-purple-600/30 text-purple-300' :
                             border.category === 'tech' ? 'bg-green-600/30 text-green-300' :
+                            border.category === 'trading' ? 'bg-yellow-600/30 text-yellow-300' :
                             'bg-orange-600/30 text-orange-300'
                           }`}>
+                            {getCategoryIcon(border.category)}
                             {border.category}
                           </div>
                         </div>
@@ -973,15 +1060,14 @@ export default function OverlayIntegration() {
                   Reset
                 </button>
               </div>
-              <div className="mt-6 p-4 bg-blue-900/30 rounded-lg border border-blue-500/30">
-                <h3 className="font-semibold text-blue-400 mb-2">How it works with aspect ratios:</h3>
-                <ul className="text-sm text-blue-200 space-y-1">
-                  <li>• Upload test images to auto-detect aspect ratio (9:16, 16:9, or 1:1)</li>
-                  <li>• Built-in borders automatically adapt to the selected aspect ratio</li>
-                  <li>• Custom overlays use smart scaling based on image dimensions</li>
-                  <li>• AI photos will use the saved overlay with matching aspect ratio</li>
-                  <li>• Borders scale to perfectly fit the generated image size</li>
-                  <li>• <strong>Note:</strong> Only one overlay can be active at a time</li>
+              <div className="mt-6 p-4 bg-green-900/30 rounded-lg border border-green-500/30">
+                <h3 className="font-semibold text-green-400 mb-2">✨ New Features:</h3>
+                <ul className="text-sm text-green-200 space-y-1">
+                  <li>• <strong>Trading card overlays:</strong> Pokemon, Sports cards, Yu-Gi-Oh styles</li>
+                  <li>• <strong>Improved Polaroid:</strong> Now with fully transparent center</li>
+                  <li>• <strong>Category filtering:</strong> Easily find the style you want</li>
+                  <li>• <strong>Perfect for portraits:</strong> Trading cards work great with 9:16 ratio</li>
+                  <li>• <strong>Smart transparency:</strong> All overlays preserve photo visibility</li>
                 </ul>
               </div>
             </div>
