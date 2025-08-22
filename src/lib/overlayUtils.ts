@@ -1150,7 +1150,7 @@ const BUILT_IN_BORDERS: { [key: string]: (width: number, height: number) => stri
     ctx.fillText('12', width - border - 35, border + 25);
     
     ctx.font = 'bold 8px Arial';
-    ctx.fillText('QB', width - border - 35, border + 38); width - border - 35, border + 38);
+    ctx.fillText('QB', width - border - 35, border + 38);
     
     // Player name area
     const nameY = border + 55 + photoHeight;
