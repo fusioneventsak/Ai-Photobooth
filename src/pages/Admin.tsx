@@ -17,10 +17,20 @@ import {
   Users,
   Lock,
   Globe,
-  Wand2
+  Wand2,
+  Zap,
+  Clock,
+  Star,
+  Camera,
+  Video,
+  TestTube,
+  CheckCircle,
+  XCircle,
+  AlertCircle
 } from 'lucide-react';
 import { useConfigStore } from '../store/configStore';
 import type { Config } from '../types/config';
+import { REPLICATE_MODELS, getModelInfo, testReplicateConnection, ImageModel, VideoModel } from '../lib/replicateService';
 
 interface AdminFormData extends Partial<Config> {
   gallery_public_access?: boolean;
@@ -32,6 +42,8 @@ interface AdminFormData extends Partial<Config> {
   model_type?: 'image' | 'video';
   video_duration?: number;
   face_preservation_mode?: 'preserve_face' | 'replace_face';
+  replicate_image_model?: ImageModel;
+  replicate_video_model?: VideoModel;
 }
 
 export default function Admin() {
@@ -42,6 +54,8 @@ export default function Admin() {
   const [error, setError] = useState<string | null>(null);
   const [previewMode, setPreviewMode] = useState<'desktop' | 'mobile'>('desktop');
   const [activeTab, setActiveTab] = useState<'branding' | 'gallery' | 'privacy' | 'advanced'>('branding');
+  const [testingConnection, setTestingConnection] = useState(false);
+  const [connectionResult, setConnectionResult] = useState<{ success: boolean; error?: string; model?: string } | null>(null);
 
   useEffect(() => {
     if (config) {
@@ -62,6 +76,9 @@ export default function Admin() {
         face_preservation_mode: config.face_preservation_mode || 'preserve_face',
         use_controlnet: config.use_controlnet ?? true,
         controlnet_type: config.controlnet_type || 'auto',
+        // Default model selections
+        replicate_image_model: (config as any).replicate_image_model || 'flux-schnell',
+        replicate_video_model: (config as any).replicate_video_model || 'stable-video-diffusion',
       });
     }
   }, [config]);
@@ -74,6 +91,23 @@ export default function Admin() {
       [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : 
               type === 'number' ? Number(value) : value
     }));
+  };
+
+  const handleTestConnection = async () => {
+    setTestingConnection(true);
+    setConnectionResult(null);
+    
+    try {
+      const result = await testReplicateConnection();
+      setConnectionResult(result);
+    } catch (error) {
+      setConnectionResult({
+        success: false,
+        error: error instanceof Error ? error.message : 'Connection test failed'
+      });
+    } finally {
+      setTestingConnection(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -102,6 +136,10 @@ export default function Admin() {
       if (formData.face_preservation_mode !== undefined) updates.face_preservation_mode = formData.face_preservation_mode;
       if (formData.use_controlnet !== undefined) updates.use_controlnet = formData.use_controlnet;
       if (formData.controlnet_type !== undefined) updates.controlnet_type = formData.controlnet_type;
+      
+      // Model selections (store as additional config data)
+      if (formData.replicate_image_model !== undefined) (updates as any).replicate_image_model = formData.replicate_image_model;
+      if (formData.replicate_video_model !== undefined) (updates as any).replicate_video_model = formData.replicate_video_model;
 
       const result = await updateConfig(updates);
       
@@ -119,6 +157,18 @@ export default function Admin() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const getSpeedIcon = (speed: string) => {
+    if (speed.includes('Fast')) return <Zap className="w-4 h-4 text-green-500" />;
+    if (speed.includes('Medium')) return <Clock className="w-4 h-4 text-yellow-500" />;
+    return <Clock className="w-4 h-4 text-red-500" />;
+  };
+
+  const getQualityIcon = (quality: string) => {
+    if (quality.includes('Premium')) return <Star className="w-4 h-4 text-purple-500" />;
+    if (quality.includes('Photorealistic')) return <Camera className="w-4 h-4 text-blue-500" />;
+    return <Star className="w-4 h-4 text-yellow-500" />;
   };
 
   const previewColors = {
@@ -550,6 +600,7 @@ export default function Admin() {
                     animate={{ opacity: 1, x: 0 }}
                     className="space-y-6"
                   >
+                    {/* AI Model Configuration */}
                     <div className="bg-gray-800/50 backdrop-blur-sm rounded-2xl p-6">
                       <h2 className="text-2xl font-semibold mb-6 flex items-center gap-3">
                         <Wand2 className="w-6 h-6 text-purple-400" />
@@ -590,51 +641,6 @@ export default function Admin() {
                         </div>
                       </div>
 
-                      {/* ControlNet Settings */}
-                      <div className="mt-6 p-4 bg-blue-900/20 border border-blue-500/30 rounded-xl">
-                        <h3 className="text-lg font-medium text-blue-200 mb-4 flex items-center gap-2">
-                          <Eye className="w-5 h-5" />
-                          ControlNet (Advanced Pose & Structure Control)
-                        </h3>
-                        
-                        <div className="space-y-4">
-                          <label className="flex items-center gap-3">
-                            <input
-                              type="checkbox"
-                              name="use_controlnet"
-                              checked={formData.use_controlnet ?? true}
-                              onChange={handleChange}
-                              className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500"
-                            />
-                            <div>
-                              <span className="text-white font-medium">Enable ControlNet</span>
-                              <p className="text-sm text-gray-300">
-                                Improves pose preservation, face-to-body matching, and overall consistency
-                              </p>
-                            </div>
-                          </label>
-
-                          {formData.use_controlnet && (
-                            <div>
-                              <label className="block text-sm font-medium mb-2 text-gray-300">ControlNet Type</label>
-                              <select
-                                name="controlnet_type"
-                                value={formData.controlnet_type || 'auto'}
-                                onChange={handleChange}
-                                className="w-full bg-gray-700/50 border border-gray-600 rounded-xl px-4 py-3 text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition"
-                              >
-                                <option value="auto">Auto (Recommended)</option>
-                                <option value="openpose">OpenPose (Body & Face Pose)</option>
-                                <option value="canny">Canny Edge Detection</option>
-                                <option value="depth">Depth Map</option>
-                              </select>
-                              <p className="text-xs text-gray-400 mt-2">
-                                Auto mode automatically selects the best ControlNet type for your image
-                              </p>
-                            </div>
-                          )}
-                        </div>
-                      </div>
                       {formData.model_type === 'video' && (
                         <div className="mt-6">
                           <label className="block text-sm font-medium mb-2 text-gray-300">
@@ -661,6 +667,212 @@ export default function Admin() {
                       )}
                     </div>
 
+                    {/* Replicate Model Selection */}
+                    <div className="bg-gradient-to-br from-purple-900/20 to-blue-900/20 border border-purple-500/30 rounded-2xl p-6">
+                      <div className="flex items-center justify-between mb-6">
+                        <h3 className="text-xl font-semibold text-purple-200 flex items-center gap-3">
+                          <Wand2 className="w-6 h-6" />
+                          Replicate AI Models
+                        </h3>
+                        <button
+                          type="button"
+                          onClick={handleTestConnection}
+                          disabled={testingConnection}
+                          className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-lg transition-colors"
+                        >
+                          {testingConnection ? (
+                            <>
+                              <RefreshCw className="w-4 h-4 animate-spin" />
+                              Testing...
+                            </>
+                          ) : (
+                            <>
+                              <TestTube className="w-4 h-4" />
+                              Test Connection
+                            </>
+                          )}
+                        </button>
+                      </div>
+
+                      {/* Connection Test Result */}
+                      {connectionResult && (
+                        <div className={`mb-6 p-4 rounded-xl border ${
+                          connectionResult.success 
+                            ? 'bg-green-900/20 border-green-600/30 text-green-200'
+                            : 'bg-red-900/20 border-red-600/30 text-red-200'
+                        }`}>
+                          <div className="flex items-center gap-2">
+                            {connectionResult.success ? (
+                              <CheckCircle className="w-5 h-5" />
+                            ) : (
+                              <XCircle className="w-5 h-5" />
+                            )}
+                            <span>
+                              {connectionResult.success 
+                                ? `Connection successful${connectionResult.model ? ` with ${connectionResult.model}` : ''}`
+                                : `Connection failed: ${connectionResult.error}`
+                              }
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Image Models */}
+                        <div>
+                          <label className="block text-sm font-medium mb-3 text-gray-300 flex items-center gap-2">
+                            <Camera className="w-4 h-4" />
+                            Image Generation Model
+                          </label>
+                          <select
+                            name="replicate_image_model"
+                            value={formData.replicate_image_model || 'flux-schnell'}
+                            onChange={handleChange}
+                            className="w-full bg-gray-700/50 border border-gray-600 rounded-xl px-4 py-3 text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition"
+                          >
+                            {Object.entries(REPLICATE_MODELS.image).map(([key, model]) => (
+                              <option key={key} value={key}>
+                                {model.name}
+                              </option>
+                            ))}
+                          </select>
+                          
+                          {/* Model Info */}
+                          {formData.replicate_image_model && (
+                            <div className="mt-3 p-3 bg-gray-700/30 rounded-lg">
+                              <div className="text-sm text-white font-medium mb-2">
+                                {REPLICATE_MODELS.image[formData.replicate_image_model as ImageModel].name}
+                              </div>
+                              <div className="text-xs text-gray-400 mb-2">
+                                {REPLICATE_MODELS.image[formData.replicate_image_model as ImageModel].description}
+                              </div>
+                              <div className="flex items-center gap-4 text-xs">
+                                <div className="flex items-center gap-1">
+                                  {getSpeedIcon(REPLICATE_MODELS.image[formData.replicate_image_model as ImageModel].speed)}
+                                  <span>{REPLICATE_MODELS.image[formData.replicate_image_model as ImageModel].speed}</span>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  {getQualityIcon(REPLICATE_MODELS.image[formData.replicate_image_model as ImageModel].quality)}
+                                  <span>{REPLICATE_MODELS.image[formData.replicate_image_model as ImageModel].quality}</span>
+                                </div>
+                              </div>
+                              <div className="text-xs text-gray-400 mt-2">
+                                Best for: {REPLICATE_MODELS.image[formData.replicate_image_model as ImageModel].bestFor}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Video Models */}
+                        <div>
+                          <label className="block text-sm font-medium mb-3 text-gray-300 flex items-center gap-2">
+                            <Video className="w-4 h-4" />
+                            Video Generation Model
+                          </label>
+                          <select
+                            name="replicate_video_model"
+                            value={formData.replicate_video_model || 'stable-video-diffusion'}
+                            onChange={handleChange}
+                            className="w-full bg-gray-700/50 border border-gray-600 rounded-xl px-4 py-3 text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition"
+                          >
+                            {Object.entries(REPLICATE_MODELS.video).map(([key, model]) => (
+                              <option key={key} value={key}>
+                                {model.name}
+                              </option>
+                            ))}
+                          </select>
+                          
+                          {/* Model Info */}
+                          {formData.replicate_video_model && (
+                            <div className="mt-3 p-3 bg-gray-700/30 rounded-lg">
+                              <div className="text-sm text-white font-medium mb-2">
+                                {REPLICATE_MODELS.video[formData.replicate_video_model as VideoModel].name}
+                              </div>
+                              <div className="text-xs text-gray-400 mb-2">
+                                {REPLICATE_MODELS.video[formData.replicate_video_model as VideoModel].description}
+                              </div>
+                              <div className="flex items-center gap-4 text-xs">
+                                <div className="flex items-center gap-1">
+                                  {getSpeedIcon(REPLICATE_MODELS.video[formData.replicate_video_model as VideoModel].speed)}
+                                  <span>{REPLICATE_MODELS.video[formData.replicate_video_model as VideoModel].speed}</span>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  {getQualityIcon(REPLICATE_MODELS.video[formData.replicate_video_model as VideoModel].quality)}
+                                  <span>{REPLICATE_MODELS.video[formData.replicate_video_model as VideoModel].quality}</span>
+                                </div>
+                              </div>
+                              <div className="text-xs text-gray-400 mt-2">
+                                Best for: {REPLICATE_MODELS.video[formData.replicate_video_model as VideoModel].bestFor}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Model Recommendations */}
+                      <div className="mt-6 p-4 bg-blue-900/20 border border-blue-500/30 rounded-xl">
+                        <div className="flex items-start gap-3">
+                          <AlertCircle className="w-5 h-5 text-blue-400 mt-0.5" />
+                          <div>
+                            <div className="font-medium text-blue-200 mb-2">Model Recommendations</div>
+                            <div className="space-y-1 text-sm text-blue-300/80">
+                              <div>• <strong>FLUX Schnell:</strong> Best for fast previews and testing</div>
+                              <div>• <strong>FLUX Dev:</strong> Highest quality images, slower generation</div>
+                              <div>• <strong>RealVisXL:</strong> Most photorealistic results</div>
+                              <div>• <strong>Stable Video Diffusion:</strong> Best video quality from images</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* ControlNet Settings */}
+                    <div className="bg-gray-800/50 backdrop-blur-sm rounded-2xl p-6">
+                      <h3 className="text-lg font-medium text-blue-200 mb-4 flex items-center gap-2">
+                        <Eye className="w-5 h-5" />
+                        ControlNet (Advanced Pose & Structure Control)
+                      </h3>
+                      
+                      <div className="space-y-4">
+                        <label className="flex items-center gap-3">
+                          <input
+                            type="checkbox"
+                            name="use_controlnet"
+                            checked={formData.use_controlnet ?? true}
+                            onChange={handleChange}
+                            className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500"
+                          />
+                          <div>
+                            <span className="text-white font-medium">Enable ControlNet</span>
+                            <p className="text-sm text-gray-300">
+                              Improves pose preservation, face-to-body matching, and overall consistency
+                            </p>
+                          </div>
+                        </label>
+
+                        {formData.use_controlnet && (
+                          <div>
+                            <label className="block text-sm font-medium mb-2 text-gray-300">ControlNet Type</label>
+                            <select
+                              name="controlnet_type"
+                              value={formData.controlnet_type || 'auto'}
+                              onChange={handleChange}
+                              className="w-full bg-gray-700/50 border border-gray-600 rounded-xl px-4 py-3 text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition"
+                            >
+                              <option value="auto">Auto (Recommended)</option>
+                              <option value="openpose">OpenPose (Body & Face Pose)</option>
+                              <option value="canny">Canny Edge Detection</option>
+                              <option value="depth">Depth Map</option>
+                            </select>
+                            <p className="text-xs text-gray-400 mt-2">
+                              Auto mode automatically selects the best ControlNet type for your image
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* API Configuration */}
                     <div className="bg-gray-800/50 backdrop-blur-sm rounded-2xl p-6">
                       <h2 className="text-2xl font-semibold mb-6 flex items-center gap-3">
                         <Settings className="w-6 h-6 text-gray-400" />
@@ -842,10 +1054,6 @@ export default function Admin() {
                       <span>{formData.gallery_allow_downloads ? 'Enabled' : 'Disabled'}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-400">Metadata:</span>
-                      <span>{formData.gallery_show_metadata ? 'Shown' : 'Hidden'}</span>
-                    </div>
-                    <div className="flex justify-between">
                       <span className="text-gray-400">Model:</span>
                       <span className="capitalize">{formData.model_type || 'image'}</span>
                     </div>
@@ -854,15 +1062,17 @@ export default function Admin() {
                       <span className="capitalize">{(formData.face_preservation_mode || 'preserve_face').replace('_', ' ')}</span>
                     </div>
                     <div className="flex justify-between">
+                      <span className="text-gray-400">Image Model:</span>
+                      <span className="text-xs">{REPLICATE_MODELS.image[formData.replicate_image_model as ImageModel || 'flux-schnell'].name}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Video Model:</span>
+                      <span className="text-xs">{REPLICATE_MODELS.video[formData.replicate_video_model as VideoModel || 'stable-video-diffusion'].name}</span>
+                    </div>
+                    <div className="flex justify-between">
                       <span className="text-gray-400">ControlNet:</span>
                       <span>{formData.use_controlnet ? 'Enabled' : 'Disabled'}</span>
                     </div>
-                    {formData.use_controlnet && (
-                      <div className="flex justify-between">
-                        <span className="text-gray-400">Control Type:</span>
-                        <span className="capitalize">{formData.controlnet_type || 'auto'}</span>
-                      </div>
-                    )}
                   </div>
                 </motion.div>
               </div>
