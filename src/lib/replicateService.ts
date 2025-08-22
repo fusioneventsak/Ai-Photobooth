@@ -1,257 +1,311 @@
 import { supabase } from './supabase';
 
-// Type definitions for model selection
-export type ImageModel = 'flux-schnell' | 'flux-dev' | 'sdxl' | 'realvisxl';
-export type VideoModel = 'stable-video-diffusion' | 'animatediff' | 'zeroscope' | 'wan-video' | 'hailuo-02';
-
-// Model definitions with complete information for Admin panel
+// Available models for each type
 export const REPLICATE_MODELS = {
-  // Image models - keyed by model ID for easy Admin access
   image: {
     'flux-schnell': {
-      name: 'FLUX Schnell',
-      description: 'Fast image generation with good quality',
-      speed: 'fast',
-      quality: 'good',
-      bestFor: 'Quick previews and testing',
-      modelPath: 'black-forest-labs/flux-schnell'
+      name: "FLUX Schnell",
+      description: "Fast, high-quality image generation",
+      speed: "⚡ Fast",
+      quality: "🔥 High",
+      bestFor: "Quick previews, face preservation"
     },
     'flux-dev': {
-      name: 'FLUX Dev',
-      description: 'High-quality image generation (slower)',
-      speed: 'slow',
-      quality: 'excellent',
-      bestFor: 'High-quality final images',
-      modelPath: 'black-forest-labs/flux-dev'
+      name: "FLUX Dev", 
+      description: "Higher quality, slower generation",
+      speed: "🐌 Slow",
+      quality: "✨ Premium",
+      bestFor: "Maximum quality, artistic results"
     },
     'sdxl': {
-      name: 'Stable Diffusion XL',
-      description: 'Stable Diffusion XL model for detailed images',
-      speed: 'medium',
-      quality: 'very good',
-      bestFor: 'Detailed, artistic images',
-      modelPath: 'stability-ai/sdxl'
+      name: "Stable Diffusion XL",
+      description: "Classic high-quality generation",
+      speed: "🚀 Medium",
+      quality: "🔥 High",
+      bestFor: "Balanced quality and speed"
     },
     'realvisxl': {
-      name: 'RealVis XL',
-      description: 'Photorealistic image generation',
-      speed: 'medium',
-      quality: 'excellent',
-      bestFor: 'Photorealistic portraits and scenes',
-      modelPath: 'lucataco/realvisxl-v3'
+      name: "RealVisXL v4.0",
+      description: "Photorealistic image generation",
+      speed: "🚀 Medium",
+      quality: "📸 Photorealistic",
+      bestFor: "Realistic portraits, photography"
     }
   },
-  
-  // Video models - keyed by model ID for easy Admin access
   video: {
-    'hailuo-02': {
-      name: 'Hailuo 02',
-      description: 'High-quality cinematic video generation',
-      speed: 'slow',
-      quality: 'excellent',
-      bestFor: 'Cinematic quality videos',
-      modelPath: 'minimax/hailuo-02'
-    },
     'stable-video-diffusion': {
-      name: 'Stable Video Diffusion',
-      description: 'Stable video generation from images',
-      speed: 'medium',
-      quality: 'very good',
-      bestFor: 'Image-to-video conversion',
-      modelPath: 'stability-ai/stable-video-diffusion'
+      name: "Stable Video Diffusion",
+      description: "High-quality video from image",
+      speed: "🐌 Slow",
+      quality: "✨ Premium",
+      bestFor: "Highest quality videos"
     },
     'animatediff': {
-      name: 'AnimateDiff',
-      description: 'Animation-focused video generation',
-      speed: 'fast',
-      quality: 'good',
-      bestFor: 'Animated sequences',
-      modelPath: 'lucataco/animatediff'
+      name: "AnimateDiff",
+      description: "Smooth animation generation",
+      speed: "🚀 Medium", 
+      quality: "🔥 High",
+      bestFor: "Smooth animations, motion"
     },
     'zeroscope': {
-      name: 'ZeroScope',
-      description: 'Fast video generation',
-      speed: 'fast',
-      quality: 'good',
-      bestFor: 'Quick video previews',
-      modelPath: 'cerspense/zeroscope_v2_xl'
-    },
-    'wan-video': {
-      name: 'WAN Video 2.2',
-      description: 'Fast video generation',
-      speed: 'fast',
-      quality: 'good',
-      bestFor: 'Quick video generation',
-      modelPath: 'wan-video/wan-2.2-i2v-fast'
+      name: "Zeroscope v2 XL",
+      description: "Text-to-video generation",
+      speed: "🚀 Medium",
+      quality: "🔥 High",
+      bestFor: "Creative video effects"
     }
   }
 } as const;
+
+export type ImageModel = keyof typeof REPLICATE_MODELS.image;
+export type VideoModel = keyof typeof REPLICATE_MODELS.video;
+export type ModelType = ImageModel | VideoModel;
 
 interface GenerationOptions {
   prompt: string;
   inputData: string;
   type: 'image' | 'video';
+  model?: ModelType; // NEW: Optional model selection
   duration?: number;
   preserveFace?: boolean;
+  faceMode?: 'preserve_face' | 'transform_face'; // NEW: Explicit face mode
 }
 
 export async function generateWithReplicate({ 
   prompt, 
   inputData, 
   type, 
+  model, // NEW: Model parameter
   duration = 5,
-  preserveFace = true
+  preserveFace = true,
+  faceMode = 'preserve_face' // NEW: Face mode parameter
 }: GenerationOptions): Promise<string> {
   try {
     console.log(`🔄 Calling Replicate Edge Function for ${type} generation...`);
-    console.log('📦 Request payload:', { 
-      prompt: prompt.substring(0, 50) + '...', 
-      type, 
-      duration, 
-      preserveFace,
-      inputDataLength: inputData.length 
-    });
+    
+    // Log model selection
+    if (model) {
+      const modelInfo = getModelInfo(type, model);
+      console.log(`📊 Selected model: ${modelInfo?.name || model}`);
+    } else {
+      console.log(`📊 Using default model for ${type}`);
+    }
 
+    // Call Supabase Edge Function with enhanced parameters
     const { data, error } = await supabase.functions.invoke('generate-replicate-content', {
       body: {
         prompt,
         inputData,
         type,
+        model, // Pass the selected model
         duration,
-        preserveFace
+        preserveFace,
+        faceMode // Pass face mode for backward compatibility
       }
     });
 
-    // Enhanced error logging
     if (error) {
-      console.error('❌ Edge function error:', error);
-      console.error('Error details:', {
-        message: error.message,
-        details: error.details,
-        hint: error.hint,
-        code: error.code
-      });
-      throw new Error(`Edge Function Error: ${error.message || `Failed to generate ${type}`}`);
+      console.error('Edge function error:', error);
+      throw new Error(error.message || `Failed to generate ${type}`);
     }
 
-    // Check for response structure
-    console.log('📥 Edge function response:', {
-      success: data?.success,
-      hasResult: !!data?.result,
-      hasError: !!data?.error,
-      model: data?.model
-    });
-
+    // Enhanced response validation
     if (!data?.success) {
       const errorMessage = data?.error || `Invalid response from ${type} generation service`;
-      console.error('❌ Generation failed:', errorMessage);
+      console.error('Generation failed:', errorMessage);
       throw new Error(errorMessage);
     }
 
     if (!data?.result) {
-      console.error('❌ No result in response:', data);
-      throw new Error(`No result received from ${type} generation service`);
+      throw new Error(`No result returned from ${type} generation service`);
     }
 
-    // Log additional metadata if available
-    if (data.metadata) {
-      console.log(`✅ Generation metadata:`, data.metadata);
-    }
-    
-    console.log(`✅ Replicate ${type} generation successful with model: ${data.model || 'admin-configured'}`);
-    console.log(`📄 Result URL: ${data.result.substring(0, 50)}...`);
+    // Log success with model info
+    const modelName = data.model || data.modelKey || 'Unknown Model';
+    console.log(`✅ Replicate ${type} generation successful with ${modelName}`);
     
     return data.result;
 
   } catch (error) {
-    console.error('❌ Replicate API Error:', error);
+    console.error('Replicate API Error:', error);
     
     if (error instanceof Error) {
-      throw error;
+      // Enhanced error handling with specific messages
+      if (error.message.includes('API key')) {
+        throw new Error('Replicate API key is invalid or missing. Please check your configuration.');
+      } else if (error.message.includes('credits') || error.message.includes('billing')) {
+        throw new Error('Insufficient Replicate credits. Please add credits to your account.');
+      } else if (error.message.includes('rate limit')) {
+        throw new Error('Rate limit exceeded. Please wait a moment and try again.');
+      } else if (error.message.includes('timeout')) {
+        throw new Error('Generation timed out. Please try again or use a faster model.');
+      } else if (error.message.includes('Invalid model')) {
+        throw new Error(`Selected model is not available. Please choose a different model.`);
+      } else {
+        throw error;
+      }
     } else {
-      throw new Error(`Failed to generate ${type} with Replicate API: ${JSON.stringify(error)}`);
+      throw new Error(`Failed to generate ${type} with Replicate API`);
     }
   }
 }
 
-// Test Replicate connection function
-export async function testReplicateConnection(): Promise<{ success: boolean; error?: string; model?: string }> {
-  try {
-    console.log('🔄 Testing Replicate connection...');
+// Helper function to get model info
+export function getModelInfo(type: 'image' | 'video', modelKey: string) {
+  const models = REPLICATE_MODELS[type] as any;
+  return models[modelKey] || null;
+}
 
-    // Test the connection by calling the edge function with test flag
-    const testImageData = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+// Helper function to get all available models for a type
+export function getAvailableModels(type: 'image' | 'video') {
+  return REPLICATE_MODELS[type];
+}
+
+// Helper function to get default model for each type
+export function getDefaultModel(type: 'image' | 'video'): string {
+  const models = REPLICATE_MODELS[type];
+  return Object.keys(models)[0];
+}
+
+// Helper function to get recommended model based on use case
+export function getRecommendedModel(
+  type: 'image' | 'video', 
+  priority: 'speed' | 'quality' | 'photorealistic' = 'quality'
+): string {
+  if (type === 'image') {
+    switch (priority) {
+      case 'speed':
+        return 'flux-schnell';
+      case 'photorealistic':
+        return 'realvisxl';
+      case 'quality':
+      default:
+        return 'flux-dev';
+    }
+  } else {
+    switch (priority) {
+      case 'speed':
+        return 'animatediff';
+      case 'quality':
+      default:
+        return 'stable-video-diffusion';
+    }
+  }
+}
+
+// Test function to verify Replicate connectivity
+export async function testReplicateConnection(): Promise<{ 
+  success: boolean; 
+  error?: string; 
+  model?: string 
+}> {
+  try {
+    // Create a minimal test image (1x1 pixel)
+    const testImage = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+    
+    console.log('🧪 Testing Replicate connection...');
     
     const { data, error } = await supabase.functions.invoke('generate-replicate-content', {
       body: {
-        prompt: 'test connection',
-        inputData: testImageData,
+        prompt: 'test image',
+        inputData: testImage,
         type: 'image',
-        test: true // Add a test flag to indicate this is a connection test
+        model: 'flux-schnell', // Use fastest model for testing
+        preserveFace: true
       }
     });
 
-    if (error) {
-      console.error('❌ Replicate connection test failed:', error);
-      return {
-        success: false,
-        error: error.message || 'Connection test failed'
+    if (error || !data?.success) {
+      return { 
+        success: false, 
+        error: error?.message || data?.error || 'Connection test failed' 
       };
     }
 
-    if (data?.success === false) {
-      console.error('❌ API key validation failed:', data.error);
-      return {
-        success: false,
-        error: data.error || 'API key validation failed'
-      };
-    }
-
-    console.log('✅ Replicate connection test successful');
-    return {
-      success: true,
-      model: data?.model || 'Replicate API'
+    return { 
+      success: true, 
+      model: data.model || data.modelKey || 'flux-schnell'
     };
-
   } catch (error) {
-    console.error('❌ Replicate connection test error:', error);
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Unknown connection error'
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Unknown error' 
     };
   }
 }
 
-// Helper functions for admin panel use only
-export function getAvailableVideoModels() {
-  return Object.entries(REPLICATE_MODELS.video).map(([id, model]) => ({
-    id,
-    name: model.name,
-    description: model.description,
-    speed: model.speed,
-    quality: model.quality,
-    bestFor: model.bestFor,
-    modelPath: model.modelPath
-  }));
+// Advanced generation function with auto-model selection
+export async function generateWithAutoModel({
+  prompt,
+  inputData,
+  type,
+  priority = 'quality',
+  preserveFace = true,
+  duration = 5
+}: {
+  prompt: string;
+  inputData: string;
+  type: 'image' | 'video';
+  priority?: 'speed' | 'quality' | 'photorealistic';
+  preserveFace?: boolean;
+  duration?: number;
+}): Promise<string> {
+  const recommendedModel = getRecommendedModel(type, priority);
+  
+  console.log(`🤖 Auto-selected ${recommendedModel} for ${priority} priority`);
+  
+  return generateWithReplicate({
+    prompt,
+    inputData,
+    type,
+    model: recommendedModel as ModelType,
+    duration,
+    preserveFace
+  });
 }
 
-export function getAvailableImageModels() {
-  return Object.entries(REPLICATE_MODELS.image).map(([id, model]) => ({
-    id,
-    name: model.name,
-    description: model.description,
-    speed: model.speed,
-    quality: model.quality,
-    bestFor: model.bestFor,
-    modelPath: model.modelPath
-  }));
-}
-
-// Get model info by ID (for admin use)
-export function getModelInfo(modelId: string, type: 'image' | 'video') {
-  if (type === 'video') {
-    return REPLICATE_MODELS.video[modelId as keyof typeof REPLICATE_MODELS.video];
-  } else {
-    return REPLICATE_MODELS.image[modelId as keyof typeof REPLICATE_MODELS.image];
+// Batch generation function for testing multiple models
+export async function batchGenerateWithModels({
+  prompt,
+  inputData,
+  type,
+  models,
+  preserveFace = true,
+  duration = 5
+}: {
+  prompt: string;
+  inputData: string;
+  type: 'image' | 'video';
+  models: ModelType[];
+  preserveFace?: boolean;
+  duration?: number;
+}): Promise<Array<{ model: string; result?: string; error?: string }>> {
+  const results = [];
+  
+  for (const model of models) {
+    try {
+      console.log(`🔄 Testing with model: ${model}`);
+      const result = await generateWithReplicate({
+        prompt,
+        inputData,
+        type,
+        model,
+        preserveFace,
+        duration
+      });
+      
+      results.push({ model, result });
+    } catch (error) {
+      console.error(`❌ Failed with model ${model}:`, error);
+      results.push({ 
+        model, 
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
   }
+  
+  return results;
 }
+
+// Export types for use in components
+export type { GenerationOptions };
