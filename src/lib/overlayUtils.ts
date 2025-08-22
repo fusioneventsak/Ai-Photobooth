@@ -601,7 +601,7 @@ const BUILT_IN_BORDERS: { [key: string]: (width: number, height: number) => stri
     return canvas.toDataURL();
   },
 
-  // TRADING CARD OVERLAYS - REDESIGNED WITH LANDSCAPE-OPTIMIZED PHOTO AREAS
+  // TRADING CARD OVERLAYS - REDESIGNED WITH PROPER TEXT AND PROPORTIONS
   'pokemon-classic': (width: number, height: number) => {
     const canvas = document.createElement('canvas');
     canvas.width = width;
@@ -611,8 +611,7 @@ const BUILT_IN_BORDERS: { [key: string]: (width: number, height: number) => stri
     const border = 15; // Even border on all sides
     const cardWidth = width - (border * 2);
     const cardHeight = height - (border * 2);
-    const isLandscape = width > height;
-    const photoHeight = isLandscape ? cardHeight * 0.65 : cardHeight * 0.45; // Much larger for landscape
+    const photoHeight = cardHeight * 0.45; // Larger photo area
     const photoWidth = cardWidth - 20; // 10px margin on each side
     
     // Classic Pokemon card yellow gradient background
@@ -691,12 +690,11 @@ const BUILT_IN_BORDERS: { [key: string]: (width: number, height: number) => stri
     
     // Attack section (below photo)
     const attackY = border + 90 + photoHeight;
-    const attackHeight = isLandscape ? 50 : 80; // Smaller for landscape
     ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-    ctx.fillRect(border + 10, attackY, cardWidth - 20, attackHeight);
+    ctx.fillRect(border + 10, attackY, cardWidth - 20, 80);
     ctx.strokeStyle = '#000000';
     ctx.lineWidth = 1;
-    ctx.strokeRect(border + 10, attackY, cardWidth - 20, attackHeight);
+    ctx.strokeRect(border + 10, attackY, cardWidth - 20, 80);
     
     // Add attack details
     ctx.fillStyle = '#000000';
@@ -705,12 +703,8 @@ const BUILT_IN_BORDERS: { [key: string]: (width: number, height: number) => stri
     ctx.fillText('Thunder Shock', border + 35, attackY + 20);
     
     ctx.font = '9px Arial';
-    if (isLandscape) {
-      ctx.fillText('Flip a coin. If heads, opponent is paralyzed.', border + 15, attackY + 35);
-    } else {
-      ctx.fillText('Flip a coin. If heads, the opponent', border + 15, attackY + 40);
-      ctx.fillText('is paralyzed.', border + 15, attackY + 52);
-    }
+    ctx.fillText('Flip a coin. If heads, the opponent', border + 15, attackY + 40);
+    ctx.fillText('is paralyzed.', border + 15, attackY + 52);
     
     // Damage
     ctx.font = 'bold 14px Arial';
@@ -724,22 +718,19 @@ const BUILT_IN_BORDERS: { [key: string]: (width: number, height: number) => stri
     ctx.fill();
     
     // Stats section (bottom)
-    const statsY = height - border - (isLandscape ? 35 : 50);
-    const statsHeight = isLandscape ? 25 : 40;
+    const statsY = height - border - 50;
     ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-    ctx.fillRect(border + 10, statsY, cardWidth - 20, statsHeight);
+    ctx.fillRect(border + 10, statsY, cardWidth - 20, 40);
     ctx.strokeStyle = '#000000';
     ctx.lineWidth = 1;
-    ctx.strokeRect(border + 10, statsY, cardWidth - 20, statsHeight);
+    ctx.strokeRect(border + 10, statsY, cardWidth - 20, 40);
     
     // Add stats text
     ctx.fillStyle = '#000000';
     ctx.font = '8px Arial';
     ctx.textAlign = 'left';
     ctx.fillText('Length: 1\'04"  Weight: 13.2 lbs', border + 15, statsY + 15);
-    if (!isLandscape) {
-      ctx.fillText('Weakness: Fighting  Resistance: None', border + 15, statsY + 27);
-    }
+    ctx.fillText('Weakness: Fighting  Resistance: None', border + 15, statsY + 27);
     
     // Clear center for photo
     ctx.globalCompositeOperation = 'destination-out';
@@ -757,8 +748,7 @@ const BUILT_IN_BORDERS: { [key: string]: (width: number, height: number) => stri
     const border = 15;
     const cardWidth = width - (border * 2);
     const cardHeight = height - (border * 2);
-    const isLandscape = width > height;
-    const photoHeight = isLandscape ? cardHeight * 0.62 : cardHeight * 0.42;
+    const photoHeight = cardHeight * 0.42;
     const photoWidth = cardWidth - 20;
     
     // GX holographic background
@@ -818,9 +808,8 @@ const BUILT_IN_BORDERS: { [key: string]: (width: number, height: number) => stri
     
     // GX Attack section
     const gxAttackY = border + 95 + photoHeight;
-    const attackHeight = isLandscape ? 45 : 60;
     ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
-    ctx.fillRect(border + 10, gxAttackY, cardWidth - 20, attackHeight);
+    ctx.fillRect(border + 10, gxAttackY, cardWidth - 20, 60);
     
     ctx.fillStyle = '#FFD700';
     ctx.font = 'bold 12px Arial';
@@ -829,12 +818,8 @@ const BUILT_IN_BORDERS: { [key: string]: (width: number, height: number) => stri
     
     ctx.fillStyle = '#FFFFFF';
     ctx.font = '9px Arial';
-    if (isLandscape) {
-      ctx.fillText('Deal 150 damage to each opponent Pokemon.', border + 15, gxAttackY + 35);
-    } else {
-      ctx.fillText('Deal 150 damage to each opponent', border + 15, gxAttackY + 35);
-      ctx.fillText('Pokemon. (You can\'t use more than 1 GX)', border + 15, gxAttackY + 47);
-    }
+    ctx.fillText('Deal 150 damage to each opponent', border + 15, gxAttackY + 35);
+    ctx.fillText('Pokemon. (You can\'t use more than 1 GX)', border + 15, gxAttackY + 47);
     
     // Energy cost
     for (let i = 0; i < 3; i++) {
@@ -851,20 +836,15 @@ const BUILT_IN_BORDERS: { [key: string]: (width: number, height: number) => stri
     ctx.fillText('150', cardWidth + border - 15, gxAttackY + 25);
     
     // Bottom stats
-    const statsY = height - border - (isLandscape ? 30 : 45);
-    const statsHeight = isLandscape ? 20 : 35;
+    const statsY = height - border - 45;
     ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-    ctx.fillRect(border + 10, statsY, cardWidth - 20, statsHeight);
+    ctx.fillRect(border + 10, statsY, cardWidth - 20, 35);
     
     ctx.fillStyle = '#FFFFFF';
     ctx.font = '8px Arial';
     ctx.textAlign = 'left';
-    if (isLandscape) {
-      ctx.fillText('Weakness: Fighting x2  Resistance: Metal -20  Retreat: 1', border + 15, statsY + 15);
-    } else {
-      ctx.fillText('Weakness: Fighting x2  Resistance: Metal -20', border + 15, statsY + 15);
-      ctx.fillText('Retreat Cost: 1', border + 15, statsY + 27);
-    }
+    ctx.fillText('Weakness: Fighting x2  Resistance: Metal -20', border + 15, statsY + 15);
+    ctx.fillText('Retreat Cost: 1', border + 15, statsY + 27);
     
     // Clear center for photo
     ctx.globalCompositeOperation = 'destination-out';
@@ -882,8 +862,7 @@ const BUILT_IN_BORDERS: { [key: string]: (width: number, height: number) => stri
     const border = 15;
     const cardWidth = width - (border * 2);
     const cardHeight = height - (border * 2);
-    const isLandscape = width > height;
-    const photoHeight = isLandscape ? cardHeight * 0.75 : cardHeight * 0.55; // Much larger for landscape
+    const photoHeight = cardHeight * 0.55;
     const photoWidth = cardWidth - 20;
     
     // Classic baseball card cream background
@@ -932,44 +911,37 @@ const BUILT_IN_BORDERS: { [key: string]: (width: number, height: number) => stri
     
     // Player name area (below photo)
     const nameY = border + 65 + photoHeight;
-    const nameHeight = isLandscape ? 20 : 30;
     ctx.fillStyle = '#003366';
-    ctx.fillRect(border + 5, nameY, cardWidth - 10, nameHeight);
+    ctx.fillRect(border + 5, nameY, cardWidth - 10, 30);
     
     ctx.fillStyle = '#FFFFFF';
-    ctx.font = isLandscape ? 'bold 12px Arial' : 'bold 14px Arial';
+    ctx.font = 'bold 14px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText('PLAYER NAME', width/2, nameY + (nameHeight/2) + 4);
+    ctx.fillText('PLAYER NAME', width/2, nameY + 20);
     
     // Stats section
-    const statsY = nameY + nameHeight + 5;
-    const statsHeight = isLandscape ? 45 : 70;
+    const statsY = nameY + 35;
     ctx.fillStyle = '#FFFFFF';
-    ctx.fillRect(border + 5, statsY, cardWidth - 10, statsHeight);
+    ctx.fillRect(border + 5, statsY, cardWidth - 10, 70);
     ctx.strokeStyle = '#003366';
     ctx.lineWidth = 1;
-    ctx.strokeRect(border + 5, statsY, cardWidth - 10, statsHeight);
+    ctx.strokeRect(border + 5, statsY, cardWidth - 10, 70);
     
     // Add stats
     ctx.fillStyle = '#000000';
-    ctx.font = isLandscape ? 'bold 8px Arial' : 'bold 10px Arial';
+    ctx.font = 'bold 10px Arial';
     ctx.textAlign = 'left';
-    ctx.fillText('2024 SEASON STATS', border + 15, statsY + 12);
+    ctx.fillText('2024 SEASON STATS', border + 15, statsY + 15);
     
-    ctx.font = isLandscape ? '7px Arial' : '9px Arial';
-    if (isLandscape) {
-      ctx.fillText('AVG: .325  HR: 42  RBI: 108  OBP: .412', border + 15, statsY + 25);
-      ctx.fillText('G: 162  AB: 594  H: 193  R: 112', border + 15, statsY + 35);
-    } else {
-      ctx.fillText('AVG: .325  HR: 42  RBI: 108', border + 15, statsY + 25);
-      ctx.fillText('OBP: .412  SLG: .587  OPS: .999', border + 15, statsY + 37);
-      ctx.fillText('G: 162  AB: 594  H: 193  R: 112', border + 15, statsY + 49);
-    }
+    ctx.font = '9px Arial';
+    ctx.fillText('AVG: .325  HR: 42  RBI: 108', border + 15, statsY + 30);
+    ctx.fillText('OBP: .412  SLG: .587  OPS: .999', border + 15, statsY + 42);
+    ctx.fillText('G: 162  AB: 594  H: 193  R: 112', border + 15, statsY + 54);
     
     // Team/Year info
-    ctx.font = 'bold 7px Arial';
+    ctx.font = 'bold 8px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText('MAJOR LEAGUE BASEBALL 2024', width/2, height - border - 8);
+    ctx.fillText('MAJOR LEAGUE BASEBALL 2024', width/2, statsY + 67);
     
     // Clear center for photo
     ctx.globalCompositeOperation = 'destination-out';
@@ -987,8 +959,7 @@ const BUILT_IN_BORDERS: { [key: string]: (width: number, height: number) => stri
     const border = 15;
     const cardWidth = width - (border * 2);
     const cardHeight = height - (border * 2);
-    const isLandscape = width > height;
-    const photoHeight = isLandscape ? cardHeight * 0.72 : cardHeight * 0.52;
+    const photoHeight = cardHeight * 0.52;
     const photoWidth = cardWidth - 20;
     
     // Basketball court wood background
@@ -1034,51 +1005,44 @@ const BUILT_IN_BORDERS: { [key: string]: (width: number, height: number) => stri
     
     // Player name area
     const nameY = border + 85 + photoHeight;
-    const nameHeight = isLandscape ? 18 : 25;
     ctx.fillStyle = '#000080';
-    ctx.fillRect(border + 5, nameY, cardWidth - 10, nameHeight);
+    ctx.fillRect(border + 5, nameY, cardWidth - 10, 25);
     
     ctx.fillStyle = '#FFFFFF';
-    ctx.font = isLandscape ? 'bold 10px Arial' : 'bold 12px Arial';
+    ctx.font = 'bold 12px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText('PLAYER NAME', width/2, nameY + (nameHeight/2) + 3);
+    ctx.fillText('PLAYER NAME', width/2, nameY + 17);
     
     // Stats section
-    const statsY = nameY + nameHeight + 3;
-    const statsHeight = isLandscape ? 40 : 65;
+    const statsY = nameY + 30;
     ctx.fillStyle = '#FFFFFF';
-    ctx.fillRect(border + 5, statsY, cardWidth - 10, statsHeight);
+    ctx.fillRect(border + 5, statsY, cardWidth - 10, 65);
     ctx.strokeStyle = '#000080';
     ctx.lineWidth = 1;
-    ctx.strokeRect(border + 5, statsY, cardWidth - 10, statsHeight);
+    ctx.strokeRect(border + 5, statsY, cardWidth - 10, 65);
     
     // Add basketball stats
     ctx.fillStyle = '#000000';
-    ctx.font = isLandscape ? 'bold 7px Arial' : 'bold 9px Arial';
+    ctx.font = 'bold 9px Arial';
     ctx.textAlign = 'left';
-    ctx.fillText('2023-24 SEASON', border + 15, statsY + 10);
+    ctx.fillText('2023-24 SEASON', border + 15, statsY + 12);
     
-    ctx.font = isLandscape ? '6px Arial' : '8px Arial';
-    if (isLandscape) {
-      ctx.fillText('PPG: 28.7  RPG: 8.3  APG: 6.8', border + 15, statsY + 20);
-      ctx.fillText('FG%: .487  3P%: .389  FT%: .853', border + 15, statsY + 30);
-    } else {
-      ctx.fillText('PPG: 28.7  RPG: 8.3  APG: 6.8', border + 15, statsY + 22);
-      ctx.fillText('FG%: .487  3P%: .389  FT%: .853', border + 15, statsY + 32);
-      ctx.fillText('Games: 74  Minutes: 34.8', border + 15, statsY + 42);
-    }
+    ctx.font = '8px Arial';
+    ctx.fillText('PPG: 28.7  RPG: 8.3  APG: 6.8', border + 15, statsY + 25);
+    ctx.fillText('FG%: .487  3P%: .389  FT%: .853', border + 15, statsY + 35);
+    ctx.fillText('Games: 74  Minutes: 34.8', border + 15, statsY + 45);
     
     // Position
     ctx.fillStyle = '#FF6600';
-    ctx.font = isLandscape ? 'bold 6px Arial' : 'bold 8px Arial';
+    ctx.font = 'bold 8px Arial';
     ctx.textAlign = 'left';
-    ctx.fillText('SMALL FORWARD', border + 15, statsHeight - 5 + statsY);
+    ctx.fillText('SMALL FORWARD', border + 15, statsY + 58);
     
     // League info
     ctx.fillStyle = '#000080';
     ctx.font = 'bold 7px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText('NATIONAL BASKETBALL ASSOCIATION', width/2, height - border - 5);
+    ctx.fillText('NATIONAL BASKETBALL ASSOCIATION', width/2, height - border - 8);
     
     // Clear center for photo
     ctx.globalCompositeOperation = 'destination-out';
@@ -1096,8 +1060,7 @@ const BUILT_IN_BORDERS: { [key: string]: (width: number, height: number) => stri
     const border = 15;
     const cardWidth = width - (border * 2);
     const cardHeight = height - (border * 2);
-    const isLandscape = width > height;
-    const photoHeight = isLandscape ? cardHeight * 0.70 : cardHeight * 0.50;
+    const photoHeight = cardHeight * 0.50;
     const photoWidth = cardWidth - 20;
     
     // Football field green background
@@ -1151,202 +1114,6 @@ const BUILT_IN_BORDERS: { [key: string]: (width: number, height: number) => stri
     
     ctx.font = 'bold 8px Arial';
     ctx.fillText('QB', width - border - 35, border + 38);
-    
-    // Player name area
-    const nameY = border + 55 + photoHeight;
-    const nameHeight = isLandscape ? 20 : 28;
-    ctx.fillStyle = '#000080';
-    ctx.fillRect(border + 5, nameY, cardWidth - 10, nameHeight);
-    
-    ctx.fillStyle = '#FFFFFF';
-    ctx.font = isLandscape ? 'bold 11px Arial' : 'bold 13px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText('PLAYER NAME', width/2, nameY + (nameHeight/2) + 4);
-    
-    // Stats section
-    const statsY = nameY + nameHeight + 3;
-    const statsHeight = isLandscape ? 50 : 80;
-    ctx.fillStyle = '#FFFFFF';
-    ctx.fillRect(border + 5, statsY, cardWidth - 10, statsHeight);
-    ctx.strokeStyle = '#000080';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(border + 5, statsY, cardWidth - 10, statsHeight);
-    
-    // Add football stats
-    ctx.fillStyle = '#000000';
-    ctx.font = isLandscape ? 'bold 7px Arial' : 'bold 9px Arial';
-    ctx.textAlign = 'left';
-    ctx.fillText('2024 SEASON STATS', border + 15, statsY + 10);
-    
-    ctx.font = isLandscape ? '6px Arial' : '8px Arial';
-    if (isLandscape) {
-      ctx.fillText('PASSING: 389/590, 4,624 yds, 35 TDs', border + 15, statsY + 22);
-      ctx.fillText('Rating: 108.2  Completion: 65.9%', border + 15, statsY + 32);
-      ctx.fillText('RUSHING: 125 yds, 6 TDs', border + 15, statsY + 42);
-    } else {
-      ctx.fillText('PASSING:', border + 15, statsY + 22);
-      ctx.fillText('Completions: 389  Attempts: 590', border + 15, statsY + 32);
-      ctx.fillText('Yards: 4,624  TDs: 35  INTs: 8', border + 15, statsY + 42);
-      ctx.fillText('Rating: 108.2  Completion %: 65.9', border + 15, statsY + 52);
-      ctx.fillText('RUSHING: 125 yds, 6 TDs', border + 15, statsY + 65);
-    }
-    
-    // League info
-    ctx.fillStyle = '#000080';
-    ctx.font = 'bold 7px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText('NATIONAL FOOTBALL LEAGUE', width/2, height - border - 5);
-    
-    // Clear center for photo
-    ctx.globalCompositeOperation = 'destination-out';
-    ctx.fillRect(border + 10, border + 50, photoWidth, photoHeight);
-    
-    return canvas.toDataURL();
-  },
-
-  'yugioh-classic': (width: number, height: number) => {
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d')!;
-    
-    const border = 15;
-    const cardWidth = width - (border * 2);
-    const cardHeight = height - (border * 2);
-    const isLandscape = width > height;
-    const photoHeight = isLandscape ? cardHeight * 0.60 : cardHeight * 0.42;
-    const photoWidth = cardWidth - 20;
-    
-    // Yu-Gi-Oh tan/beige background
-    const yugiohGrad = ctx.createLinearGradient(0, 0, 0, height);
-    yugiohGrad.addColorStop(0, '#F5DEB3');
-    yugiohGrad.addColorStop(0.5, '#DDD8B8');
-    yugiohGrad.addColorStop(1, '#D2B48C');
-    
-    ctx.fillStyle = yugiohGrad;
-    ctx.fillRect(0, 0, width, height);
-    
-    // Card border with Egyptian styling
-    ctx.strokeStyle = '#8B4513';
-    ctx.lineWidth = 3;
-    ctx.strokeRect(border, border, cardWidth, cardHeight);
-    
-    // Inner decorative border
-    ctx.strokeStyle = '#DAA520';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(border + 3, border + 3, cardWidth - 6, cardHeight - 6);
-    
-    // Monster name area
-    ctx.fillStyle = 'rgba(218, 165, 32, 0.9)';
-    ctx.fillRect(border + 8, border + 8, cardWidth - 16, 25);
-    ctx.strokeStyle = '#8B4513';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(border + 8, border + 8, cardWidth - 16, 25);
-    
-    ctx.fillStyle = '#000000';
-    ctx.font = 'bold 12px Arial';
-    ctx.textAlign = 'left';
-    ctx.fillText('MONSTER NAME', border + 15, border + 25);
-    
-    // Attribute symbol (top right)
-    ctx.fillStyle = '#FF6347';
-    ctx.beginPath();
-    ctx.arc(width - border - 25, border + 45, 15, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = '#8B4513';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    
-    // Add attribute text
-    ctx.fillStyle = '#FFFFFF';
-    ctx.font = 'bold 8px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText('FIRE', width - border - 25, border + 50);
-    
-    // Monster type/level area
-    ctx.fillStyle = 'rgba(139, 69, 19, 0.9)';
-    ctx.fillRect(border + 8, border + 38, cardWidth - 60, 25);
-    
-    ctx.fillStyle = '#FFFFFF';
-    ctx.font = '9px Arial';
-    ctx.textAlign = 'left';
-    ctx.fillText('[Dragon/Effect]', border + 15, border + 53);
-    
-    // Level stars
-    const starY = border + 70;
-    for (let i = 0; i < 7; i++) {
-      if (i < 5) { // 5-star monster
-        ctx.fillStyle = '#FFD700';
-        ctx.beginPath();
-        // Create star shape
-        const x = border + 15 + (i * 20);
-        const y = starY;
-        ctx.moveTo(x, y - 6);
-        ctx.lineTo(x + 2, y - 2);
-        ctx.lineTo(x + 6, y - 2);
-        ctx.lineTo(x + 3, y + 1);
-        ctx.lineTo(x + 4, y + 5);
-        ctx.lineTo(x, y + 3);
-        ctx.lineTo(x - 4, y + 5);
-        ctx.lineTo(x - 3, y + 1);
-        ctx.lineTo(x - 6, y - 2);
-        ctx.lineTo(x - 2, y - 2);
-        ctx.closePath();
-        ctx.fill();
-        ctx.strokeStyle = '#B8860B';
-        ctx.lineWidth = 1;
-        ctx.stroke();
-      }
-    }
-    
-    // Monster effect description
-    const effectY = border + 85 + photoHeight;
-    const effectHeight = isLandscape ? 35 : 60;
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
-    ctx.fillRect(border + 8, effectY, cardWidth - 16, effectHeight);
-    ctx.strokeStyle = '#8B4513';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(border + 8, effectY, cardWidth - 16, effectHeight);
-    
-    ctx.fillStyle = '#000000';
-    ctx.font = isLandscape ? '7px Arial' : '8px Arial';
-    ctx.textAlign = 'left';
-    if (isLandscape) {
-      ctx.fillText('When Normal Summoned: Add 1 "Blue-Eyes"', border + 12, effectY + 12);
-      ctx.fillText('monster from Deck to hand. Can attack directly.', border + 12, effectY + 23);
-    } else {
-      ctx.fillText('When this card is Normal Summoned:', border + 12, effectY + 12);
-      ctx.fillText('You can add 1 "Blue-Eyes" monster', border + 12, effectY + 23);
-      ctx.fillText('from your Deck to your hand.', border + 12, effectY + 34);
-      ctx.fillText('This card can attack directly.', border + 12, effectY + 45);
-    }
-    
-    // ATK/DEF section
-    const statsY = height - border - (isLandscape ? 25 : 35);
-    const statsHeight = isLandscape ? 15 : 25;
-    ctx.fillStyle = 'rgba(139, 69, 19, 0.9)';
-    ctx.fillRect(border + 8, statsY, cardWidth - 16, statsHeight);
-    
-    ctx.fillStyle = '#FFFFFF';
-    ctx.font = isLandscape ? 'bold 8px Arial' : 'bold 10px Arial';
-    ctx.textAlign = 'left';
-    ctx.fillText('ATK/2500', border + 15, statsY + (statsHeight/2) + 3);
-    
-    ctx.textAlign = 'right';
-    ctx.fillText('DEF/2000', width - border - 15, statsY + (statsHeight/2) + 3);
-    
-    // Set number
-    ctx.fillStyle = '#000000';
-    ctx.font = '6px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText('LOB-001', width/2, height - border - 5);
-    
-    // Clear center for monster artwork
-    ctx.globalCompositeOperation = 'destination-out';
-    ctx.fillRect(border + 10, border + 80, photoWidth, photoHeight);
-    
-    return canvas.toDataURL();
-  } width - border - 35, border + 38);
     
     // Player name area
     const nameY = border + 55 + photoHeight;
