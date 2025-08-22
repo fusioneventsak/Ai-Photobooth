@@ -1,12 +1,23 @@
 import { supabase } from './supabase';
 
+// Model constants export (this fixes the import error)
+export const REPLICATE_MODELS = {
+  VIDEO: {
+    WAN_VIDEO: 'wan-video/wan-2.2-i2v-fast',
+    HAILUO: 'minimax/hailuo-02-fast',
+  },
+  IMAGE: {
+    FLUX: 'black-forest-labs/flux-schnell',
+  }
+} as const;
+
 interface GenerationOptions {
   prompt: string;
   inputData: string;
   type: 'image' | 'video';
   duration?: number;
   preserveFace?: boolean;
-  model?: 'wan-video' | 'hailuo' | 'flux'; // Added model selection
+  model?: 'wan-video' | 'hailuo' | 'flux';
 }
 
 export async function generateWithReplicate({ 
@@ -84,4 +95,10 @@ export function getAvailableModels(type: 'image' | 'video') {
       { id: 'flux', name: 'FLUX Schnell', description: 'Fast image generation' }
     ];
   }
+}
+
+// Get model info by ID
+export function getModelInfo(modelId: string, type: 'image' | 'video') {
+  const models = getAvailableModels(type);
+  return models.find(model => model.id === modelId);
 }
