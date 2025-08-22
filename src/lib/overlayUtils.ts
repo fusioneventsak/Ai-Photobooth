@@ -601,15 +601,18 @@ const BUILT_IN_BORDERS: { [key: string]: (width: number, height: number) => stri
     return canvas.toDataURL();
   },
 
-  // TRADING CARD OVERLAYS - NOW INCLUDED
+  // TRADING CARD OVERLAYS - REDESIGNED WITH PROPER TEXT AND PROPORTIONS
   'pokemon-classic': (width: number, height: number) => {
     const canvas = document.createElement('canvas');
     canvas.width = width;
     canvas.height = height;
     const ctx = canvas.getContext('2d')!;
     
-    const borderWidth = Math.min(width, height) * 0.12;
-    const photoHeight = height * 0.6; // Photo takes up 60% of card height
+    const border = 15; // Even border on all sides
+    const cardWidth = width - (border * 2);
+    const cardHeight = height - (border * 2);
+    const photoHeight = cardHeight * 0.45; // Larger photo area
+    const photoWidth = cardWidth - 20; // 10px margin on each side
     
     // Classic Pokemon card yellow gradient background
     const pokemonGrad = ctx.createLinearGradient(0, 0, 0, height);
@@ -623,40 +626,115 @@ const BUILT_IN_BORDERS: { [key: string]: (width: number, height: number) => stri
     
     // Card border with rounded corners
     ctx.strokeStyle = '#000000';
-    ctx.lineWidth = 4;
+    ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.roundRect(8, 8, width - 16, height - 16, 15);
+    ctx.roundRect(border, border, cardWidth, cardHeight, 12);
     ctx.stroke();
     
-    // Inner border
+    // Inner white border
     ctx.strokeStyle = '#FFFFFF';
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.roundRect(12, 12, width - 24, height - 24, 12);
+    ctx.roundRect(border + 3, border + 3, cardWidth - 6, cardHeight - 6, 10);
     ctx.stroke();
     
-    // Energy symbols in corners
+    // Pokemon name area (top)
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+    ctx.fillRect(border + 10, border + 10, cardWidth - 20, 35);
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(border + 10, border + 10, cardWidth - 20, 35);
+    
+    // Add "POKEMON NAME" text
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 14px Arial';
+    ctx.textAlign = 'left';
+    ctx.fillText('POKEMON NAME', border + 15, border + 30);
+    
+    // HP section (top right)
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+    ctx.fillRect(width - border - 70, border + 10, 60, 35);
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(width - border - 70, border + 10, 60, 35);
+    
+    // Add HP text
+    ctx.fillStyle = '#FF0000';
+    ctx.font = 'bold 12px Arial';
+    ctx.textAlign = 'right';
+    ctx.fillText('HP 120', width - border - 15, border + 30);
+    
+    // Energy symbols (top left and right)
     ctx.fillStyle = '#FF0000';
     ctx.beginPath();
-    ctx.arc(30, 30, 12, 0, Math.PI * 2);
+    ctx.arc(border + 25, border + 60, 8, 0, Math.PI * 2);
     ctx.fill();
     
     ctx.fillStyle = '#0000FF';
     ctx.beginPath();
-    ctx.arc(width - 30, 30, 12, 0, Math.PI * 2);
+    ctx.arc(width - border - 25, border + 60, 8, 0, Math.PI * 2);
     ctx.fill();
     
-    // HP bar area (top right)
+    // Pokemon type/stage area
     ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-    ctx.fillRect(width - 80, 50, 60, 25);
+    ctx.fillRect(border + 10, border + 55, cardWidth - 20, 25);
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(border + 10, border + 55, cardWidth - 20, 25);
     
-    // Stats area (bottom)
+    // Add stage text
+    ctx.fillStyle = '#000000';
+    ctx.font = '10px Arial';
+    ctx.textAlign = 'left';
+    ctx.fillText('Stage 1 Pokemon', border + 15, border + 70);
+    
+    // Attack section (below photo)
+    const attackY = border + 90 + photoHeight;
     ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-    ctx.fillRect(borderWidth, height - borderWidth * 2, width - borderWidth * 2, borderWidth * 1.5);
+    ctx.fillRect(border + 10, attackY, cardWidth - 20, 80);
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(border + 10, attackY, cardWidth - 20, 80);
     
-    // Clear center for photo (upper portion of card)
+    // Add attack details
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 11px Arial';
+    ctx.textAlign = 'left';
+    ctx.fillText('Thunder Shock', border + 35, attackY + 20);
+    
+    ctx.font = '9px Arial';
+    ctx.fillText('Flip a coin. If heads, the opponent', border + 15, attackY + 40);
+    ctx.fillText('is paralyzed.', border + 15, attackY + 52);
+    
+    // Damage
+    ctx.font = 'bold 14px Arial';
+    ctx.textAlign = 'right';
+    ctx.fillText('30', cardWidth + border - 15, attackY + 25);
+    
+    // Energy cost for attack
+    ctx.fillStyle = '#FFFF00';
+    ctx.beginPath();
+    ctx.arc(border + 25, attackY + 20, 8, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Stats section (bottom)
+    const statsY = height - border - 50;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.fillRect(border + 10, statsY, cardWidth - 20, 40);
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(border + 10, statsY, cardWidth - 20, 40);
+    
+    // Add stats text
+    ctx.fillStyle = '#000000';
+    ctx.font = '8px Arial';
+    ctx.textAlign = 'left';
+    ctx.fillText('Length: 1\'04"  Weight: 13.2 lbs', border + 15, statsY + 15);
+    ctx.fillText('Weakness: Fighting  Resistance: None', border + 15, statsY + 27);
+    
+    // Clear center for photo
     ctx.globalCompositeOperation = 'destination-out';
-    ctx.fillRect(borderWidth + 10, borderWidth + 50, width - (borderWidth + 10) * 2, photoHeight - 60);
+    ctx.fillRect(border + 10, border + 85, photoWidth, photoHeight);
     
     return canvas.toDataURL();
   },
@@ -667,8 +745,11 @@ const BUILT_IN_BORDERS: { [key: string]: (width: number, height: number) => stri
     canvas.height = height;
     const ctx = canvas.getContext('2d')!;
     
-    const borderWidth = Math.min(width, height) * 0.12;
-    const photoHeight = height * 0.6;
+    const border = 15;
+    const cardWidth = width - (border * 2);
+    const cardHeight = height - (border * 2);
+    const photoHeight = cardHeight * 0.42;
+    const photoWidth = cardWidth - 20;
     
     // GX holographic background
     const gxGrad = ctx.createConicGradient(Math.PI/4, width/2, height/2);
@@ -683,9 +764,9 @@ const BUILT_IN_BORDERS: { [key: string]: (width: number, height: number) => stri
     
     // Holographic shimmer overlay
     const shimmerGrad = ctx.createLinearGradient(0, 0, width, height);
-    shimmerGrad.addColorStop(0, 'rgba(255, 255, 255, 0.6)');
+    shimmerGrad.addColorStop(0, 'rgba(255, 255, 255, 0.4)');
     shimmerGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0.1)');
-    shimmerGrad.addColorStop(1, 'rgba(255, 255, 255, 0.6)');
+    shimmerGrad.addColorStop(1, 'rgba(255, 255, 255, 0.4)');
     ctx.fillStyle = shimmerGrad;
     ctx.fillRect(0, 0, width, height);
     
@@ -693,24 +774,81 @@ const BUILT_IN_BORDERS: { [key: string]: (width: number, height: number) => stri
     ctx.strokeStyle = '#000000';
     ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.roundRect(6, 6, width - 12, height - 12, 20);
+    ctx.roundRect(border, border, cardWidth, cardHeight, 15);
     ctx.stroke();
     
-    // GX text background
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-    ctx.fillRect(width - 60, height - 80, 50, 30);
+    // Silver inner border
+    ctx.strokeStyle = '#C0C0C0';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(border + 3, border + 3, cardWidth - 6, cardHeight - 6, 12);
+    ctx.stroke();
     
-    // Energy cost circles
+    // Pokemon name with GX styling
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+    ctx.fillRect(border + 10, border + 10, cardWidth - 20, 40);
+    
+    ctx.fillStyle = '#FFD700';
+    ctx.font = 'bold 16px Arial';
+    ctx.textAlign = 'left';
+    ctx.fillText('PIKACHU', border + 15, border + 35);
+    
+    ctx.fillStyle = '#FF69B4';
+    ctx.font = 'bold 14px Arial';
+    ctx.fillText('GX', cardWidth - 25, border + 35);
+    
+    // HP section
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+    ctx.fillRect(width - border - 80, border + 55, 70, 30);
+    
+    ctx.fillStyle = '#FF0000';
+    ctx.font = 'bold 14px Arial';
+    ctx.textAlign = 'right';
+    ctx.fillText('HP 200', width - border - 15, border + 75);
+    
+    // GX Attack section
+    const gxAttackY = border + 95 + photoHeight;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
+    ctx.fillRect(border + 10, gxAttackY, cardWidth - 20, 60);
+    
+    ctx.fillStyle = '#FFD700';
+    ctx.font = 'bold 12px Arial';
+    ctx.textAlign = 'left';
+    ctx.fillText('Thunder Storm GX', border + 40, gxAttackY + 20);
+    
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = '9px Arial';
+    ctx.fillText('Deal 150 damage to each opponent', border + 15, gxAttackY + 35);
+    ctx.fillText('Pokemon. (You can\'t use more than 1 GX)', border + 15, gxAttackY + 47);
+    
+    // Energy cost
     for (let i = 0; i < 3; i++) {
-      ctx.fillStyle = ['#FF0000', '#0000FF', '#FFFF00'][i];
+      ctx.fillStyle = ['#FFFF00', '#FFFF00', '#FFFF00'][i];
       ctx.beginPath();
-      ctx.arc(30 + i * 35, height - 50, 15, 0, Math.PI * 2);
+      ctx.arc(border + 25 + (i * 20), gxAttackY + 20, 8, 0, Math.PI * 2);
       ctx.fill();
     }
     
+    // Damage
+    ctx.fillStyle = '#FFD700';
+    ctx.font = 'bold 16px Arial';
+    ctx.textAlign = 'right';
+    ctx.fillText('150', cardWidth + border - 15, gxAttackY + 25);
+    
+    // Bottom stats
+    const statsY = height - border - 45;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+    ctx.fillRect(border + 10, statsY, cardWidth - 20, 35);
+    
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = '8px Arial';
+    ctx.textAlign = 'left';
+    ctx.fillText('Weakness: Fighting x2  Resistance: Metal -20', border + 15, statsY + 15);
+    ctx.fillText('Retreat Cost: 1', border + 15, statsY + 27);
+    
     // Clear center for photo
     ctx.globalCompositeOperation = 'destination-out';
-    ctx.fillRect(borderWidth + 8, borderWidth + 40, width - (borderWidth + 8) * 2, photoHeight - 50);
+    ctx.fillRect(border + 10, border + 90, photoWidth, photoHeight);
     
     return canvas.toDataURL();
   },
@@ -721,42 +859,93 @@ const BUILT_IN_BORDERS: { [key: string]: (width: number, height: number) => stri
     canvas.height = height;
     const ctx = canvas.getContext('2d')!;
     
-    const borderWidth = Math.min(width, height) * 0.1;
-    const photoHeight = height * 0.7;
+    const border = 15;
+    const cardWidth = width - (border * 2);
+    const cardHeight = height - (border * 2);
+    const photoHeight = cardHeight * 0.55;
+    const photoWidth = cardWidth - 20;
     
-    // Baseball card classic white/cream background
+    // Classic baseball card cream background
     ctx.fillStyle = '#FFFEF7';
     ctx.fillRect(0, 0, width, height);
     
     // Team colors stripe (top)
     const teamGrad = ctx.createLinearGradient(0, 0, width, 0);
     teamGrad.addColorStop(0, '#003366');
+    teamGrad.addColorStop(0.5, '#FFFFFF');
     teamGrad.addColorStop(1, '#FF0000');
     ctx.fillStyle = teamGrad;
-    ctx.fillRect(0, 0, width, 30);
+    ctx.fillRect(border, border, cardWidth, 25);
     
-    // Border
+    // Card border
     ctx.strokeStyle = '#000000';
     ctx.lineWidth = 2;
-    ctx.strokeRect(2, 2, width - 4, height - 4);
-    
-    // Player name area (bottom)
-    ctx.fillStyle = '#003366';
-    ctx.fillRect(0, height - 60, width, 60);
-    
-    // Stats area
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
-    ctx.fillRect(borderWidth, height - 120, width - borderWidth * 2, 55);
+    ctx.strokeRect(border, border, cardWidth, cardHeight);
     
     // Team logo area (top left)
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.fillStyle = '#FFFFFF';
     ctx.beginPath();
-    ctx.arc(40, 60, 25, 0, Math.PI * 2);
+    ctx.arc(border + 35, border + 50, 20, 0, Math.PI * 2);
     ctx.fill();
+    ctx.strokeStyle = '#003366';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    
+    // Add team text
+    ctx.fillStyle = '#003366';
+    ctx.font = 'bold 8px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('TEAM', border + 35, border + 55);
+    
+    // Player position (top right)
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(width - border - 60, border + 30, 50, 25);
+    ctx.strokeStyle = '#003366';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(width - border - 60, border + 30, 50, 25);
+    
+    ctx.fillStyle = '#003366';
+    ctx.font = 'bold 10px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('SS', width - border - 35, border + 47);
+    
+    // Player name area (below photo)
+    const nameY = border + 65 + photoHeight;
+    ctx.fillStyle = '#003366';
+    ctx.fillRect(border + 5, nameY, cardWidth - 10, 30);
+    
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = 'bold 14px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('PLAYER NAME', width/2, nameY + 20);
+    
+    // Stats section
+    const statsY = nameY + 35;
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(border + 5, statsY, cardWidth - 10, 70);
+    ctx.strokeStyle = '#003366';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(border + 5, statsY, cardWidth - 10, 70);
+    
+    // Add stats
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 10px Arial';
+    ctx.textAlign = 'left';
+    ctx.fillText('2024 SEASON STATS', border + 15, statsY + 15);
+    
+    ctx.font = '9px Arial';
+    ctx.fillText('AVG: .325  HR: 42  RBI: 108', border + 15, statsY + 30);
+    ctx.fillText('OBP: .412  SLG: .587  OPS: .999', border + 15, statsY + 42);
+    ctx.fillText('G: 162  AB: 594  H: 193  R: 112', border + 15, statsY + 54);
+    
+    // Team/Year info
+    ctx.font = 'bold 8px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('MAJOR LEAGUE BASEBALL 2024', width/2, statsY + 67);
     
     // Clear center for photo
     ctx.globalCompositeOperation = 'destination-out';
-    ctx.fillRect(borderWidth, 35, width - borderWidth * 2, photoHeight - 40);
+    ctx.fillRect(border + 10, border + 60, photoWidth, photoHeight);
     
     return canvas.toDataURL();
   },
@@ -767,8 +956,11 @@ const BUILT_IN_BORDERS: { [key: string]: (width: number, height: number) => stri
     canvas.height = height;
     const ctx = canvas.getContext('2d')!;
     
-    const borderWidth = Math.min(width, height) * 0.1;
-    const photoHeight = height * 0.7;
+    const border = 15;
+    const cardWidth = width - (border * 2);
+    const cardHeight = height - (border * 2);
+    const photoHeight = cardHeight * 0.52;
+    const photoWidth = cardWidth - 20;
     
     // Basketball court wood background
     const woodGrad = ctx.createLinearGradient(0, 0, 0, height);
@@ -779,29 +971,82 @@ const BUILT_IN_BORDERS: { [key: string]: (width: number, height: number) => stri
     ctx.fillStyle = woodGrad;
     ctx.fillRect(0, 0, width, height);
     
-    // Court lines
-    ctx.strokeStyle = '#FFFFFF';
+    // Card border
+    ctx.strokeStyle = '#000000';
     ctx.lineWidth = 3;
+    ctx.strokeRect(border, border, cardWidth, cardHeight);
     
-    // Three-point line arc (decorative)
+    // Team colors header
+    ctx.fillStyle = '#FF6600';
+    ctx.fillRect(border + 5, border + 5, cardWidth - 10, 15);
+    ctx.fillStyle = '#000080';
+    ctx.fillRect(border + 5, border + 20, cardWidth - 10, 15);
+    
+    // Player number (top right)
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(width - border - 50, border + 40, 40, 40);
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(width - border - 50, border + 40, 40, 40);
+    
+    ctx.fillStyle = '#FF6600';
+    ctx.font = 'bold 20px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('23', width - border - 30, border + 65);
+    
+    // Court lines decoration
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = 2;
+    
+    // Three-point arc
     ctx.beginPath();
-    ctx.arc(width/2, height + 50, 80, Math.PI * 1.2, Math.PI * 1.8);
+    ctx.arc(width/2, height + 80, 100, Math.PI * 1.1, Math.PI * 1.9);
     ctx.stroke();
     
-    // Team colors banner
-    ctx.fillStyle = '#FF6600';
-    ctx.fillRect(0, height - 80, width, 40);
-    
+    // Player name area
+    const nameY = border + 85 + photoHeight;
     ctx.fillStyle = '#000080';
-    ctx.fillRect(0, height - 40, width, 40);
+    ctx.fillRect(border + 5, nameY, cardWidth - 10, 25);
     
-    // Player number area (top right)
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-    ctx.fillRect(width - 70, 20, 60, 60);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = 'bold 12px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('PLAYER NAME', width/2, nameY + 17);
+    
+    // Stats section
+    const statsY = nameY + 30;
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(border + 5, statsY, cardWidth - 10, 65);
+    ctx.strokeStyle = '#000080';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(border + 5, statsY, cardWidth - 10, 65);
+    
+    // Add basketball stats
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 9px Arial';
+    ctx.textAlign = 'left';
+    ctx.fillText('2023-24 SEASON', border + 15, statsY + 12);
+    
+    ctx.font = '8px Arial';
+    ctx.fillText('PPG: 28.7  RPG: 8.3  APG: 6.8', border + 15, statsY + 25);
+    ctx.fillText('FG%: .487  3P%: .389  FT%: .853', border + 15, statsY + 35);
+    ctx.fillText('Games: 74  Minutes: 34.8', border + 15, statsY + 45);
+    
+    // Position
+    ctx.fillStyle = '#FF6600';
+    ctx.font = 'bold 8px Arial';
+    ctx.textAlign = 'left';
+    ctx.fillText('SMALL FORWARD', border + 15, statsY + 58);
+    
+    // League info
+    ctx.fillStyle = '#000080';
+    ctx.font = 'bold 7px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('NATIONAL BASKETBALL ASSOCIATION', width/2, height - border - 8);
     
     // Clear center for photo
     ctx.globalCompositeOperation = 'destination-out';
-    ctx.fillRect(borderWidth, borderWidth + 10, width - borderWidth * 2, photoHeight - 20);
+    ctx.fillRect(border + 10, border + 85, photoWidth, photoHeight);
     
     return canvas.toDataURL();
   },
@@ -812,8 +1057,11 @@ const BUILT_IN_BORDERS: { [key: string]: (width: number, height: number) => stri
     canvas.height = height;
     const ctx = canvas.getContext('2d')!;
     
-    const borderWidth = Math.min(width, height) * 0.1;
-    const photoHeight = height * 0.7;
+    const border = 15;
+    const cardWidth = width - (border * 2);
+    const cardHeight = height - (border * 2);
+    const photoHeight = cardHeight * 0.50;
+    const photoWidth = cardWidth - 20;
     
     // Football field green background
     const fieldGrad = ctx.createLinearGradient(0, 0, 0, height);
@@ -824,32 +1072,90 @@ const BUILT_IN_BORDERS: { [key: string]: (width: number, height: number) => stri
     ctx.fillStyle = fieldGrad;
     ctx.fillRect(0, 0, width, height);
     
-    // Yard lines
+    // Yard lines pattern
     ctx.strokeStyle = '#FFFFFF';
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 1;
     
-    for (let y = 20; y < height - 20; y += 25) {
+    for (let y = border + 20; y < height - border - 20; y += 25) {
       ctx.beginPath();
-      ctx.moveTo(10, y);
-      ctx.lineTo(width - 10, y);
+      ctx.moveTo(border + 10, y);
+      ctx.lineTo(width - border - 10, y);
       ctx.stroke();
     }
     
+    // Card border
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(border, border, cardWidth, cardHeight);
+    
     // Team helmet area (top left)
-    ctx.fillStyle = 'rgba(0, 0, 139, 0.9)';
-    ctx.fillRect(15, 15, 80, 50);
+    ctx.fillStyle = '#000080';
+    ctx.fillRect(border + 10, border + 10, 60, 35);
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(border + 10, border + 10, 60, 35);
     
-    // Player stats (bottom)
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
-    ctx.fillRect(0, height - 70, width, 70);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = 'bold 8px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('TEAM', border + 40, border + 30);
     
-    // Position/Number (top right)
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-    ctx.fillRect(width - 60, 15, 50, 50);
+    // Player number/position (top right)
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(width - border - 60, border + 10, 50, 35);
+    ctx.strokeStyle = '#000080';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(width - border - 60, border + 10, 50, 35);
+    
+    ctx.fillStyle = '#000080';
+    ctx.font = 'bold 16px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('12', width - border - 35, border + 25);
+    
+    ctx.font = 'bold 8px Arial';
+    ctx.fillText('QB', width - border - 35, border + 38);
+    
+    // Player name area
+    const nameY = border + 55 + photoHeight;
+    ctx.fillStyle = '#000080';
+    ctx.fillRect(border + 5, nameY, cardWidth - 10, 28);
+    
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = 'bold 13px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('PLAYER NAME', width/2, nameY + 18);
+    
+    // Stats section
+    const statsY = nameY + 33;
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(border + 5, statsY, cardWidth - 10, 80);
+    ctx.strokeStyle = '#000080';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(border + 5, statsY, cardWidth - 10, 80);
+    
+    // Add football stats
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 9px Arial';
+    ctx.textAlign = 'left';
+    ctx.fillText('2024 SEASON STATS', border + 15, statsY + 12);
+    
+    ctx.font = '8px Arial';
+    ctx.fillText('PASSING:', border + 15, statsY + 25);
+    ctx.fillText('Completions: 389  Attempts: 590', border + 15, statsY + 35);
+    ctx.fillText('Yards: 4,624  TDs: 35  INTs: 8', border + 15, statsY + 45);
+    ctx.fillText('Rating: 108.2  Completion %: 65.9', border + 15, statsY + 55);
+    
+    ctx.fillText('RUSHING: 125 yds, 6 TDs', border + 15, statsY + 68);
+    
+    // League info
+    ctx.fillStyle = '#000080';
+    ctx.font = 'bold 7px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('NATIONAL FOOTBALL LEAGUE', width/2, height - border - 8);
     
     // Clear center for photo
     ctx.globalCompositeOperation = 'destination-out';
-    ctx.fillRect(borderWidth, borderWidth + 15, width - borderWidth * 2, photoHeight - 25);
+    ctx.fillRect(border + 10, border + 50, photoWidth, photoHeight);
     
     return canvas.toDataURL();
   },
@@ -860,8 +1166,11 @@ const BUILT_IN_BORDERS: { [key: string]: (width: number, height: number) => stri
     canvas.height = height;
     const ctx = canvas.getContext('2d')!;
     
-    const borderWidth = Math.min(width, height) * 0.12;
-    const photoHeight = height * 0.5;
+    const border = 15;
+    const cardWidth = width - (border * 2);
+    const cardHeight = height - (border * 2);
+    const photoHeight = cardHeight * 0.42;
+    const photoWidth = cardWidth - 20;
     
     // Yu-Gi-Oh tan/beige background
     const yugiohGrad = ctx.createLinearGradient(0, 0, 0, height);
@@ -874,43 +1183,115 @@ const BUILT_IN_BORDERS: { [key: string]: (width: number, height: number) => stri
     
     // Card border with Egyptian styling
     ctx.strokeStyle = '#8B4513';
-    ctx.lineWidth = 4;
-    ctx.strokeRect(6, 6, width - 12, height - 12);
+    ctx.lineWidth = 3;
+    ctx.strokeRect(border, border, cardWidth, cardHeight);
     
     // Inner decorative border
     ctx.strokeStyle = '#DAA520';
     ctx.lineWidth = 2;
-    ctx.strokeRect(10, 10, width - 20, height - 20);
+    ctx.strokeRect(border + 3, border + 3, cardWidth - 6, cardHeight - 6);
     
-    // Attribute symbol area (top right)
+    // Monster name area
+    ctx.fillStyle = 'rgba(218, 165, 32, 0.9)';
+    ctx.fillRect(border + 8, border + 8, cardWidth - 16, 25);
+    ctx.strokeStyle = '#8B4513';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(border + 8, border + 8, cardWidth - 16, 25);
+    
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 12px Arial';
+    ctx.textAlign = 'left';
+    ctx.fillText('MONSTER NAME', border + 15, border + 25);
+    
+    // Attribute symbol (top right)
     ctx.fillStyle = '#FF6347';
     ctx.beginPath();
-    ctx.arc(width - 35, 35, 20, 0, Math.PI * 2);
+    ctx.arc(width - border - 25, border + 45, 15, 0, Math.PI * 2);
     ctx.fill();
+    ctx.strokeStyle = '#8B4513';
+    ctx.lineWidth = 2;
+    ctx.stroke();
     
-    // Level stars area (below photo)
-    const starY = photoHeight + borderWidth + 20;
-    for (let i = 0; i < 8; i++) {
-      if (i < 5) { // Only show 5 stars for this example
+    // Add attribute text
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = 'bold 8px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('FIRE', width - border - 25, border + 50);
+    
+    // Monster type/level area
+    ctx.fillStyle = 'rgba(139, 69, 19, 0.9)';
+    ctx.fillRect(border + 8, border + 38, cardWidth - 60, 25);
+    
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = '9px Arial';
+    ctx.textAlign = 'left';
+    ctx.fillText('[Dragon/Effect]', border + 15, border + 53);
+    
+    // Level stars
+    const starY = border + 70;
+    for (let i = 0; i < 7; i++) {
+      if (i < 5) { // 5-star monster
         ctx.fillStyle = '#FFD700';
         ctx.beginPath();
-        // Simple star shape (pentagon)
-        ctx.arc(30 + i * 35, starY, 8, 0, Math.PI * 2);
+        // Create star shape
+        const x = border + 15 + (i * 20);
+        const y = starY;
+        ctx.moveTo(x, y - 6);
+        ctx.lineTo(x + 2, y - 2);
+        ctx.lineTo(x + 6, y - 2);
+        ctx.lineTo(x + 3, y + 1);
+        ctx.lineTo(x + 4, y + 5);
+        ctx.lineTo(x, y + 3);
+        ctx.lineTo(x - 4, y + 5);
+        ctx.lineTo(x - 3, y + 1);
+        ctx.lineTo(x - 6, y - 2);
+        ctx.lineTo(x - 2, y - 2);
+        ctx.closePath();
         ctx.fill();
+        ctx.strokeStyle = '#B8860B';
+        ctx.lineWidth = 1;
+        ctx.stroke();
       }
     }
     
-    // Attack/Defense area (bottom)
-    ctx.fillStyle = 'rgba(139, 69, 19, 0.9)';
-    ctx.fillRect(borderWidth, height - 60, width - borderWidth * 2, 50);
+    // Monster effect description
+    const effectY = border + 85 + photoHeight;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+    ctx.fillRect(border + 8, effectY, cardWidth - 16, 60);
+    ctx.strokeStyle = '#8B4513';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(border + 8, effectY, cardWidth - 16, 60);
     
-    // Name area (below photo, above stars)
-    ctx.fillStyle = 'rgba(218, 165, 32, 0.9)';
-    ctx.fillRect(borderWidth, photoHeight + borderWidth, width - borderWidth * 2, 35);
+    ctx.fillStyle = '#000000';
+    ctx.font = '8px Arial';
+    ctx.textAlign = 'left';
+    ctx.fillText('When this card is Normal Summoned:', border + 12, effectY + 12);
+    ctx.fillText('You can add 1 "Blue-Eyes" monster', border + 12, effectY + 23);
+    ctx.fillText('from your Deck to your hand.', border + 12, effectY + 34);
+    ctx.fillText('This card can attack directly.', border + 12, effectY + 45);
+    
+    // ATK/DEF section
+    const statsY = height - border - 35;
+    ctx.fillStyle = 'rgba(139, 69, 19, 0.9)';
+    ctx.fillRect(border + 8, statsY, cardWidth - 16, 25);
+    
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = 'bold 10px Arial';
+    ctx.textAlign = 'left';
+    ctx.fillText('ATK/2500', border + 15, statsY + 15);
+    
+    ctx.textAlign = 'right';
+    ctx.fillText('DEF/2000', width - border - 15, statsY + 15);
+    
+    // Set number
+    ctx.fillStyle = '#000000';
+    ctx.font = '6px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('LOB-001', width/2, height - border - 5);
     
     // Clear center for monster artwork
     ctx.globalCompositeOperation = 'destination-out';
-    ctx.fillRect(borderWidth + 5, borderWidth + 5, width - (borderWidth + 5) * 2, photoHeight - 10);
+    ctx.fillRect(border + 10, border + 80, photoWidth, photoHeight);
     
     return canvas.toDataURL();
   }
