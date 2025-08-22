@@ -913,6 +913,320 @@ const BUILT_IN_BORDERS: { [key: string]: (width: number, height: number) => stri
     ctx.fillRect(borderWidth + 5, borderWidth + 5, width - (borderWidth + 5) * 2, photoHeight - 10);
     
     return canvas.toDataURL();
+  },
+
+  // NEW TRADING CARD OVERLAYS
+  'pokemon-classic': (width: number, height: number) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d')!;
+    
+    const borderWidth = Math.min(width, height) * 0.12;
+    const photoHeight = height * 0.6; // Photo takes up 60% of card height
+    
+    // Classic Pokemon card yellow gradient background
+    const pokemonGrad = ctx.createLinearGradient(0, 0, 0, height);
+    pokemonGrad.addColorStop(0, '#FFD700');
+    pokemonGrad.addColorStop(0.3, '#FFA500');
+    pokemonGrad.addColorStop(0.7, '#FF8C00');
+    pokemonGrad.addColorStop(1, '#FF6347');
+    
+    ctx.fillStyle = pokemonGrad;
+    ctx.fillRect(0, 0, width, height);
+    
+    // Card border with rounded corners
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.roundRect(8, 8, width - 16, height - 16, 15);
+    ctx.stroke();
+    
+    // Inner border
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(12, 12, width - 24, height - 24, 12);
+    ctx.stroke();
+    
+    // Energy symbols in corners
+    ctx.fillStyle = '#FF0000';
+    ctx.beginPath();
+    ctx.arc(30, 30, 12, 0, Math.PI * 2);
+    ctx.fill();
+    
+    ctx.fillStyle = '#0000FF';
+    ctx.beginPath();
+    ctx.arc(width - 30, 30, 12, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // HP bar area (top right)
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.fillRect(width - 80, 50, 60, 25);
+    
+    // Stats area (bottom)
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.fillRect(borderWidth, height - borderWidth * 2, width - borderWidth * 2, borderWidth * 1.5);
+    
+    // Clear center for photo (upper portion of card)
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.fillRect(borderWidth + 10, borderWidth + 50, width - (borderWidth + 10) * 2, photoHeight - 60);
+    
+    return canvas.toDataURL();
+  },
+
+  'pokemon-gx': (width: number, height: number) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d')!;
+    
+    const borderWidth = Math.min(width, height) * 0.12;
+    const photoHeight = height * 0.6;
+    
+    // GX holographic background
+    const gxGrad = ctx.createConicGradient(Math.PI/4, width/2, height/2);
+    gxGrad.addColorStop(0, '#FFD700');
+    gxGrad.addColorStop(0.25, '#FF69B4');
+    gxGrad.addColorStop(0.5, '#00CED1');
+    gxGrad.addColorStop(0.75, '#9370DB');
+    gxGrad.addColorStop(1, '#FFD700');
+    
+    ctx.fillStyle = gxGrad;
+    ctx.fillRect(0, 0, width, height);
+    
+    // Holographic shimmer overlay
+    const shimmerGrad = ctx.createLinearGradient(0, 0, width, height);
+    shimmerGrad.addColorStop(0, 'rgba(255, 255, 255, 0.6)');
+    shimmerGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0.1)');
+    shimmerGrad.addColorStop(1, 'rgba(255, 255, 255, 0.6)');
+    ctx.fillStyle = shimmerGrad;
+    ctx.fillRect(0, 0, width, height);
+    
+    // Modern card border
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.roundRect(6, 6, width - 12, height - 12, 20);
+    ctx.stroke();
+    
+    // GX text background
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+    ctx.fillRect(width - 60, height - 80, 50, 30);
+    
+    // Energy cost circles
+    for (let i = 0; i < 3; i++) {
+      ctx.fillStyle = ['#FF0000', '#0000FF', '#FFFF00'][i];
+      ctx.beginPath();
+      ctx.arc(30 + i * 35, height - 50, 15, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    
+    // Clear center for photo
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.fillRect(borderWidth + 8, borderWidth + 40, width - (borderWidth + 8) * 2, photoHeight - 50);
+    
+    return canvas.toDataURL();
+  },
+
+  'sports-baseball': (width: number, height: number) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d')!;
+    
+    const borderWidth = Math.min(width, height) * 0.1;
+    const photoHeight = height * 0.7;
+    
+    // Baseball card classic white/cream background
+    ctx.fillStyle = '#FFFEF7';
+    ctx.fillRect(0, 0, width, height);
+    
+    // Team colors stripe (top)
+    const teamGrad = ctx.createLinearGradient(0, 0, width, 0);
+    teamGrad.addColorStop(0, '#003366');
+    teamGrad.addColorStop(1, '#FF0000');
+    ctx.fillStyle = teamGrad;
+    ctx.fillRect(0, 0, width, 30);
+    
+    // Border
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(2, 2, width - 4, height - 4);
+    
+    // Player name area (bottom)
+    ctx.fillStyle = '#003366';
+    ctx.fillRect(0, height - 60, width, 60);
+    
+    // Stats area
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+    ctx.fillRect(borderWidth, height - 120, width - borderWidth * 2, 55);
+    
+    // Team logo area (top left)
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.beginPath();
+    ctx.arc(40, 60, 25, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Clear center for photo
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.fillRect(borderWidth, 35, width - borderWidth * 2, photoHeight - 40);
+    
+    return canvas.toDataURL();
+  },
+
+  'sports-basketball': (width: number, height: number) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d')!;
+    
+    const borderWidth = Math.min(width, height) * 0.1;
+    const photoHeight = height * 0.7;
+    
+    // Basketball court wood background
+    const woodGrad = ctx.createLinearGradient(0, 0, 0, height);
+    woodGrad.addColorStop(0, '#DEB887');
+    woodGrad.addColorStop(0.5, '#CD853F');
+    woodGrad.addColorStop(1, '#A0522D');
+    
+    ctx.fillStyle = woodGrad;
+    ctx.fillRect(0, 0, width, height);
+    
+    // Court lines
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = 3;
+    
+    // Three-point line arc (decorative)
+    ctx.beginPath();
+    ctx.arc(width/2, height + 50, 80, Math.PI * 1.2, Math.PI * 1.8);
+    ctx.stroke();
+    
+    // Team colors banner
+    ctx.fillStyle = '#FF6600';
+    ctx.fillRect(0, height - 80, width, 40);
+    
+    ctx.fillStyle = '#000080';
+    ctx.fillRect(0, height - 40, width, 40);
+    
+    // Player number area (top right)
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.fillRect(width - 70, 20, 60, 60);
+    
+    // Clear center for photo
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.fillRect(borderWidth, borderWidth + 10, width - borderWidth * 2, photoHeight - 20);
+    
+    return canvas.toDataURL();
+  },
+
+  'sports-football': (width: number, height: number) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d')!;
+    
+    const borderWidth = Math.min(width, height) * 0.1;
+    const photoHeight = height * 0.7;
+    
+    // Football field green background
+    const fieldGrad = ctx.createLinearGradient(0, 0, 0, height);
+    fieldGrad.addColorStop(0, '#228B22');
+    fieldGrad.addColorStop(0.5, '#32CD32');
+    fieldGrad.addColorStop(1, '#228B22');
+    
+    ctx.fillStyle = fieldGrad;
+    ctx.fillRect(0, 0, width, height);
+    
+    // Yard lines
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = 2;
+    
+    for (let y = 20; y < height - 20; y += 25) {
+      ctx.beginPath();
+      ctx.moveTo(10, y);
+      ctx.lineTo(width - 10, y);
+      ctx.stroke();
+    }
+    
+    // Team helmet area (top left)
+    ctx.fillStyle = 'rgba(0, 0, 139, 0.9)';
+    ctx.fillRect(15, 15, 80, 50);
+    
+    // Player stats (bottom)
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+    ctx.fillRect(0, height - 70, width, 70);
+    
+    // Position/Number (top right)
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.fillRect(width - 60, 15, 50, 50);
+    
+    // Clear center for photo
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.fillRect(borderWidth, borderWidth + 15, width - borderWidth * 2, photoHeight - 25);
+    
+    return canvas.toDataURL();
+  },
+
+  'yugioh-classic': (width: number, height: number) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d')!;
+    
+    const borderWidth = Math.min(width, height) * 0.12;
+    const photoHeight = height * 0.5;
+    
+    // Yu-Gi-Oh tan/beige background
+    const yugiohGrad = ctx.createLinearGradient(0, 0, 0, height);
+    yugiohGrad.addColorStop(0, '#F5DEB3');
+    yugiohGrad.addColorStop(0.5, '#DDD8B8');
+    yugiohGrad.addColorStop(1, '#D2B48C');
+    
+    ctx.fillStyle = yugiohGrad;
+    ctx.fillRect(0, 0, width, height);
+    
+    // Card border with Egyptian styling
+    ctx.strokeStyle = '#8B4513';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(6, 6, width - 12, height - 12);
+    
+    // Inner decorative border
+    ctx.strokeStyle = '#DAA520';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(10, 10, width - 20, height - 20);
+    
+    // Attribute symbol area (top right)
+    ctx.fillStyle = '#FF6347';
+    ctx.beginPath();
+    ctx.arc(width - 35, 35, 20, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Level stars area (below photo)
+    const starY = photoHeight + borderWidth + 20;
+    for (let i = 0; i < 8; i++) {
+      if (i < 5) { // Only show 5 stars for this example
+        ctx.fillStyle = '#FFD700';
+        ctx.beginPath();
+        // Simple star shape (pentagon)
+        ctx.arc(30 + i * 35, starY, 8, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    
+    // Attack/Defense area (bottom)
+    ctx.fillStyle = 'rgba(139, 69, 19, 0.9)';
+    ctx.fillRect(borderWidth, height - 60, width - borderWidth * 2, 50);
+    
+    // Name area (below photo, above stars)
+    ctx.fillStyle = 'rgba(218, 165, 32, 0.9)';
+    ctx.fillRect(borderWidth, photoHeight + borderWidth, width - borderWidth * 2, 35);
+    
+    // Clear center for monster artwork
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.fillRect(borderWidth + 5, borderWidth + 5, width - (borderWidth + 5) * 2, photoHeight - 10);
+    
+    return canvas.toDataURL();
   }
 };
 
