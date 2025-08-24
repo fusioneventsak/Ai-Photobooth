@@ -1,4 +1,4 @@
-// src/pages/Admin.tsx
+// src/pages/Admin.tsx - Updated to force Replicate for video only
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { 
@@ -79,11 +79,11 @@ export default function Admin() {
         face_preservation_mode: config.face_preservation_mode || 'preserve_face',
         use_controlnet: config.use_controlnet ?? true,
         controlnet_type: config.controlnet_type || 'auto',
-        // CRITICAL FIX: Proper provider defaults
+        // Provider defaults - video always uses replicate
         image_provider: config.image_provider || 'stability',
-        video_provider: config.video_provider || 'stability',
+        video_provider: 'replicate', // Always force Replicate for video
         use_provider_fallback: config.use_provider_fallback ?? true,
-        // Model selections (only relevant when using replicate)
+        // Model selections
         replicate_image_model: (config as any).replicate_image_model || 'flux-schnell',
         replicate_video_model: (config as any).replicate_video_model || 'stable-video-diffusion',
       });
@@ -139,10 +139,10 @@ export default function Admin() {
       if (formData.gallery_layout !== undefined) updates.gallery_layout = formData.gallery_layout;
       if (formData.gallery_images_per_page !== undefined) updates.gallery_images_per_page = formData.gallery_images_per_page;
       
-      // CRITICAL: Provider configuration
-      if (formData.image_provider !== undefined) updates.image_provider = formData.image_provider;
-      if (formData.video_provider !== undefined) updates.video_provider = formData.video_provider;
-      if (formData.use_provider_fallback !== undefined) updates.use_provider_fallback = formData.use_provider_fallback;
+      // Provider configuration - CRITICAL FIX: Always use Replicate for video
+      updates.image_provider = formData.image_provider || 'stability';
+      updates.video_provider = 'replicate'; // Force video to always use Replicate
+      updates.use_provider_fallback = formData.use_provider_fallback ?? true;
       
       // AI settings
       if (formData.model_type !== undefined) updates.model_type = formData.model_type;
@@ -152,9 +152,9 @@ export default function Admin() {
       if (formData.use_controlnet !== undefined) updates.use_controlnet = formData.use_controlnet;
       if (formData.controlnet_type !== undefined) updates.controlnet_type = formData.controlnet_type;
       
-      // Model selections (store as additional config data)
-      if (formData.replicate_image_model !== undefined) (updates as any).replicate_image_model = formData.replicate_image_model;
-      if (formData.replicate_video_model !== undefined) (updates as any).replicate_video_model = formData.replicate_video_model;
+      // Model selections (always save these)
+      (updates as any).replicate_image_model = formData.replicate_image_model || 'flux-schnell';
+      (updates as any).replicate_video_model = formData.replicate_video_model || 'stable-video-diffusion';
 
       const result = await updateConfig(updates);
       
@@ -613,7 +613,7 @@ export default function Admin() {
                     animate={{ opacity: 1, x: 0 }}
                     className="space-y-6"
                   >
-                    {/* AI Provider Selection - CRITICAL FIX */}
+                    {/* AI Provider Selection - Updated */}
                     <div className="bg-gray-800/50 backdrop-blur-sm rounded-2xl p-6">
                       <h2 className="text-2xl font-semibold mb-6 flex items-center gap-3">
                         <Wand2 className="w-6 h-6 text-purple-400" />
@@ -642,17 +642,21 @@ export default function Admin() {
 
                         <div>
                           <label className="block text-sm font-medium mb-2 text-gray-300">Video Generation Provider</label>
-                          <select
-                            name="video_provider"
-                            value={formData.video_provider || 'stability'}
-                            onChange={handleChange}
-                            className="w-full bg-gray-700/50 border border-gray-600 rounded-xl px-4 py-3 text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition"
-                          >
-                            <option value="stability">Stability AI (SVD)</option>
-                            <option value="replicate">Replicate (Multiple Models)</option>
-                          </select>
+                          <div className="relative">
+                            <select
+                              name="video_provider"
+                              value="replicate"
+                              disabled
+                              className="w-full bg-gray-600/50 border border-gray-500 rounded-xl px-4 py-3 text-gray-300 cursor-not-allowed"
+                            >
+                              <option value="replicate">Replicate (Multiple Models)</option>
+                            </select>
+                            <div className="absolute inset-y-0 right-3 flex items-center">
+                              <Video className="w-4 h-4 text-blue-400" />
+                            </div>
+                          </div>
                           <p className="text-xs text-gray-400 mt-2">
-                            Choose your preferred video generation provider
+                            Video generation uses Replicate models (Stable Video Diffusion, AnimateDiff, etc.)
                           </p>
                         </div>
                       </div>
@@ -722,8 +726,8 @@ export default function Admin() {
                       )}
                     </div>
 
-                    {/* Stability AI Settings - Only show if Stability is selected */}
-                    {(formData.image_provider === 'stability' || formData.video_provider === 'stability') && (
+                    {/* Stability AI Settings - Only show if Stability is selected for images */}
+                    {formData.image_provider === 'stability' && (
                       <div className="bg-gray-800/50 backdrop-blur-sm rounded-2xl p-6">
                         <h3 className="text-lg font-medium text-blue-200 mb-4 flex items-center gap-2">
                           <Settings className="w-5 h-5" />
@@ -786,164 +790,161 @@ export default function Admin() {
                       </div>
                     )}
 
-                    {/* Replicate Models - Only show if Replicate is selected */}
-                    {(formData.image_provider === 'replicate' || formData.video_provider === 'replicate') && (
-                      <div className="bg-gradient-to-br from-purple-900/20 to-blue-900/20 border border-purple-500/30 rounded-2xl p-6">
-                        <div className="flex items-center justify-between mb-6">
-                          <h3 className="text-xl font-semibold text-purple-200 flex items-center gap-3">
-                            <Wand2 className="w-6 h-6" />
-                            Replicate Model Selection
-                          </h3>
-                          <button
-                            type="button"
-                            onClick={handleTestConnection}
-                            disabled={testingConnection}
-                            className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-lg transition-colors"
-                          >
-                            {testingConnection ? (
-                              <>
-                                <RefreshCw className="w-4 h-4 animate-spin" />
-                                Testing...
-                              </>
-                            ) : (
-                              <>
-                                <TestTube className="w-4 h-4" />
-                                Test Connection
-                              </>
-                            )}
-                          </button>
-                        </div>
+                    {/* Replicate Models - Always show since we use it for video, optionally for images */}
+                    <div className="bg-gradient-to-br from-purple-900/20 to-blue-900/20 border border-purple-500/30 rounded-2xl p-6">
+                      <div className="flex items-center justify-between mb-6">
+                        <h3 className="text-xl font-semibold text-purple-200 flex items-center gap-3">
+                          <Wand2 className="w-6 h-6" />
+                          Replicate Model Selection
+                        </h3>
+                        <button
+                          type="button"
+                          onClick={handleTestConnection}
+                          disabled={testingConnection}
+                          className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-lg transition-colors"
+                        >
+                          {testingConnection ? (
+                            <>
+                              <RefreshCw className="w-4 h-4 animate-spin" />
+                              Testing...
+                            </>
+                          ) : (
+                            <>
+                              <TestTube className="w-4 h-4" />
+                              Test Connection
+                            </>
+                          )}
+                        </button>
+                      </div>
 
-                        {connectionResult && (
-                          <div className={`mb-6 p-4 rounded-xl border ${
-                            connectionResult.success 
-                              ? 'bg-green-900/20 border-green-600/30 text-green-200'
-                              : 'bg-red-900/20 border-red-600/30 text-red-200'
-                          }`}>
-                            <div className="flex items-center gap-2">
-                              {connectionResult.success ? (
-                                <CheckCircle className="w-5 h-5" />
-                              ) : (
-                                <XCircle className="w-5 h-5" />
-                              )}
-                              <span>
-                                {connectionResult.success 
-                                  ? `Connection successful${connectionResult.model ? ` with ${connectionResult.model}` : ''}`
-                                  : `Connection failed: ${connectionResult.error}`
-                                }
-                              </span>
-                            </div>
+                      {connectionResult && (
+                        <div className={`mb-6 p-4 rounded-xl border ${
+                          connectionResult.success 
+                            ? 'bg-green-900/20 border-green-600/30 text-green-200'
+                            : 'bg-red-900/20 border-red-600/30 text-red-200'
+                        }`}>
+                          <div className="flex items-center gap-2">
+                            {connectionResult.success ? (
+                              <CheckCircle className="w-5 h-5" />
+                            ) : (
+                              <XCircle className="w-5 h-5" />
+                            )}
+                            <span>
+                              {connectionResult.success 
+                                ? `Connection successful${connectionResult.model ? ` with ${connectionResult.model}` : ''}`
+                                : `Connection failed: ${connectionResult.error}`
+                              }
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Image Models - Only show if using Replicate for images */}
+                        {formData.image_provider === 'replicate' && (
+                          <div>
+                            <label className="block text-sm font-medium mb-3 text-gray-300 flex items-center gap-2">
+                              <Camera className="w-4 h-4" />
+                              Image Model
+                            </label>
+                            <select
+                              name="replicate_image_model"
+                              value={formData.replicate_image_model || 'flux-schnell'}
+                              onChange={handleChange}
+                              className="w-full bg-gray-700/50 border border-gray-600 rounded-xl px-4 py-3 text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition"
+                            >
+                              {Object.entries(REPLICATE_MODELS.image).map(([key, model]) => (
+                                <option key={key} value={key}>
+                                  {model.name}
+                                </option>
+                              ))}
+                            </select>
+                            
+                            {formData.replicate_image_model && (
+                              <div className="mt-3 p-3 bg-gray-700/30 rounded-lg">
+                                <div className="text-sm text-white font-medium mb-2">
+                                  {REPLICATE_MODELS.image[formData.replicate_image_model as ImageModel].name}
+                                </div>
+                                <div className="text-xs text-gray-400 mb-2">
+                                  {REPLICATE_MODELS.image[formData.replicate_image_model as ImageModel].description}
+                                </div>
+                                <div className="flex items-center gap-4 text-xs">
+                                  <div className="flex items-center gap-1">
+                                    {getSpeedIcon(REPLICATE_MODELS.image[formData.replicate_image_model as ImageModel].speed)}
+                                    <span>{REPLICATE_MODELS.image[formData.replicate_image_model as ImageModel].speed}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1">
+                                    {getQualityIcon(REPLICATE_MODELS.image[formData.replicate_image_model as ImageModel].quality)}
+                                    <span>{REPLICATE_MODELS.image[formData.replicate_image_model as ImageModel].quality}</span>
+                                  </div>
+                                </div>
+                                <div className="text-xs text-gray-400 mt-2">
+                                  Best for: {REPLICATE_MODELS.image[formData.replicate_image_model as ImageModel].bestFor}
+                                </div>
+                              </div>
+                            )}
                           </div>
                         )}
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                          {formData.image_provider === 'replicate' && (
-                            <div>
-                              <label className="block text-sm font-medium mb-3 text-gray-300 flex items-center gap-2">
-                                <Camera className="w-4 h-4" />
-                                Image Model
-                              </label>
-                              <select
-                                name="replicate_image_model"
-                                value={formData.replicate_image_model || 'flux-schnell'}
-                                onChange={handleChange}
-                                className="w-full bg-gray-700/50 border border-gray-600 rounded-xl px-4 py-3 text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition"
-                              >
-                                {Object.entries(REPLICATE_MODELS.image).map(([key, model]) => (
-                                  <option key={key} value={key}>
-                                    {model.name}
-                                  </option>
-                                ))}
-                              </select>
-                              
-                              {formData.replicate_image_model && (
-                                <div className="mt-3 p-3 bg-gray-700/30 rounded-lg">
-                                  <div className="text-sm text-white font-medium mb-2">
-                                    {REPLICATE_MODELS.image[formData.replicate_image_model as ImageModel].name}
-                                  </div>
-                                  <div className="text-xs text-gray-400 mb-2">
-                                    {REPLICATE_MODELS.image[formData.replicate_image_model as ImageModel].description}
-                                  </div>
-                                  <div className="flex items-center gap-4 text-xs">
-                                    <div className="flex items-center gap-1">
-                                      {getSpeedIcon(REPLICATE_MODELS.image[formData.replicate_image_model as ImageModel].speed)}
-                                      <span>{REPLICATE_MODELS.image[formData.replicate_image_model as ImageModel].speed}</span>
-                                    </div>
-                                    <div className="flex items-center gap-1">
-                                      {getQualityIcon(REPLICATE_MODELS.image[formData.replicate_image_model as ImageModel].quality)}
-                                      <span>{REPLICATE_MODELS.image[formData.replicate_image_model as ImageModel].quality}</span>
-                                    </div>
-                                  </div>
-                                  <div className="text-xs text-gray-400 mt-2">
-                                    Best for: {REPLICATE_MODELS.image[formData.replicate_image_model as ImageModel].bestFor}
-                                  </div>
+                        {/* Video Models - Always show since video always uses Replicate */}
+                        <div>
+                          <label className="block text-sm font-medium mb-3 text-gray-300 flex items-center gap-2">
+                            <Video className="w-4 h-4" />
+                            Video Model
+                          </label>
+                          <select
+                            name="replicate_video_model"
+                            value={formData.replicate_video_model || 'stable-video-diffusion'}
+                            onChange={handleChange}
+                            className="w-full bg-gray-700/50 border border-gray-600 rounded-xl px-4 py-3 text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition"
+                          >
+                            {Object.entries(REPLICATE_MODELS.video).map(([key, model]) => (
+                              <option key={key} value={key}>
+                                {model.name}
+                              </option>
+                            ))}
+                          </select>
+                          
+                          {formData.replicate_video_model && (
+                            <div className="mt-3 p-3 bg-gray-700/30 rounded-lg">
+                              <div className="text-sm text-white font-medium mb-2">
+                                {REPLICATE_MODELS.video[formData.replicate_video_model as VideoModel].name}
+                              </div>
+                              <div className="text-xs text-gray-400 mb-2">
+                                {REPLICATE_MODELS.video[formData.replicate_video_model as VideoModel].description}
+                              </div>
+                              <div className="flex items-center gap-4 text-xs">
+                                <div className="flex items-center gap-1">
+                                  {getSpeedIcon(REPLICATE_MODELS.video[formData.replicate_video_model as VideoModel].speed)}
+                                  <span>{REPLICATE_MODELS.video[formData.replicate_video_model as VideoModel].speed}</span>
                                 </div>
-                              )}
-                            </div>
-                          )}
-
-                          {formData.video_provider === 'replicate' && (
-                            <div>
-                              <label className="block text-sm font-medium mb-3 text-gray-300 flex items-center gap-2">
-                                <Video className="w-4 h-4" />
-                                Video Model
-                              </label>
-                              <select
-                                name="replicate_video_model"
-                                value={formData.replicate_video_model || 'stable-video-diffusion'}
-                                onChange={handleChange}
-                                className="w-full bg-gray-700/50 border border-gray-600 rounded-xl px-4 py-3 text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition"
-                              >
-                                {Object.entries(REPLICATE_MODELS.video).map(([key, model]) => (
-                                  <option key={key} value={key}>
-                                    {model.name}
-                                  </option>
-                                ))}
-                              </select>
-                              
-                              {formData.replicate_video_model && (
-                                <div className="mt-3 p-3 bg-gray-700/30 rounded-lg">
-                                  <div className="text-sm text-white font-medium mb-2">
-                                    {REPLICATE_MODELS.video[formData.replicate_video_model as VideoModel].name}
-                                  </div>
-                                  <div className="text-xs text-gray-400 mb-2">
-                                    {REPLICATE_MODELS.video[formData.replicate_video_model as VideoModel].description}
-                                  </div>
-                                  <div className="flex items-center gap-4 text-xs">
-                                    <div className="flex items-center gap-1">
-                                      {getSpeedIcon(REPLICATE_MODELS.video[formData.replicate_video_model as VideoModel].speed)}
-                                      <span>{REPLICATE_MODELS.video[formData.replicate_video_model as VideoModel].speed}</span>
-                                    </div>
-                                    <div className="flex items-center gap-1">
-                                      {getQualityIcon(REPLICATE_MODELS.video[formData.replicate_video_model as VideoModel].quality)}
-                                      <span>{REPLICATE_MODELS.video[formData.replicate_video_model as VideoModel].quality}</span>
-                                    </div>
-                                  </div>
-                                  <div className="text-xs text-gray-400 mt-2">
-                                    Best for: {REPLICATE_MODELS.video[formData.replicate_video_model as VideoModel].bestFor}
-                                  </div>
+                                <div className="flex items-center gap-1">
+                                  {getQualityIcon(REPLICATE_MODELS.video[formData.replicate_video_model as VideoModel].quality)}
+                                  <span>{REPLICATE_MODELS.video[formData.replicate_video_model as VideoModel].quality}</span>
                                 </div>
-                              )}
+                              </div>
+                              <div className="text-xs text-gray-400 mt-2">
+                                Best for: {REPLICATE_MODELS.video[formData.replicate_video_model as VideoModel].bestFor}
+                              </div>
                             </div>
                           )}
                         </div>
+                      </div>
 
-                        <div className="mt-6 p-4 bg-blue-900/20 border border-blue-500/30 rounded-xl">
-                          <div className="flex items-start gap-3">
-                            <AlertCircle className="w-5 h-5 text-blue-400 mt-0.5" />
-                            <div>
-                              <div className="font-medium text-blue-200 mb-2">Provider Recommendations</div>
-                              <div className="space-y-1 text-sm text-blue-300/80">
-                                <div><strong>Stability AI:</strong> Best for face preservation and consistent results</div>
-                                <div><strong>FLUX Schnell:</strong> Fast generation with good quality</div>
-                                <div><strong>FLUX Dev:</strong> Highest quality but slower</div>
-                                <div><strong>RealVisXL:</strong> Most photorealistic results</div>
-                              </div>
+                      <div className="mt-6 p-4 bg-blue-900/20 border border-blue-500/30 rounded-xl">
+                        <div className="flex items-start gap-3">
+                          <AlertCircle className="w-5 h-5 text-blue-400 mt-0.5" />
+                          <div>
+                            <div className="font-medium text-blue-200 mb-2">Provider Setup</div>
+                            <div className="space-y-1 text-sm text-blue-300/80">
+                              <div><strong>Images:</strong> Stability AI (best face preservation) or Replicate (artistic variety)</div>
+                              <div><strong>Videos:</strong> Replicate only (Stable Video Diffusion, AnimateDiff, etc.)</div>
+                              <div><strong>Tip:</strong> Use Stability AI for images and Replicate for videos for best results</div>
                             </div>
                           </div>
                         </div>
                       </div>
-                    )}
+                    </div>
                   </motion.div>
                 )}
 
@@ -1085,8 +1086,12 @@ export default function Admin() {
                   {/* Settings Summary */}
                   <div className="mt-6 space-y-2 text-xs">
                     <div className="flex justify-between">
-                      <span className="text-gray-400">Provider:</span>
+                      <span className="text-gray-400">Image Provider:</span>
                       <span className="capitalize">{formData.image_provider || 'stability'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Video Provider:</span>
+                      <span className="capitalize">Replicate</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-400">Model:</span>
