@@ -650,7 +650,7 @@ export default function Photobooth() {
           await new Promise<void>((resolve, reject) => {
             img.onload = () => resolve();
             img.onerror = () => reject(new Error('Failed to load image for fallback mask'));
-            img.src: processedContent;
+            img.src = processedContent;
           });
           
           maskData = generateFallbackMask(img.naturalWidth, img.naturalHeight);
