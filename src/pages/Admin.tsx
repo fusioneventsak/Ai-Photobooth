@@ -1,4 +1,4 @@
-// src/pages/Admin.tsx - Updated to force Replicate for video only
+// src/pages/Admin.tsx - Updated with dramatic video transformation models
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { 
@@ -30,7 +30,7 @@ import {
 } from 'lucide-react';
 import { useConfigStore } from '../store/configStore';
 import type { Config } from '../types/config';
-import { REPLICATE_MODELS, getModelInfo, testReplicateConnection, ImageModel, VideoModel } from '../lib/replicateService';
+import { testReplicateConnection } from '../lib/replicateService';
 
 interface AdminFormData extends Partial<Config> {
   gallery_public_access?: boolean;
@@ -45,8 +45,8 @@ interface AdminFormData extends Partial<Config> {
   image_provider?: 'stability' | 'replicate';
   video_provider?: 'stability' | 'replicate';
   use_provider_fallback?: boolean;
-  replicate_image_model?: ImageModel;
-  replicate_video_model?: VideoModel;
+  replicate_image_model?: string;
+  replicate_video_model?: string;
 }
 
 export default function Admin() {
@@ -83,9 +83,9 @@ export default function Admin() {
         image_provider: config.image_provider || 'stability',
         video_provider: 'replicate', // Always force Replicate for video
         use_provider_fallback: config.use_provider_fallback ?? true,
-        // Model selections
+        // Model selections with new defaults
         replicate_image_model: (config as any).replicate_image_model || 'flux-schnell',
-        replicate_video_model: (config as any).replicate_video_model || 'stable-video-diffusion',
+        replicate_video_model: (config as any).replicate_video_model || 'hailuo', // Changed default to Hailuo
       });
     }
   }, [config]);
@@ -154,7 +154,7 @@ export default function Admin() {
       
       // Model selections (always save these)
       (updates as any).replicate_image_model = formData.replicate_image_model || 'flux-schnell';
-      (updates as any).replicate_video_model = formData.replicate_video_model || 'stable-video-diffusion';
+      (updates as any).replicate_video_model = formData.replicate_video_model || 'hailuo';
 
       const result = await updateConfig(updates);
       
@@ -613,7 +613,7 @@ export default function Admin() {
                     animate={{ opacity: 1, x: 0 }}
                     className="space-y-6"
                   >
-                    {/* AI Provider Selection - Updated */}
+                    {/* AI Provider Selection */}
                     <div className="bg-gray-800/50 backdrop-blur-sm rounded-2xl p-6">
                       <h2 className="text-2xl font-semibold mb-6 flex items-center gap-3">
                         <Wand2 className="w-6 h-6 text-purple-400" />
@@ -649,14 +649,14 @@ export default function Admin() {
                               disabled
                               className="w-full bg-gray-600/50 border border-gray-500 rounded-xl px-4 py-3 text-gray-300 cursor-not-allowed"
                             >
-                              <option value="replicate">Replicate (Multiple Models)</option>
+                              <option value="replicate">Replicate (Dramatic Transformation)</option>
                             </select>
                             <div className="absolute inset-y-0 right-3 flex items-center">
                               <Video className="w-4 h-4 text-blue-400" />
                             </div>
                           </div>
                           <p className="text-xs text-gray-400 mt-2">
-                            Video generation uses Replicate models (Stable Video Diffusion, AnimateDiff, etc.)
+                            Video generation uses Replicate models for prompt-based dramatic transformations
                           </p>
                         </div>
                       </div>
@@ -717,11 +717,14 @@ export default function Admin() {
                             name="video_duration"
                             value={formData.video_duration || 5}
                             onChange={handleChange}
-                            min={1}
-                            max={5}
+                            min={3}
+                            max={10}
                             step={1}
                             className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
                           />
+                          <div className="text-xs text-gray-400 mt-1">
+                            Longer durations may take more time to generate
+                          </div>
                         </div>
                       )}
                     </div>
@@ -790,7 +793,7 @@ export default function Admin() {
                       </div>
                     )}
 
-                    {/* Replicate Models - Always show since we use it for video, optionally for images */}
+                    {/* Replicate Model Selection */}
                     <div className="bg-gradient-to-br from-purple-900/20 to-blue-900/20 border border-purple-500/30 rounded-2xl p-6">
                       <div className="flex items-center justify-between mb-6">
                         <h3 className="text-xl font-semibold text-purple-200 flex items-center gap-3">
@@ -853,81 +856,95 @@ export default function Admin() {
                               onChange={handleChange}
                               className="w-full bg-gray-700/50 border border-gray-600 rounded-xl px-4 py-3 text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition"
                             >
-                              {Object.entries(REPLICATE_MODELS.image).map(([key, model]) => (
-                                <option key={key} value={key}>
-                                  {model.name}
-                                </option>
-                              ))}
+                              <option value="flux-schnell">FLUX Schnell (Fast)</option>
+                              <option value="flux-dev">FLUX Dev (High Quality)</option>
+                              <option value="sdxl">SDXL (Stable)</option>
+                              <option value="realvisxl">RealVisXL (Photorealistic)</option>
                             </select>
                             
-                            {formData.replicate_image_model && (
-                              <div className="mt-3 p-3 bg-gray-700/30 rounded-lg">
-                                <div className="text-sm text-white font-medium mb-2">
-                                  {REPLICATE_MODELS.image[formData.replicate_image_model as ImageModel].name}
-                                </div>
-                                <div className="text-xs text-gray-400 mb-2">
-                                  {REPLICATE_MODELS.image[formData.replicate_image_model as ImageModel].description}
-                                </div>
-                                <div className="flex items-center gap-4 text-xs">
-                                  <div className="flex items-center gap-1">
-                                    {getSpeedIcon(REPLICATE_MODELS.image[formData.replicate_image_model as ImageModel].speed)}
-                                    <span>{REPLICATE_MODELS.image[formData.replicate_image_model as ImageModel].speed}</span>
-                                  </div>
-                                  <div className="flex items-center gap-1">
-                                    {getQualityIcon(REPLICATE_MODELS.image[formData.replicate_image_model as ImageModel].quality)}
-                                    <span>{REPLICATE_MODELS.image[formData.replicate_image_model as ImageModel].quality}</span>
-                                  </div>
-                                </div>
-                                <div className="text-xs text-gray-400 mt-2">
-                                  Best for: {REPLICATE_MODELS.image[formData.replicate_image_model as ImageModel].bestFor}
-                                </div>
+                            <div className="mt-3 p-3 bg-gray-700/30 rounded-lg">
+                              <div className="text-xs text-gray-400">
+                                {formData.replicate_image_model === 'flux-schnell' && 'Fast generation with good quality - recommended for quick results'}
+                                {formData.replicate_image_model === 'flux-dev' && 'High quality generation with excellent detail and artistic capability'}
+                                {formData.replicate_image_model === 'sdxl' && 'Stable and reliable generation with consistent results'}
+                                {formData.replicate_image_model === 'realvisxl' && 'Photorealistic results with excellent face quality'}
                               </div>
-                            )}
+                            </div>
                           </div>
                         )}
 
                         {/* Video Models - Always show since video always uses Replicate */}
-                        <div>
+                        <div className={formData.image_provider === 'replicate' ? '' : 'md:col-span-2'}>
                           <label className="block text-sm font-medium mb-3 text-gray-300 flex items-center gap-2">
                             <Video className="w-4 h-4" />
-                            Video Model
+                            Video Model for Dramatic Transformation
                           </label>
                           <select
                             name="replicate_video_model"
-                            value={formData.replicate_video_model || 'stable-video-diffusion'}
+                            value={formData.replicate_video_model || 'hailuo'}
                             onChange={handleChange}
                             className="w-full bg-gray-700/50 border border-gray-600 rounded-xl px-4 py-3 text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition"
                           >
-                            {Object.entries(REPLICATE_MODELS.video).map(([key, model]) => (
-                              <option key={key} value={key}>
-                                {model.name}
-                              </option>
-                            ))}
+                            <option value="hailuo">Hailuo-02 - Dramatic Transformation (Recommended)</option>
+                            <option value="cogvideo">CogVideoX - Advanced Quality</option>
+                            <option value="kling">Kling AI - Realistic Results</option>
+                            <option value="runway">Runway Gen-3 - Professional</option>
+                            <option value="stable-video-diffusion">Stable Video Diffusion - Basic Animation</option>
                           </select>
                           
-                          {formData.replicate_video_model && (
-                            <div className="mt-3 p-3 bg-gray-700/30 rounded-lg">
-                              <div className="text-sm text-white font-medium mb-2">
-                                {REPLICATE_MODELS.video[formData.replicate_video_model as VideoModel].name}
+                          <div className="mt-3 p-3 bg-gray-700/30 rounded-lg">
+                            <div className="text-sm text-white font-medium mb-2">
+                              {formData.replicate_video_model === 'hailuo' && 'Hailuo-02 - Dramatic Transformation'}
+                              {formData.replicate_video_model === 'cogvideo' && 'CogVideoX - Advanced Quality'}
+                              {formData.replicate_video_model === 'kling' && 'Kling AI - Realistic Results'}
+                              {formData.replicate_video_model === 'runway' && 'Runway Gen-3 - Professional'}
+                              {formData.replicate_video_model === 'stable-video-diffusion' && 'Stable Video Diffusion - Basic Animation'}
+                            </div>
+                            <div className="text-xs text-gray-400 mb-2">
+                              {formData.replicate_video_model === 'hailuo' && 'Creates dramatic scene transformations while preserving subject likeness. Perfect for prompt-based video generation with cinematic effects.'}
+                              {formData.replicate_video_model === 'cogvideo' && 'High-quality video generation with excellent prompt adherence and smooth motion. Professional results with longer duration support.'}
+                              {formData.replicate_video_model === 'kling' && 'Realistic video transformations with natural motion and excellent subject preservation. Great for lifelike results.'}
+                              {formData.replicate_video_model === 'runway' && 'Professional-grade video generation with cinematic quality and advanced motion controls. Premium results.'}
+                              {formData.replicate_video_model === 'stable-video-diffusion' && 'Basic image-to-video animation with simple motion. Limited transformation capabilities.'}
+                            </div>
+                            <div className="flex items-center gap-4 text-xs">
+                              <div className="flex items-center gap-1">
+                                {formData.replicate_video_model === 'hailuo' && <Zap className="w-4 h-4 text-green-500" />}
+                                {formData.replicate_video_model === 'cogvideo' && <Clock className="w-4 h-4 text-yellow-500" />}
+                                {formData.replicate_video_model === 'kling' && <Clock className="w-4 h-4 text-yellow-500" />}
+                                {formData.replicate_video_model === 'runway' && <Clock className="w-4 h-4 text-red-500" />}
+                                {formData.replicate_video_model === 'stable-video-diffusion' && <Zap className="w-4 h-4 text-green-500" />}
+                                <span>
+                                  {formData.replicate_video_model === 'hailuo' && 'Fast Generation'}
+                                  {formData.replicate_video_model === 'cogvideo' && 'Medium Speed'}
+                                  {formData.replicate_video_model === 'kling' && 'Medium Speed'}
+                                  {formData.replicate_video_model === 'runway' && 'Slower Generation'}
+                                  {formData.replicate_video_model === 'stable-video-diffusion' && 'Fast Generation'}
+                                </span>
                               </div>
-                              <div className="text-xs text-gray-400 mb-2">
-                                {REPLICATE_MODELS.video[formData.replicate_video_model as VideoModel].description}
-                              </div>
-                              <div className="flex items-center gap-4 text-xs">
-                                <div className="flex items-center gap-1">
-                                  {getSpeedIcon(REPLICATE_MODELS.video[formData.replicate_video_model as VideoModel].speed)}
-                                  <span>{REPLICATE_MODELS.video[formData.replicate_video_model as VideoModel].speed}</span>
-                                </div>
-                                <div className="flex items-center gap-1">
-                                  {getQualityIcon(REPLICATE_MODELS.video[formData.replicate_video_model as VideoModel].quality)}
-                                  <span>{REPLICATE_MODELS.video[formData.replicate_video_model as VideoModel].quality}</span>
-                                </div>
-                              </div>
-                              <div className="text-xs text-gray-400 mt-2">
-                                Best for: {REPLICATE_MODELS.video[formData.replicate_video_model as VideoModel].bestFor}
+                              <div className="flex items-center gap-1">
+                                {formData.replicate_video_model === 'hailuo' && <Star className="w-4 h-4 text-purple-500" />}
+                                {formData.replicate_video_model === 'cogvideo' && <Star className="w-4 h-4 text-purple-500" />}
+                                {formData.replicate_video_model === 'kling' && <Camera className="w-4 h-4 text-blue-500" />}
+                                {formData.replicate_video_model === 'runway' && <Star className="w-4 h-4 text-purple-500" />}
+                                {formData.replicate_video_model === 'stable-video-diffusion' && <Star className="w-4 h-4 text-yellow-500" />}
+                                <span>
+                                  {formData.replicate_video_model === 'hailuo' && 'Premium Quality'}
+                                  {formData.replicate_video_model === 'cogvideo' && 'Premium Quality'}
+                                  {formData.replicate_video_model === 'kling' && 'Photorealistic'}
+                                  {formData.replicate_video_model === 'runway' && 'Premium Quality'}
+                                  {formData.replicate_video_model === 'stable-video-diffusion' && 'Standard Quality'}
+                                </span>
                               </div>
                             </div>
-                          )}
+                            <div className="text-xs text-gray-400 mt-2">
+                              Best for: {formData.replicate_video_model === 'hailuo' && 'Dramatic prompt-based transformations, cinematic effects, subject preservation'}
+                              {formData.replicate_video_model === 'cogvideo' && 'High-quality professional video generation, complex scenes'}
+                              {formData.replicate_video_model === 'kling' && 'Realistic transformations, natural motion, lifelike results'}
+                              {formData.replicate_video_model === 'runway' && 'Professional cinematography, commercial quality results'}
+                              {formData.replicate_video_model === 'stable-video-diffusion' && 'Simple animation, basic motion effects'}
+                            </div>
+                          </div>
                         </div>
                       </div>
 
@@ -935,11 +952,13 @@ export default function Admin() {
                         <div className="flex items-start gap-3">
                           <AlertCircle className="w-5 h-5 text-blue-400 mt-0.5" />
                           <div>
-                            <div className="font-medium text-blue-200 mb-2">Provider Setup</div>
+                            <div className="font-medium text-blue-200 mb-2">Video Model Recommendations</div>
                             <div className="space-y-1 text-sm text-blue-300/80">
-                              <div><strong>Images:</strong> Stability AI (best face preservation) or Replicate (artistic variety)</div>
-                              <div><strong>Videos:</strong> Replicate only (Stable Video Diffusion, AnimateDiff, etc.)</div>
-                              <div><strong>Tip:</strong> Use Stability AI for images and Replicate for videos for best results</div>
+                              <div><strong>Hailuo-02:</strong> Best for dramatic transformations with subject preservation</div>
+                              <div><strong>CogVideoX:</strong> High-quality professional results with smooth motion</div>
+                              <div><strong>Kling AI:</strong> Most realistic and lifelike transformations</div>
+                              <div><strong>Runway Gen-3:</strong> Professional cinematography and commercial quality</div>
+                              <div><strong>SVD:</strong> Basic animation only - limited transformation capabilities</div>
                             </div>
                           </div>
                         </div>
@@ -1049,7 +1068,11 @@ export default function Admin() {
                                 : '40px'
                             }}
                           >
-                            <Image className="w-4 h-4 text-gray-500" />
+                            {formData.model_type === 'video' ? (
+                              <Video className="w-4 h-4 text-gray-500" />
+                            ) : (
+                              <Image className="w-4 h-4 text-gray-500" />
+                            )}
                           </div>
                         ))}
                       </div>
@@ -1098,8 +1121,16 @@ export default function Admin() {
                       <span className="capitalize">{formData.model_type || 'image'}</span>
                     </div>
                     <div className="flex justify-between">
+                      <span className="text-gray-400">Video Model:</span>
+                      <span className="capitalize">{formData.replicate_video_model || 'hailuo'}</span>
+                    </div>
+                    <div className="flex justify-between">
                       <span className="text-gray-400">Face Mode:</span>
                       <span className="capitalize">{(formData.face_preservation_mode || 'preserve_face').replace('_', ' ')}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Duration:</span>
+                      <span>{formData.video_duration || 5}s</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-400">ControlNet:</span>
