@@ -1,11 +1,72 @@
 import { supabase } from './supabase'
 
-export type ModelType = 
-  | 'flux-schnell' 
-  | 'flux-dev' 
-  | 'flux-pro'
-  | 'sdxl'
-  | 'realistic-vision'
+// Available models for each type - REPLICATE_MODELS constant
+export const REPLICATE_MODELS = {
+  image: {
+    'flux-schnell': {
+      name: "FLUX Schnell",
+      description: "Fast, high-quality image generation",
+      speed: "⚡ Fast",
+      quality: "🔥 High",
+      bestFor: "Quick previews, face preservation"
+    },
+    'flux-dev': {
+      name: "FLUX Dev", 
+      description: "Higher quality, slower generation",
+      speed: "🐌 Slow",
+      quality: "✨ Premium",
+      bestFor: "Maximum quality, artistic results"
+    },
+    'flux-pro': {
+      name: "FLUX Pro",
+      description: "Professional quality images",
+      speed: "🐌 Slow",
+      quality: "✨ Premium",
+      bestFor: "Professional quality, commercial use"
+    },
+    'sdxl': {
+      name: "Stable Diffusion XL",
+      description: "Classic high-quality generation",
+      speed: "🚀 Medium",
+      quality: "🔥 High",
+      bestFor: "Balanced quality and speed"
+    },
+    'realistic-vision': {
+      name: "RealVisXL v4.0",
+      description: "Photorealistic image generation",
+      speed: "🚀 Medium",
+      quality: "📸 Photorealistic",
+      bestFor: "Realistic portraits, photography"
+    }
+  },
+  video: {
+    'stable-video-diffusion': {
+      name: "Stable Video Diffusion",
+      description: "High-quality video from image",
+      speed: "🐌 Slow",
+      quality: "✨ Premium",
+      bestFor: "Highest quality videos"
+    },
+    'animatediff': {
+      name: "AnimateDiff",
+      description: "Smooth animation generation",
+      speed: "🚀 Medium", 
+      quality: "🔥 High",
+      bestFor: "Smooth animations, motion"
+    },
+    'zeroscope': {
+      name: "Zeroscope v2 XL",
+      description: "Text-to-video generation",
+      speed: "🚀 Medium",
+      quality: "🔥 High",
+      bestFor: "Creative video effects"
+    }
+  }
+} as const
+
+export type ImageModel = keyof typeof REPLICATE_MODELS.image
+export type VideoModel = keyof typeof REPLICATE_MODELS.video
+export type ModelType = ImageModel | VideoModel
 
 export interface GenerationOptions {
   prompt: string
@@ -178,72 +239,36 @@ export async function testReplicateConnection(): Promise<{
 
 // Get model information
 export function getModelInfo(type: 'image' | 'video', model?: ModelType) {
-  const models = {
-    image: {
-      'flux-schnell': {
-        name: 'FLUX Schnell',
-        description: 'Fastest image generation',
-        speed: 'fast',
-        quality: 'good'
-      },
-      'flux-dev': {
-        name: 'FLUX Dev',
-        description: 'High quality image generation',
-        speed: 'medium',
-        quality: 'excellent'
-      },
-      'flux-pro': {
-        name: 'FLUX Pro',
-        description: 'Professional quality images',
-        speed: 'slow',
-        quality: 'professional'
-      },
-      'sdxl': {
-        name: 'Stable Diffusion XL',
-        description: 'Popular stable diffusion model',
-        speed: 'medium',
-        quality: 'very good'
-      },
-      'realistic-vision': {
-        name: 'Realistic Vision',
-        description: 'Photorealistic image generation',
-        speed: 'medium',
-        quality: 'photorealistic'
-      }
-    },
-    video: {
-      'stable-video': {
-        name: 'Stable Video Diffusion',
-        description: 'Generate short videos from images',
-        speed: 'slow',
-        quality: 'good'
-      }
-    }
-  }
+  if (!model) return null
+  
+  const models = REPLICATE_MODELS[type] as any
+  return models[model] || null
+}
 
-  if (!model) {
-    return null
-  }
+// Helper function to get all available models for a type
+export function getAvailableModels(type: 'image' | 'video') {
+  return REPLICATE_MODELS[type]
+}
 
-  return models[type]?.[model as keyof typeof models[typeof type]]
+// Helper function to get default model for each type
+export function getDefaultModel(type: 'image' | 'video'): string {
+  const models = REPLICATE_MODELS[type]
+  return Object.keys(models)[0]
 }
 
 // Get recommended model based on priority
 export function getRecommendedModel(type: 'image' | 'video', priority: 'speed' | 'quality' | 'photorealistic' = 'quality'): ModelType {
-  const recommendations = {
-    image: {
-      speed: 'flux-schnell',
-      quality: 'flux-dev', 
-      photorealistic: 'realistic-vision'
-    },
-    video: {
-      speed: 'stable-video',
-      quality: 'stable-video',
-      photorealistic: 'stable-video'
+  if (type === 'image') {
+    const recommendations = {
+      speed: 'flux-schnell' as ImageModel,
+      quality: 'flux-dev' as ImageModel,
+      photorealistic: 'realistic-vision' as ImageModel
     }
+    return recommendations[priority]
+  } else {
+    // For video, we have limited options
+    return 'stable-video-diffusion' as VideoModel
   }
-
-  return recommendations[type][priority] as ModelType
 }
 
 // Advanced generation function with auto-model selection
@@ -347,6 +372,21 @@ export function validateReplicateParams(params: GenerationOptions): { valid: boo
 
 // Export types for use in components
 export type { GenerationOptions }
+
+// Export all functions and constants for compatibility
+export { 
+  generateWithReplicate, 
+  testReplicateConnection, 
+  getModelInfo, 
+  getRecommendedModel, 
+  generateWithAutoModel,
+  batchGenerateWithModels,
+  validateReplicateParams,
+  getAvailableModels,
+  getDefaultModel,
+  REPLICATE_MODELS
+}
+
 export default { 
   generateWithReplicate, 
   testReplicateConnection, 
@@ -354,5 +394,8 @@ export default {
   getRecommendedModel, 
   generateWithAutoModel,
   batchGenerateWithModels,
-  validateReplicateParams 
+  validateReplicateParams,
+  getAvailableModels,
+  getDefaultModel,
+  REPLICATE_MODELS
 }
