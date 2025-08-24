@@ -1,5 +1,5 @@
 // src/pages/Photobooth.tsx
-// FIXED VERSION - Properly routes Image->Stability, Video->Replicate
+// UPDATED VERSION - Supports dramatic prompt-based video transformation
 
 import React, { useState, useEffect } from 'react';
 import Webcam from 'react-webcam';
@@ -241,13 +241,13 @@ export default function Photobooth() {
         console.log('Auto-uploading new photo...');
         console.log('Photo details:', {
           length: processedMedia.length,
-          type: processedMedia.startsWith('data:') ? 'data URL' : processedMedia.startsWith('blob:') ? 'blob URL' : 'unknown',
+          type: processedMedia.startsWith('data:') ? 'data URL' : processedMedia.startsWith('blob:') ? 'blob URL' : processedMedia.startsWith('http') ? 'HTTP URL' : 'unknown',
           modelType: currentModelType
         });
         
         const uploadResult = await uploadPhoto(
           processedMedia,
-          config.global_prompt || 'AI Generated Image',
+          config.global_prompt || 'AI Generated Content',
           currentModelType
         );
         
@@ -532,7 +532,7 @@ export default function Photobooth() {
     }
   };
 
-  // FIXED: Process media with corrected provider selection
+  // UPDATED: Process media with dramatic video transformation support
   const processMediaWithCapturedPhoto = React.useCallback(async (capturedImageData: string) => {
     if (!capturedImageData) {
       setError('No photo captured');
@@ -563,12 +563,13 @@ export default function Photobooth() {
     try {
       setGenerationAttempts(prev => prev + 1);
 
-      // CRITICAL FIX: Proper provider routing
+      // Enhanced logging for video generation
       console.log('Starting AI generation process...', {
         modelType: currentModelType,
         prompt: currentConfig.global_prompt,
         faceMode: currentConfig.face_preservation_mode || 'preserve_face',
-        attempt: generationAttempts + 1
+        attempt: generationAttempts + 1,
+        isVideoMode: currentModelType === 'video'
       });
 
       await animateProgress(0, 15, 1000, 'detecting', 'Analyzing your photo...');
@@ -590,32 +591,42 @@ export default function Photobooth() {
       const faceMode = currentConfig.face_preservation_mode || 'preserve_face';
 
       if (currentModelType === 'video') {
-        // VIDEO GENERATION - Always use Replicate
-        await animateProgress(15, 35, 1500, 'generating', 'Initializing video AI...');
+        // UPDATED: VIDEO GENERATION with dramatic prompt-based transformation
+        await animateProgress(15, 35, 1500, 'generating', 'Initializing dramatic AI transformation...');
         
-        console.log('Starting video generation with Replicate...');
-
+        console.log('🎬 Starting DRAMATIC video transformation with prompt-based AI...');
+        console.log('🎭 Using Hailuo model for prompt-based transformation that maintains subject likeness');
+        console.log('📝 Prompt:', (currentConfig.global_prompt || '').substring(0, 100) + '...');
+        
+        // Use Hailuo model for dramatic prompt-based transformations
         const videoPromise = generateWithReplicate({
-          prompt: currentConfig.global_prompt || 'AI Generated Video',
+          prompt: currentConfig.global_prompt || 'Transform this person into a stunning cinematic scene while preserving their facial features and identity',
           inputData: processedContent,
           type: 'video',
+          model: 'hailuo', // CRITICAL: Use Hailuo for prompt + image transformation
           duration: currentConfig.video_duration || 5,
           preserveFace: faceMode === 'preserve_face'
         });
 
+        console.log('🎥 Generating dramatic video transformation based on prompt...');
+        
         const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error('Replicate video generation timed out. Please try again.')), 300000);
+          setTimeout(() => reject(new Error('Video generation timed out. The AI transformation is taking longer than expected.')), 240000); // 4 minutes for video generation
         });
 
         const progressPromise = async () => {
-          await animateProgress(35, 60, 8000, 'generating', 'Generating video frames...');
-          await animateProgress(60, 75, 6000, 'generating', 'Applying face preservation...');
-          await animateProgress(75, 85, 4000, 'generating', 'Finalizing video...');
-          await animateProgress(85, 90, 2000, 'generating', 'Processing with Replicate...');
+          await animateProgress(35, 50, 8000, 'generating', 'Creating dramatic transformation...');
+          await animateProgress(50, 65, 10000, 'generating', 'Preserving your likeness...');
+          await animateProgress(65, 80, 8000, 'generating', 'Adding cinematic effects...');
+          await animateProgress(80, 90, 5000, 'generating', 'Finalizing video magic...');
           return await videoPromise;
         };
 
         aiContent = await Promise.race([progressPromise(), timeoutPromise]);
+        console.log('✅ Dramatic video transformation completed with subject likeness preserved!');
+        
+        // Update progress for video completion
+        await animateProgress(90, 95, 1000, 'generating', 'Finalizing your amazing transformation...');
         
       } else {
         // IMAGE GENERATION - Always use Stability AI
@@ -707,7 +718,7 @@ export default function Photobooth() {
         throw new Error('Generated content is empty. Please try again.');
       }
 
-      // FIXED: Accept video URLs from Replicate
+      // UPDATED: Accept video URLs from Replicate
       if (!aiContent.startsWith('data:') && !aiContent.startsWith('blob:') && !aiContent.startsWith('http')) {
         console.error('Invalid AI content format:', aiContent.substring(0, 100));
         throw new Error('Invalid AI content format received.');
@@ -754,10 +765,11 @@ export default function Photobooth() {
       console.log('AI generation completed successfully:', {
         provider: currentModelType === 'video' ? 'replicate' : 'stability',
         type: currentModelType,
-        format: aiContent.startsWith('data:') ? 'data URL' : 'blob URL',
+        format: aiContent.startsWith('data:') ? 'data URL' : aiContent.startsWith('http') ? 'HTTP URL' : 'blob URL',
         size: aiContent.length,
         faceMode: faceMode,
-        aspectRatio: '16:9 landscape'
+        aspectRatio: '16:9 landscape',
+        transformationType: currentModelType === 'video' ? 'Dramatic prompt-based transformation' : 'Image generation'
       });
 
       setProcessedMedia(aiContent);
@@ -792,7 +804,9 @@ export default function Photobooth() {
           errorMessage = 'Rate limit exceeded. Please wait a moment and try again.';
           debugDetails = { errorType: 'rate_limit_error' };
         } else if (message.includes('timeout')) {
-          errorMessage = 'AI generation timed out. Please try again with a simpler prompt.';
+          errorMessage = currentModelType === 'video' 
+            ? 'Video transformation timed out. Please try again with a simpler prompt.'
+            : 'AI generation timed out. Please try again with a simpler prompt.';
           debugDetails = { errorType: 'timeout_error' };
         } else if (message.includes('face detection')) {
           errorMessage = 'Face detection failed. Please ensure the photo shows clear facial features.';
@@ -836,6 +850,14 @@ export default function Photobooth() {
   const getCurrentProvider = () => {
     if (!config) return 'Unknown';
     return currentModelType === 'image' ? 'Stability AI' : 'Replicate';
+  };
+
+  // Get provider description for better UX
+  const getProviderDescription = () => {
+    if (!config) return '';
+    return currentModelType === 'image' 
+      ? 'High-quality image generation with face preservation'
+      : 'Dramatic video transformation based on your prompt';
   };
 
   return (
@@ -904,6 +926,9 @@ export default function Photobooth() {
               {config.global_prompt}
             </p>
           )}
+          <p className="text-gray-400 text-xs mt-1 px-2">
+            {getProviderDescription()}
+          </p>
         </div>
       </div>
 
@@ -933,14 +958,21 @@ export default function Photobooth() {
                 <User className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" />
                 <div>
                   <span className="text-white font-medium">Provider:</span>
-                  <span className="text-gray-300"> Using {getCurrentProvider()} for generation</span>
+                  <span className="text-gray-300"> Using {getCurrentProvider()}</span>
                 </div>
               </div>
               <div className="flex items-start gap-3">
                 <Wand2 className="w-4 h-4 text-purple-400 mt-0.5 flex-shrink-0" />
                 <div>
-                  <span className="text-white font-medium">16:9 Format:</span>
-                  <span className="text-gray-300"> Creates wide landscape compositions with environmental backgrounds</span>
+                  <span className="text-white font-medium">
+                    {currentModelType === 'video' ? 'Video Magic:' : '16:9 Format:'}
+                  </span>
+                  <span className="text-gray-300">
+                    {currentModelType === 'video' 
+                      ? ' Creates dramatic transformations while preserving your likeness' 
+                      : ' Creates wide landscape compositions with environmental backgrounds'
+                    }
+                  </span>
                 </div>
               </div>
             </div>
@@ -996,7 +1028,9 @@ export default function Photobooth() {
             {processedMedia && (
               <div className="absolute top-3 left-3 bg-black/70 text-white px-2 py-1 rounded-lg text-xs flex items-center gap-1">
                 <Wand2 className="w-3 h-3 text-purple-400" />
-                <span className="text-purple-400">{getCurrentProvider()} Generated</span>
+                <span className="text-purple-400">
+                  {currentModelType === 'video' ? 'Dramatic Transformation' : 'AI Generated'}
+                </span>
                 {uploading && (
                   <RefreshCw className="w-3 h-3 text-blue-400 animate-spin ml-1" />
                 )}
@@ -1006,7 +1040,9 @@ export default function Photobooth() {
             {processing && (
               <div className="absolute top-3 left-3 bg-black/70 text-white px-2 py-1 rounded-lg text-xs flex items-center gap-1">
                 <Wand2 className="w-3 h-3 text-purple-400 animate-spin" />
-                <span className="text-purple-400">AI Processing...</span>
+                <span className="text-purple-400">
+                  {currentModelType === 'video' ? 'Creating Magic...' : 'AI Processing...'}
+                </span>
               </div>
             )}
             
@@ -1032,7 +1068,12 @@ export default function Photobooth() {
           ) : processing ? (
             <div className="text-center text-sm text-gray-400 bg-gray-800/50 rounded-lg p-4">
               <Wand2 className="w-6 h-6 animate-spin text-purple-400 mx-auto mb-2" />
-              <span className="text-purple-400">AI is creating your magic...</span>
+              <span className="text-purple-400">
+                {currentModelType === 'video' 
+                  ? 'AI is creating your dramatic transformation...'
+                  : 'AI is creating your magic...'
+                }
+              </span>
             </div>
           ) : processedMedia ? (
             <button
@@ -1071,6 +1112,9 @@ export default function Photobooth() {
             <p><span className="text-yellow-400 font-semibold">Attempts:</span> {generationAttempts}/3</p>
             <p><span className="text-cyan-400 font-semibold">Resolution:</span> 1024x576 (16:9 Landscape)</p>
             <p><span className="text-red-400 font-semibold">Camera Key:</span> {cameraKey} {isMobile && '(Mobile Mode)'}</p>
+            {currentModelType === 'video' && (
+              <p><span className="text-orange-400 font-semibold">Transformation:</span> Dramatic prompt-based with Hailuo model</p>
+            )}
             {debugInfo && (
               <div className="mt-2 p-2 bg-red-900/20 border border-red-500/30 rounded">
                 <p className="text-red-400 font-mono text-xs">
