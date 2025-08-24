@@ -152,9 +152,18 @@ export default function Admin() {
       if (formData.use_controlnet !== undefined) updates.use_controlnet = formData.use_controlnet;
       if (formData.controlnet_type !== undefined) updates.controlnet_type = formData.controlnet_type;
       
-      // Model selections (always save these)
-      (updates as any).replicate_image_model = formData.replicate_image_model || 'flux-schnell';
-      (updates as any).replicate_video_model = formData.replicate_video_model || 'hailuo';
+      // Model selections (always save these with explicit handling)
+      if (formData.replicate_image_model !== undefined) {
+        (updates as any).replicate_image_model = formData.replicate_image_model;
+      }
+      if (formData.replicate_video_model !== undefined) {
+        (updates as any).replicate_video_model = formData.replicate_video_model;
+      }
+      
+      // Ensure video model is explicitly set if not defined
+      if (!formData.replicate_video_model) {
+        (updates as any).replicate_video_model = 'hailuo';
+      }
 
       const result = await updateConfig(updates);
       
