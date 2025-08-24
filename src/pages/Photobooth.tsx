@@ -1,5 +1,5 @@
 // src/pages/Photobooth.tsx
-// Updated to support both Stability AI and Replicate based on provider selection
+// FIXED VERSION - Properly routes Image->Stability, Video->Replicate
 
 import React, { useState, useEffect } from 'react';
 import Webcam from 'react-webcam';
@@ -532,7 +532,7 @@ export default function Photobooth() {
     }
   };
 
-  // UPDATED: Process media with provider selection support
+  // FIXED: Process media with corrected provider selection
   const processMediaWithCapturedPhoto = React.useCallback(async (capturedImageData: string) => {
     if (!capturedImageData) {
       setError('No photo captured');
@@ -563,13 +563,8 @@ export default function Photobooth() {
     try {
       setGenerationAttempts(prev => prev + 1);
 
-      // PROVIDER DETECTION: Check which provider to use
-      const imageProvider = currentModelType === 'image' 
-        ? (currentConfig.image_provider || 'stability')
-        : (currentConfig.video_provider || 'stability');
-
+      // CRITICAL FIX: Proper provider routing
       console.log('Starting AI generation process...', {
-        provider: imageProvider,
         modelType: currentModelType,
         prompt: currentConfig.global_prompt,
         faceMode: currentConfig.face_preservation_mode || 'preserve_face',
@@ -588,159 +583,122 @@ export default function Photobooth() {
       console.log('Image conversion for AI:', {
         originalSize: capturedImageData.length,
         processedSize: processedContent.length,
-        resolution: '1024x576 (16:9 landscape)',
-        provider: imageProvider
+        resolution: '1024x576 (16:9 landscape)'
       });
 
       let aiContent: string;
       const faceMode = currentConfig.face_preservation_mode || 'preserve_face';
 
       if (currentModelType === 'video') {
+        // VIDEO GENERATION - Always use Replicate
         await animateProgress(15, 35, 1500, 'generating', 'Initializing video AI...');
         
-        console.log(`Starting video generation with ${imageProvider}...`);
+        console.log('Starting video generation with Replicate...');
 
-        if (imageProvider === 'replicate') {
-          const videoPromise = generateWithReplicate({
-            prompt: currentConfig.global_prompt || 'AI Generated Video',
-            inputData: processedContent,
-            type: 'video',
-            model: (currentConfig as any).replicate_video_model || 'stable-video-diffusion',
-            duration: currentConfig.video_duration || 5,
-            preserveFace: faceMode === 'preserve_face'
-          });
+        const videoPromise = generateWithReplicate({
+          prompt: currentConfig.global_prompt || 'AI Generated Video',
+          inputData: processedContent,
+          type: 'video',
+          duration: currentConfig.video_duration || 5,
+          preserveFace: faceMode === 'preserve_face'
+        });
 
-          const timeoutPromise = new Promise<never>((_, reject) => {
-            setTimeout(() => reject(new Error('Replicate video generation timed out. Please try again.')), 300000);
-          });
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error('Replicate video generation timed out. Please try again.')), 300000);
+        });
 
-          const progressPromise = async () => {
-            await animateProgress(35, 60, 8000, 'generating', 'Generating video frames...');
-            await animateProgress(60, 75, 6000, 'generating', 'Applying face preservation...');
-            await animateProgress(75, 85, 4000, 'generating', 'Finalizing video...');
-            await animateProgress(85, 90, 2000, 'generating', 'Processing with Replicate...');
-            return await videoPromise;
-          };
+        const progressPromise = async () => {
+          await animateProgress(35, 60, 8000, 'generating', 'Generating video frames...');
+          await animateProgress(60, 75, 6000, 'generating', 'Applying face preservation...');
+          await animateProgress(75, 85, 4000, 'generating', 'Finalizing video...');
+          await animateProgress(85, 90, 2000, 'generating', 'Processing with Replicate...');
+          return await videoPromise;
+        };
 
-          aiContent = await Promise.race([progressPromise(), timeoutPromise]);
-        } else {
-          // Stability AI video (if supported)
-          throw new Error('Stability AI video generation not yet implemented. Please use Replicate for video generation.');
-        }
+        aiContent = await Promise.race([progressPromise(), timeoutPromise]);
+        
       } else {
-        // IMAGE GENERATION
+        // IMAGE GENERATION - Always use Stability AI
         await animateProgress(15, 35, 1500, 'masking', 'Detecting facial features...');
         
         let maskData: string | undefined;
         
-        // Generate mask for inpainting (mainly used by Stability AI)
-        if (imageProvider === 'stability') {
-          try {
-            const img = new Image();
-            await new Promise<void>((resolve, reject) => {
-              img.onload = () => resolve();
-              img.onerror = () => reject(new Error('Failed to load image for face detection'));
-              img.src = processedContent;
-            });
+        // Generate mask for inpainting with Stability AI
+        try {
+          const img = new Image();
+          await new Promise<void>((resolve, reject) => {
+            img.onload = () => resolve();
+            img.onerror = () => reject(new Error('Failed to load image for face detection'));
+            img.src = processedContent;
+          });
 
-            console.log('Generating face mask for Stability AI...');
-            
-            maskData = await generateSmartFaceMask(
-              img,
-              faceMode === 'preserve_face',
-              20,  // feathering value
-              1.2  // expansion factor
-            );
-            
-            console.log('Smart face mask generated successfully for Stability AI');
-            
-          } catch (faceDetectionError) {
-            console.warn('Face detection failed, using fallback mask:', faceDetectionError);
-            
-            const img = new Image();
-            await new Promise<void>((resolve, reject) => {
-              img.onload = () => resolve();
-              img.onerror = () => reject(new Error('Failed to load image for fallback mask'));
-              img.src = processedContent;
-            });
-            
-            maskData = generateFallbackMask(img.naturalWidth, img.naturalHeight);
-            console.log('Fallback mask generated for Stability AI');
-          }
+          console.log('Generating face mask for Stability AI...');
+          
+          maskData = await generateSmartFaceMask(
+            img,
+            faceMode === 'preserve_face',
+            20,  // feathering value
+            1.2  // expansion factor
+          );
+          
+          console.log('Smart face mask generated successfully for Stability AI');
+          
+        } catch (faceDetectionError) {
+          console.warn('Face detection failed, using fallback mask:', faceDetectionError);
+          
+          const img = new Image();
+          await new Promise<void>((resolve, reject) => {
+            img.onload = () => resolve();
+            img.onerror = () => reject(new Error('Failed to load image for fallback mask'));
+            img.src: processedContent;
+          });
+          
+          maskData = generateFallbackMask(img.naturalWidth, img.naturalHeight);
+          console.log('Fallback mask generated for Stability AI');
         }
 
-        await animateProgress(35, 45, 800, 'generating', `Preparing ${imageProvider} AI...`);
+        await animateProgress(35, 45, 800, 'generating', 'Preparing Stability AI...');
         
-        console.log(`Starting image generation with ${imageProvider}...`);
+        console.log('Starting image generation with Stability AI...');
         
-        if (imageProvider === 'replicate') {
-          // REPLICATE IMAGE GENERATION
-          const basePrompt = currentConfig.global_prompt || 'AI Generated Portrait';
-          
-          const generationPromise = generateWithReplicate({
-            prompt: basePrompt,
-            inputData: processedContent,
-            type: 'image',
-            model: (currentConfig as any).replicate_image_model || 'flux-schnell',
-            preserveFace: faceMode === 'preserve_face'
-          });
+        // STABILITY AI IMAGE GENERATION - Always use for images
+        const basePrompt = currentConfig.global_prompt || 'AI Generated Portrait';
+        
+        const enhancedPrompt = faceMode === 'preserve_face' 
+          ? `${basePrompt}, photorealistic portrait, preserve facial features only, exclude clothing and collars, natural skin texture, detailed eyes and mouth, cinematic composition, professional photography, 16:9 landscape format, wide shot, environmental background, no shirts or ties visible, 8k quality`
+          : `${basePrompt}, creative character transformation, artistic interpretation, detailed facial features, cinematic landscape composition, 16:9 wide format, environmental setting, no clothing elements from original`;
 
-          const timeoutPromise = new Promise<never>((_, reject) => {
-            setTimeout(() => reject(new Error('Replicate image generation timed out. Please try again.')), 180000);
-          });
+        console.log(`Using ${faceMode} mode with Stability AI SDXL generation...`);
+        console.log('Enhanced prompt:', enhancedPrompt);
+        
+        const generationPromise = generateWithStability({
+          prompt: enhancedPrompt,
+          imageData: processedContent,
+          mode: 'inpaint',
+          maskData: maskData,
+          facePreservationMode: faceMode,
+          strength: faceMode === 'preserve_face' ? 0.4 : 0.7,
+          cfgScale: 8.0,
+          steps: 25,
+          useControlNet: currentConfig.use_controlnet ?? true,
+          controlNetType: currentConfig.controlnet_type || 'auto'
+        });
 
-          const progressPromise = async () => {
-            await animateProgress(45, 65, 3000, 'generating', 'Processing with Replicate...');
-            await animateProgress(65, 80, 2500, 'generating', 'Applying AI transformation...');
-            await animateProgress(80, 88, 1500, 'generating', 'Refining details...');
-            await animateProgress(88, 90, 1000, 'generating', 'Almost done...');
-            return await generationPromise;
-          };
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error('Stability AI generation timed out. Please try again.')), 180000);
+        });
 
-          const rawAiContent = await Promise.race([progressPromise(), timeoutPromise]);
-          await animateProgress(90, 95, 800, 'uploading', 'Applying overlay...');
-          aiContent = await applyConfiguredOverlay(rawAiContent);
-          
-        } else {
-          // STABILITY AI IMAGE GENERATION
-          const basePrompt = currentConfig.global_prompt || 'AI Generated Portrait';
-          
-          const enhancedPrompt = faceMode === 'preserve_face' 
-            ? `${basePrompt}, photorealistic portrait, preserve facial features only, exclude clothing and collars, natural skin texture, detailed eyes and mouth, cinematic composition, professional photography, 16:9 landscape format, wide shot, environmental background, no shirts or ties visible, 8k quality`
-            : `${basePrompt}, creative character transformation, artistic interpretation, detailed facial features, cinematic landscape composition, 16:9 wide format, environmental setting, no clothing elements from original`;
+        const progressPromise = async () => {
+          await animateProgress(45, 65, 3000, 'generating', 'Processing with Stability AI...');
+          await animateProgress(65, 80, 2500, 'generating', 'Applying AI transformation...');
+          await animateProgress(80, 88, 1500, 'generating', 'Refining details...');
+          await animateProgress(88, 90, 1000, 'generating', 'Almost done...');
+          return await generationPromise;
+        };
 
-          console.log(`Using ${faceMode} mode with Stability AI SDXL generation...`);
-          console.log('Enhanced prompt:', enhancedPrompt);
-          
-          const generationPromise = generateWithStability({
-            prompt: enhancedPrompt,
-            imageData: processedContent,
-            mode: 'inpaint',
-            maskData: maskData,
-            facePreservationMode: faceMode,
-            strength: faceMode === 'preserve_face' ? 0.4 : 0.7,
-            cfgScale: 8.0,
-            steps: 25,
-            useControlNet: currentConfig.use_controlnet ?? true,
-            controlNetType: currentConfig.controlnet_type || 'auto'
-          });
-
-          const timeoutPromise = new Promise<never>((_, reject) => {
-            setTimeout(() => reject(new Error('Stability AI generation timed out. Please try again.')), 180000);
-          });
-
-          const progressPromise = async () => {
-            await animateProgress(45, 65, 3000, 'generating', 'Processing with Stability AI...');
-            await animateProgress(65, 80, 2500, 'generating', 'Applying AI transformation...');
-            await animateProgress(80, 88, 1500, 'generating', 'Refining details...');
-            await animateProgress(88, 90, 1000, 'generating', 'Almost done...');
-            return await generationPromise;
-          };
-
-          const rawAiContent = await Promise.race([progressPromise(), timeoutPromise]);
-          await animateProgress(90, 95, 800, 'uploading', 'Applying overlay...');
-          aiContent = await applyConfiguredOverlay(rawAiContent);
-        }
+        const rawAiContent = await Promise.race([progressPromise(), timeoutPromise]);
+        await animateProgress(90, 95, 800, 'uploading', 'Applying overlay...');
+        aiContent = await applyConfiguredOverlay(rawAiContent);
       }
       
       await animateProgress(95, 98, 500, 'generating', 'Validating result...');
@@ -755,7 +713,7 @@ export default function Photobooth() {
       }
 
       console.log('Validating generated content...', {
-        provider: imageProvider,
+        provider: currentModelType === 'video' ? 'replicate' : 'stability',
         contentType: typeof aiContent,
         length: aiContent.length,
         startsWithData: aiContent.startsWith('data:'),
@@ -769,7 +727,7 @@ export default function Photobooth() {
             console.log('Generated image loads successfully:', {
               width: testImg.width,
               height: testImg.height,
-              provider: imageProvider
+              provider: currentModelType === 'video' ? 'replicate' : 'stability'
             });
             resolve();
           };
@@ -788,7 +746,7 @@ export default function Photobooth() {
       await animateProgress(98, 100, 600, 'uploading', 'Finalizing magic...');
 
       console.log('AI generation completed successfully:', {
-        provider: imageProvider,
+        provider: currentModelType === 'video' ? 'replicate' : 'stability',
         type: currentModelType,
         format: aiContent.startsWith('data:') ? 'data URL' : 'blob URL',
         size: aiContent.length,
@@ -871,10 +829,7 @@ export default function Photobooth() {
   // Get current provider for display
   const getCurrentProvider = () => {
     if (!config) return 'Unknown';
-    const provider = currentModelType === 'image' 
-      ? (config.image_provider || 'stability')
-      : (config.video_provider || 'stability');
-    return provider.charAt(0).toUpperCase() + provider.slice(1);
+    return currentModelType === 'image' ? 'Stability AI' : 'Replicate';
   };
 
   return (
@@ -902,7 +857,7 @@ export default function Photobooth() {
                 ) : (
                   <>
                     <ImageIcon className="w-3 h-3 text-blue-400" />
-                    <span>{getCurrentProvider()} AI</span>
+                    <span>{getCurrentProvider()}</span>
                   </>
                 )}
               </div>
@@ -972,7 +927,7 @@ export default function Photobooth() {
                 <User className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" />
                 <div>
                   <span className="text-white font-medium">Provider:</span>
-                  <span className="text-gray-300"> Using {getCurrentProvider()} AI for generation</span>
+                  <span className="text-gray-300"> Using {getCurrentProvider()} for generation</span>
                 </div>
               </div>
               <div className="flex items-start gap-3">
@@ -1108,8 +1063,6 @@ export default function Photobooth() {
             <p><span className="text-blue-400 font-semibold">Mode:</span> {currentModelType}</p>
             <p><span className="text-green-400 font-semibold">Face Mode:</span> {config?.face_preservation_mode || 'preserve_face'}</p>
             <p><span className="text-yellow-400 font-semibold">Attempts:</span> {generationAttempts}/3</p>
-            <p><span className="text-indigo-400 font-semibold">Image Provider:</span> {config?.image_provider || 'stability'}</p>
-            <p><span className="text-pink-400 font-semibold">Video Provider:</span> {config?.video_provider || 'stability'}</p>
             <p><span className="text-cyan-400 font-semibold">Resolution:</span> 1024x576 (16:9 Landscape)</p>
             <p><span className="text-red-400 font-semibold">Camera Key:</span> {cameraKey} {isMobile && '(Mobile Mode)'}</p>
             {debugInfo && (
