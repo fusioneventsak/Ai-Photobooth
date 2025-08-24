@@ -1,4 +1,4 @@
-// src/types/config.ts
+// src/types/config.ts - FIXED VERSION with proper model fields
 // Enhanced config types for SDXL Inpainting + ControlNet support
 
 export interface Config {
@@ -20,6 +20,10 @@ export interface Config {
   use_provider_fallback: boolean;
   face_preservation_mode: 'preserve_face' | 'replace_face';
   gallery_images_per_page?: number;
+  
+  // ✅ CRITICAL FIX: Add the missing model selection fields
+  replicate_image_model?: string;  // Add this
+  replicate_video_model?: string;  // Add this
   
   // Enhanced SDXL Inpainting Settings
   sdxl_strength?: number; // 0.1-1.0, lower preserves more of original
