@@ -1,4 +1,4 @@
-// src/lib/supabase.ts - Complete updated file
+// src/lib/supabase.ts - Complete updated file with URL/Video handling fix
 import { createClient } from '@supabase/supabase-js';
 import type { Config, Photo } from '../types/supabase';
 
@@ -136,8 +136,7 @@ export async function updateConfig(updates: Partial<Config>): Promise<Config | n
   }
 }
 
-
-// Enhanced uploadPhoto function with comprehensive error handling
+// UPDATED: Enhanced uploadPhoto function with URL/video handling
 export async function uploadPhoto(
   imageData: string | File, 
   prompt: string, 
@@ -149,6 +148,7 @@ export async function uploadPhoto(
       dataType: typeof imageData,
       isDataUrl: typeof imageData === 'string' && imageData.startsWith('data:'),
       isBlobUrl: typeof imageData === 'string' && imageData.startsWith('blob:'),
+      isHttpUrl: typeof imageData === 'string' && imageData.startsWith('http'),
       dataLength: typeof imageData === 'string' ? imageData.length : imageData.size,
       promptLength: prompt.length
     });
@@ -156,7 +156,7 @@ export async function uploadPhoto(
     let imageUrl: string;
     
     if (typeof imageData === 'string') {
-      // Handle both data URLs and blob URLs
+      // Handle data URLs, blob URLs, and HTTP URLs
       let blob: Blob;
       
       if (imageData.startsWith('data:')) {
@@ -231,14 +231,77 @@ export async function uploadPhoto(
           console.error('❌ Blob URL conversion failed:', fetchError);
           throw new Error(`Failed to convert blob URL: ${fetchError instanceof Error ? fetchError.message : 'Unknown error'}`);
         }
+        
+      } else if (imageData.startsWith('http')) {
+        // NEW: Handle HTTP URLs (from Replicate video generation)
+        console.log('🔄 Downloading content from HTTP URL...', imageData.substring(0, 100) + '...');
+        
+        try {
+          const response = await fetch(imageData);
+          if (!response.ok) {
+            throw new Error(`Failed to fetch content from URL: ${response.status} ${response.statusText}`);
+          }
+          
+          blob = await response.blob();
+          
+          if (blob.size === 0) {
+            throw new Error('Downloaded content is empty');
+          }
+          
+          // Auto-detect content type from response or blob
+          let detectedType = blob.type;
+          if (!detectedType) {
+            // Try to determine from URL extension or default based on contentType
+            if (imageData.includes('.mp4') || imageData.includes('.mov') || contentType === 'video') {
+              detectedType = 'video/mp4';
+            } else if (imageData.includes('.png')) {
+              detectedType = 'image/png';
+            } else if (imageData.includes('.jpg') || imageData.includes('.jpeg')) {
+              detectedType = 'image/jpeg';
+            } else {
+              detectedType = contentType === 'video' ? 'video/mp4' : 'image/png';
+            }
+          }
+          
+          // Create a new blob with the correct type if needed
+          if (blob.type !== detectedType) {
+            blob = new Blob([blob], { type: detectedType });
+          }
+          
+          console.log('✅ HTTP URL to blob conversion successful:', {
+            url: imageData.substring(0, 100) + '...',
+            blobSize: blob.size,
+            mimeType: blob.type,
+            detectedType
+          });
+          
+        } catch (fetchError) {
+          console.error('❌ HTTP URL conversion failed:', fetchError);
+          throw new Error(`Failed to download content from URL: ${fetchError instanceof Error ? fetchError.message : 'Unknown error'}`);
+        }
+        
       } else {
-        throw new Error('Invalid image data: must be a data URL or blob URL');
+        throw new Error('Invalid image data: must be a data URL, blob URL, or HTTP URL');
       }
       
       // Generate unique filename with proper extension
       const timestamp = Date.now();
       const randomSuffix = Math.random().toString(36).substring(2, 8);
-      const extension = contentType === 'video' ? 'mp4' : 'png';
+      
+      // Determine extension from blob type
+      let extension = 'png'; // default
+      if (blob.type.includes('video/mp4')) {
+        extension = 'mp4';
+      } else if (blob.type.includes('video/')) {
+        extension = 'mov';
+      } else if (blob.type.includes('image/jpeg')) {
+        extension = 'jpg';
+      } else if (blob.type.includes('image/png')) {
+        extension = 'png';
+      } else if (contentType === 'video') {
+        extension = 'mp4';
+      }
+      
       const filename = `${contentType}_${timestamp}_${randomSuffix}.${extension}`;
       
       console.log('📁 Uploading with filename:', filename);
@@ -246,7 +309,8 @@ export async function uploadPhoto(
         filename,
         blobSize: blob.size,
         blobType: blob.type,
-        contentType
+        contentType,
+        extension
       });
       
       // Upload to Supabase storage with proper content type
@@ -394,14 +458,14 @@ export async function uploadPhoto(
       
       if (message.includes('invalid image data') || message.includes('invalid base64') || message.includes('invalid data url')) {
         throw new Error('Invalid image format. Please ensure the image was generated correctly.');
-      } else if (message.includes('storage upload failed') || message.includes('failed to fetch blob')) {
+      } else if (message.includes('storage upload failed') || message.includes('failed to fetch') || message.includes('failed to download')) {
         throw new Error('Failed to upload to cloud storage. Please check your internet connection and try again.');
       } else if (message.includes('database') || message.includes('insert failed')) {
         throw new Error('Failed to save photo information. The image was uploaded but not cataloged.');
       } else if (message.includes('public url') || message.includes('failed to get')) {
         throw new Error('Upload succeeded but failed to generate access URL. Please try again.');
-      } else if (message.includes('conversion failed') || message.includes('blob is empty')) {
-        throw new Error('Image data conversion failed. Please try capturing a new photo.');
+      } else if (message.includes('conversion failed') || message.includes('blob is empty') || message.includes('downloaded content is empty')) {
+        throw new Error('Content processing failed. Please try generating again.');
       } else if (message.includes('timeout') || message.includes('network')) {
         throw new Error('Network timeout. Please check your connection and try again.');
       } else {
@@ -414,6 +478,45 @@ export async function uploadPhoto(
   }
 }
 
+// NEW: Auto-upload handler specifically for generated content
+export async function handleAutoUpload(
+  resultData: string,
+  prompt: string,
+  type: 'image' | 'video'
+): Promise<Photo | null> {
+  try {
+    console.log(`🔄 Auto-uploading ${type} to gallery...`, {
+      dataType: typeof resultData,
+      isUrl: resultData.startsWith('http'),
+      isDataUrl: resultData.startsWith('data:'),
+      isBlobUrl: resultData.startsWith('blob:'),
+      promptLength: prompt.length
+    });
+    
+    // Use the enhanced uploadPhoto function that now handles URLs
+    const result = await uploadPhoto(resultData, prompt, type);
+    
+    if (result) {
+      console.log(`✅ Auto-upload successful for ${type}:`, result.id);
+      
+      // Trigger gallery refresh event
+      window.dispatchEvent(new CustomEvent('galleryUpdate', {
+        detail: { 
+          action: 'add',
+          photo: result,
+          timestamp: new Date().toISOString()
+        }
+      }));
+    }
+    
+    return result;
+    
+  } catch (error) {
+    console.error(`❌ Auto-upload failed for ${type}:`, error);
+    // Don't throw error here - we don't want auto-upload failures to break the main flow
+    return null;
+  }
+}
 
 // Get public photos function
 export async function getPublicPhotos(): Promise<Photo[]> {
