@@ -1,49 +1,56 @@
-// Enhanced Stability AI client for seamless SDXL inpainting
-export interface StabilityGenerationParams {
-  prompt: string;
-  imageData: string;
-  mode: 'inpaint' | 'image-to-image' | 'controlnet';
-  maskData?: string;
-  facePreservationMode: 'preserve_face' | 'replace_face';
-  strength?: number;
-  cfgScale?: number;
-  steps?: number;
-  useControlNet?: boolean;
-  controlNetType?: 'canny' | 'depth' | 'openpose' | 'auto';
-  negativePrompt?: string;
-  seed?: number;
+import { supabase } from './supabase'
+
+export interface StabilityParams {
+  prompt: string
+  imageData: string
+  maskData?: string
+  mode?: 'image-to-image' | 'inpaint'
+  strength?: number
+  cfgScale?: number
+  steps?: number
+  negativePrompt?: string
+  seed?: number
+  useControlNet?: boolean
+  controlNetType?: string
+  facePreservationMode?: 'preserve_face' | 'transform_face'
 }
 
-export interface StabilityResponse {
-  success: boolean;
-  imageData?: string;
-  error?: string;
-  metadata?: {
-    model: string;
-    params: any;
-    processingTime: number;
-  };
-}
-
-export async function generateWithStability(params: StabilityGenerationParams): Promise<string> {
+export async function generateWithStability(params: StabilityParams): Promise<string> {
   try {
-    console.log('🎨 Starting enhanced SDXL inpainting with optimized parameters...');
-    
-    // Enhanced prompt engineering for better face results
-    const enhancedPrompt = optimizePromptForFaces(params.prompt, params.facePreservationMode);
-    
-    // Optimized parameters for seamless blending
+    console.log('🔄 Starting Stability AI generation...', {
+      mode: params.mode,
+      hasMask: !!params.maskData,
+      faceMode: params.facePreservationMode
+    })
+
+    // Validate required parameters
+    if (!params.prompt || !params.imageData) {
+      throw new Error('Missing required parameters: prompt and imageData')
+    }
+
+    // Optimize parameters for SDXL and face preservation
     const optimizedParams = {
-      ...params,
-      prompt: enhancedPrompt,
-      negativePrompt: params.negativePrompt || generateNegativePrompt(params.facePreservationMode),
+      prompt: params.prompt,
+      imageData: params.imageData,
+      maskData: params.maskData,
+      mode: params.mode || (params.maskData ? 'inpaint' : 'image-to-image'),
+      negativePrompt: params.negativePrompt || 'blurry, low quality, distorted, deformed, ugly, bad anatomy, extra limbs, extra fingers, mutated hands',
+      facePreservationMode: params.facePreservationMode || 'preserve_face',
+      useControlNet: params.useControlNet !== false, // Default to true
+      controlNetType: params.controlNetType || 'auto',
+      // Face preservation: lower strength to keep original features
       strength: params.facePreservationMode === 'preserve_face' ? 
-        Math.min(params.strength || 0.35, 0.45) : // Lower strength for face preservation
-        Math.max(params.strength || 0.65, 0.55),  // Higher strength for transformation
-      cfgScale: params.cfgScale || 7.5, // Optimal for SDXL
-      steps: params.steps || 25,        // Good quality/speed balance
-      seed: params.seed || Math.floor(Math.random() * 1000000)
-    };
+        Math.min(params.strength || 0.35, 0.45) : 
+        Math.max(params.strength || 0.65, 0.55),
+      cfgScale: params.cfgScale || 7.5,
+      steps: params.steps || 25,
+      seed: params.seed || Math.floor(Math.random() * 1000000),
+      // SDXL-specific optimizations
+      model: 'stable-diffusion-xl-1024-v1-0',
+      style_preset: 'photographic',
+      clip_guidance_preset: 'FAST_BLUE',
+      sampler: 'K_DPM_2_ANCESTRAL'
+    }
 
     console.log('🔧 Optimized generation parameters:', {
       mode: optimizedParams.mode,
@@ -51,253 +58,166 @@ export async function generateWithStability(params: StabilityGenerationParams): 
       cfgScale: optimizedParams.cfgScale,
       steps: optimizedParams.steps,
       faceMode: optimizedParams.facePreservationMode
-    });
+    })
 
-    // Call the Supabase Edge Function
-    const { supabase } = await import('./supabase');
-    
+    // Call the Supabase Edge Function with proper body formatting
     const { data, error } = await supabase.functions.invoke('generate-stability-image', {
-      body: JSON.stringify({
-        ...optimizedParams,
-        // Additional SDXL-specific optimizations
-        model: 'stable-diffusion-xl-1024-v1-0',
-        style_preset: 'photographic',
-        clip_guidance_preset: 'FAST_BLUE',
-        sampler: 'K_DPM_2_ANCESTRAL' // Good for faces
-      })
-    });
+      body: optimizedParams // Pass as object, not JSON.stringify
+    })
 
     if (error) {
-      console.error('❌ Stability AI Edge Function error:', error);
-      throw new Error(`Stability AI generation failed: ${error.message || 'Unknown error'}`);
+      console.error('❌ Stability AI Edge Function error:', error)
+      
+      // Parse error details if available
+      const errorDetails = error.details || error.message || 'Unknown error'
+      const errorType = error.errorType || 'unknown_error'
+      
+      // Provide specific error messages based on error type
+      switch (errorType) {
+        case 'server_error':
+          throw new Error('API key configuration error. Please check your Stability AI API key in Supabase Edge Functions.')
+        case 'api_error':
+          throw new Error(`Stability AI API error: ${errorDetails}`)
+        case 'timeout_error':
+          throw new Error('Generation timed out. Please try again with a simpler prompt.')
+        case 'validation_error':
+          throw new Error('Invalid parameters. Please check your input data.')
+        case 'network_error':
+          throw new Error('Network connection error. Please check your internet connection.')
+        default:
+          throw new Error(`Stability AI generation failed: ${error.message || errorDetails}`)
+      }
     }
 
+    // Check for successful response
     if (!data || !data.success) {
-      console.error('❌ Stability AI generation unsuccessful:', data);
-      throw new Error(data?.error || 'Generation failed without specific error');
+      console.error('❌ Stability AI generation unsuccessful:', data)
+      
+      const errorMessage = data?.error || 'Generation failed without specific error'
+      const suggestion = data?.suggestion || 'Try again later'
+      
+      throw new Error(`${errorMessage}. ${suggestion}`)
     }
 
     if (!data.imageData) {
-      console.error('❌ No image data received from Stability AI');
-      throw new Error('No image data received from generation service');
+      console.error('❌ No image data received from Stability AI')
+      throw new Error('No image data received from generation service')
     }
 
-    console.log('✅ Enhanced SDXL inpainting completed successfully');
-    return data.imageData;
+    console.log('✅ Enhanced SDXL inpainting completed successfully')
+    return data.imageData
 
   } catch (error) {
-    console.error('❌ Stability AI generation error:', error);
+    console.error('❌ Stability AI generation error:', error)
+    console.error('📊 Generation error details:', error)
     
     if (error instanceof Error) {
       // Provide more specific error messages
       if (error.message.includes('API key')) {
-        throw new Error('Stability AI API key is invalid or missing. Please check your configuration.');
+        throw new Error('Stability AI API key is invalid or missing. Please check your configuration.')
       } else if (error.message.includes('credits')) {
-        throw new Error('Insufficient Stability AI credits. Please check your account balance.');
+        throw new Error('Insufficient Stability AI credits. Please check your account balance.')
       } else if (error.message.includes('rate limit')) {
-        throw new Error('Rate limit exceeded. Please wait a moment and try again.');
+        throw new Error('Rate limit exceeded. Please wait a moment and try again.')
       } else if (error.message.includes('timeout')) {
-        throw new Error('Generation timed out. Please try again with a simpler prompt.');
+        throw new Error('Generation timed out. Please try again with a simpler prompt.')
+      } else if (error.message.includes('network') || error.message.includes('fetch')) {
+        throw new Error('Network error. Please check your internet connection and try again.')
+      } else if (error.message.includes('parse') || error.message.includes('JSON')) {
+        throw new Error('Data format error. Please try again.')
+      }
+      
+      // Re-throw the original error if no specific handling
+      throw error
+    } else {
+      throw new Error('Unknown error occurred during generation')
+    }
+  }
+}
+
+// Test function for API connectivity
+export async function testStabilityConnection(): Promise<{ success: boolean; error?: string }> {
+  try {
+    // Create a minimal test image (1x1 pixel)
+    const testImage = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+    
+    console.log('🧪 Testing Stability AI connection...')
+    
+    const { data, error } = await supabase.functions.invoke('generate-stability-image', {
+      body: {
+        prompt: 'test image',
+        imageData: testImage,
+        mode: 'image-to-image',
+        strength: 0.5,
+        steps: 10 // Minimal steps for testing
+      }
+    })
+
+    if (error || !data?.success) {
+      return { 
+        success: false, 
+        error: error?.message || data?.error || 'Connection test failed' 
       }
     }
-    
-    throw error;
+
+    return { success: true }
+  } catch (error) {
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Unknown error' 
+    }
   }
 }
 
-// Enhanced prompt optimization for better face results
-function optimizePromptForFaces(originalPrompt: string, faceMode: 'preserve_face' | 'replace_face'): string {
-  const basePrompt = originalPrompt.trim();
-  
-  if (faceMode === 'preserve_face') {
-    // Emphasis on natural, realistic face preservation
-    const facePreservationKeywords = [
-      'photorealistic portrait',
-      'natural skin texture',
-      'detailed facial features',
-      'sharp eyes',
-      'natural lighting',
-      'high resolution',
-      'professional photography',
-      'clean composition',
-      'seamless blending'
-    ];
-    
-    return `${basePrompt}, ${facePreservationKeywords.join(', ')}, masterpiece, best quality, 8k uhd`;
-  } else {
-    // Creative transformation while maintaining quality
-    const transformationKeywords = [
-      'creative character design',
-      'artistic interpretation',
-      'detailed features',
-      'high quality render',
-      'professional illustration',
-      'cohesive style'
-    ];
-    
-    return `${basePrompt}, ${transformationKeywords.join(', ')}, masterpiece, best quality`;
-  }
-}
+// Enhanced error handling and validation
+export function validateStabilityParams(params: StabilityParams): { valid: boolean; errors: string[] } {
+  const errors: string[] = []
 
-// Generate optimized negative prompts
-function generateNegativePrompt(faceMode: 'preserve_face' | 'replace_face'): string {
-  const commonNegatives = [
-    'blurry',
-    'low quality',
-    'jpeg artifacts',
-    'watermark',
-    'text',
-    'signature',
-    'low resolution',
-    'pixelated',
-    'distorted',
-    'oversaturated'
-  ];
-  
-  const faceSpecificNegatives = faceMode === 'preserve_face' ? [
-    'facial distortion',
-    'asymmetrical face',
-    'unnatural skin',
-    'artificial lighting',
-    'plastic skin',
-    'overprocessed',
-    'fake looking',
-    'uncanny valley',
-    'face swap artifacts',
-    'misaligned features',
-    'circular mask',
-    'visible seams',
-    'harsh transitions'
-  ] : [
-    'inconsistent style',
-    'mismatched elements',
-    'poor composition',
-    'incoherent design'
-  ];
-  
-  return [...commonNegatives, ...faceSpecificNegatives].join(', ');
-}
-
-// Enhanced image preprocessing for better SDXL compatibility
-export async function preprocessForSDXL(imageData: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      try {
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        
-        if (!ctx) {
-          reject(new Error('Failed to get canvas context'));
-          return;
-        }
-        
-        // SDXL works best at 1024x1024
-        canvas.width = 1024;
-        canvas.height = 1024;
-        
-        // High-quality scaling
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';
-        
-        // Subtle preprocessing for better results
-        ctx.filter = 'contrast(1.02) brightness(1.01) saturate(1.02)';
-        
-        // Calculate best fit scaling
-        const scale = Math.min(canvas.width / img.width, canvas.height / img.height);
-        const scaledWidth = img.width * scale;
-        const scaledHeight = img.height * scale;
-        const x = (canvas.width - scaledWidth) / 2;
-        const y = (canvas.height - scaledHeight) / 2;
-        
-        // Fill with neutral background
-        ctx.fillStyle = '#f0f0f0';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        
-        // Draw the image
-        ctx.drawImage(img, x, y, scaledWidth, scaledHeight);
-        
-        // Reset filter
-        ctx.filter = 'none';
-        
-        resolve(canvas.toDataURL('image/jpeg', 0.92));
-      } catch (error) {
-        reject(error);
-      }
-    };
-    
-    img.onerror = () => reject(new Error('Failed to load image for preprocessing'));
-    img.src = imageData;
-  });
-}
-
-// Utility function for validating generation parameters
-export function validateStabilityParams(params: StabilityGenerationParams): boolean {
   if (!params.prompt || params.prompt.trim().length === 0) {
-    throw new Error('Prompt is required');
+    errors.push('Prompt is required')
   }
-  
+
   if (!params.imageData || !params.imageData.startsWith('data:image/')) {
-    throw new Error('Valid image data is required');
+    errors.push('Valid image data is required')
   }
-  
+
   if (params.mode === 'inpaint' && (!params.maskData || !params.maskData.startsWith('data:image/'))) {
-    throw new Error('Mask data is required for inpainting mode');
+    errors.push('Mask data is required for inpaint mode')
   }
-  
-  if (params.strength && (params.strength < 0 || params.strength > 1)) {
-    throw new Error('Strength must be between 0 and 1');
+
+  if (params.strength !== undefined && (params.strength < 0 || params.strength > 1)) {
+    errors.push('Strength must be between 0 and 1')
   }
-  
-  if (params.cfgScale && (params.cfgScale < 1 || params.cfgScale > 20)) {
-    throw new Error('CFG scale must be between 1 and 20');
+
+  if (params.cfgScale !== undefined && (params.cfgScale < 1 || params.cfgScale > 20)) {
+    errors.push('CFG Scale must be between 1 and 20')
   }
-  
-  if (params.steps && (params.steps < 10 || params.steps > 50)) {
-    throw new Error('Steps must be between 10 and 50');
+
+  if (params.steps !== undefined && (params.steps < 10 || params.steps > 50)) {
+    errors.push('Steps must be between 10 and 50')
   }
-  
-  return true;
+
+  return {
+    valid: errors.length === 0,
+    errors
+  }
 }
 
-// Enhanced retry logic with exponential backoff
-export async function generateWithRetry(
-  params: StabilityGenerationParams,
-  maxRetries: number = 2
-): Promise<string> {
-  let lastError: Error | null = null;
-  
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      console.log(`🔄 Generation attempt ${attempt + 1}/${maxRetries + 1}`);
-      
-      // Validate parameters before each attempt
-      validateStabilityParams(params);
-      
-      // Add slight randomization to avoid identical failures
-      const adjustedParams = {
-        ...params,
-        seed: params.seed ? params.seed + attempt : undefined,
-        cfgScale: params.cfgScale ? params.cfgScale + (attempt * 0.5) : undefined
-      };
-      
-      const result = await generateWithStability(adjustedParams);
-      console.log(`✅ Generation successful on attempt ${attempt + 1}`);
-      return result;
-      
-    } catch (error) {
-      lastError = error as Error;
-      console.warn(`⚠️ Generation attempt ${attempt + 1} failed:`, error);
-      
-      if (attempt < maxRetries) {
-        // Exponential backoff: 1s, 2s, 4s
-        const delay = Math.pow(2, attempt) * 1000;
-        console.log(`⏳ Retrying in ${delay}ms...`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-      }
+// Utility function for image processing
+export function optimizeImageForStability(imageData: string): string {
+  try {
+    // Basic validation and optimization
+    if (!imageData.startsWith('data:image/')) {
+      throw new Error('Invalid image data format')
     }
+
+    // You could add image resizing, compression, or format conversion here
+    // For now, just return the original data
+    return imageData
+  } catch (error) {
+    console.error('❌ Image optimization failed:', error)
+    throw new Error('Failed to optimize image for Stability AI')
   }
-  
-  console.error(`❌ All ${maxRetries + 1} generation attempts failed`);
-  throw lastError || new Error('Generation failed after all retry attempts');
 }
+
+export default { generateWithStability, testStabilityConnection, validateStabilityParams, optimizeImageForStability }
