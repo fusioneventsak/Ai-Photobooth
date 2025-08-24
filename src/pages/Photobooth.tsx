@@ -707,7 +707,8 @@ export default function Photobooth() {
         throw new Error('Generated content is empty. Please try again.');
       }
 
-      if (!aiContent.startsWith('data:') && !aiContent.startsWith('blob:')) {
+      // FIXED: Accept video URLs from Replicate
+      if (!aiContent.startsWith('data:') && !aiContent.startsWith('blob:') && !aiContent.startsWith('http')) {
         console.error('Invalid AI content format:', aiContent.substring(0, 100));
         throw new Error('Invalid AI content format received.');
       }
@@ -717,9 +718,11 @@ export default function Photobooth() {
         contentType: typeof aiContent,
         length: aiContent.length,
         startsWithData: aiContent.startsWith('data:'),
+        startsWithHttp: aiContent.startsWith('http'),
         preview: aiContent.substring(0, 100) + '...'
       });
 
+      // Only validate images (not video URLs)
       if (aiContent.startsWith('data:')) {
         const testImg = new Image();
         await new Promise<void>((resolve, reject) => {
@@ -741,6 +744,9 @@ export default function Photobooth() {
             reject(new Error('Image validation timeout'));
           }, 5000);
         });
+      } else if (aiContent.startsWith('http')) {
+        // For video URLs, just log the URL - no validation needed
+        console.log('Video URL received successfully:', aiContent);
       }
 
       await animateProgress(98, 100, 600, 'uploading', 'Finalizing magic...');
