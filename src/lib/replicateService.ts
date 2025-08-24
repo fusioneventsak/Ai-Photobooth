@@ -373,20 +373,7 @@ export function validateReplicateParams(params: GenerationOptions): { valid: boo
 // Export types for use in components
 export type { GenerationOptions }
 
-// Export all functions and constants for compatibility
-export { 
-  generateWithReplicate, 
-  testReplicateConnection, 
-  getModelInfo, 
-  getRecommendedModel, 
-  generateWithAutoModel,
-  batchGenerateWithModels,
-  validateReplicateParams,
-  getAvailableModels,
-  getDefaultModel,
-  REPLICATE_MODELS
-}
-
+// Default export for backward compatibility
 export default { 
   generateWithReplicate, 
   testReplicateConnection, 
