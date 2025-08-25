@@ -671,10 +671,16 @@ export default function Photobooth() {
           prompt: currentConfig.global_prompt || 'Transform this person into a stunning cinematic scene while preserving their facial features and identity',
           inputData: processedContent,
           type: 'video',
-          model: selectedVideoModel, // Use admin config model instead of hardcoded
+          model: selectedVideoModel, // Use admin config model
           duration: currentConfig.video_duration || 5,
           preserveFace: faceMode === 'preserve_face',
-          userId: currentUser?.id
+          userId: currentUser?.id,
+          // Get Kling-specific settings from config if Kling model is selected
+          ...(selectedVideoModel === 'kling-v1.6-pro' ? {
+            cfgScale: (currentConfig as any).kling_cfg_scale || 0.5,
+            negativePrompt: (currentConfig as any).kling_negative_prompt || '',
+            aspectRatio: (currentConfig as any).kling_aspect_ratio || '16:9'
+          } : {})
         });
 
         // Store prediction ID for tracking
