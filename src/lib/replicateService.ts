@@ -1,7 +1,7 @@
-// src/lib/replicateService.ts - Updated with Kling-v1.6-pro support
+// src/lib/replicateService.ts - Updated client to send Kling parameters
 import { supabase } from './supabase';
 
-// VERIFIED: Models confirmed to work on Replicate API + New Kling model
+// VERIFIED: Models confirmed to work on Replicate API + Kling v1.6 Pro
 export const REPLICATE_MODELS = {
   video: {
     'hailuo-2': {
@@ -29,20 +29,19 @@ export const REPLICATE_MODELS = {
     'kling-v1.6-pro': {
       name: 'Kling v1.6 Pro - Crystal Quality',
       description: 'Kwaivgi\'s latest Kling model with enhanced detail and artistic effects',
-      speed: 'Slow Speed', // 245sec from your JSON
+      speed: 'Slow Speed',
       quality: 'Ultra Premium',
       bestFor: 'Artistic effects, crystal reflections, geometric worlds, high detail',
-      maxDuration: 10, // Common for Kling models
-      allowedDurations: [5, 10], // Based on your JSON showing duration: 5
+      maxDuration: 10,
+      allowedDurations: [5, 10],
       verified: true,
-      replicateId: 'kwaivgi/kling-v1.6-pro', // Assuming this is the correct identifier
-      // Kling-specific parameters
+      replicateId: 'kwaivgi/kling-v1.6-pro',
       supportsCfgScale: true,
-      cfgScaleRange: [0.1, 2.0], // From your JSON: 0.5
+      cfgScaleRange: [0.1, 2.0],
       supportsNegativePrompt: true,
       supportsAspectRatio: true,
-      aspectRatios: ['16:9', '9:16', '1:1'], // Common ratios
-      supportsStartImage: true // From your JSON
+      aspectRatios: ['16:9', '9:16', '1:1'],
+      supportsStartImage: true
     },
     'wan-2.2': {
       name: 'Wan 2.2 - Speed Champion',
@@ -79,7 +78,7 @@ interface GenerationOptions {
   preserveFace?: boolean;
   model?: VideoModel;
   userId?: string;
-  // New Kling-specific options
+  // Kling-specific options
   cfgScale?: number;
   negativePrompt?: string;
   aspectRatio?: string;
@@ -92,7 +91,6 @@ interface GenerationResponse {
   model: string;
 }
 
-// Helper function to get valid duration for a specific model
 function getValidDuration(requestedDuration: number, model: VideoModel): number {
   const modelInfo = REPLICATE_MODELS.video[model];
   if (!modelInfo || !modelInfo.allowedDurations) {
@@ -144,40 +142,46 @@ export async function generateWithReplicate({
       console.log(`⚠️ Duration adjusted from ${duration}s to ${validDuration}s for model ${model}`);
     }
 
-    // Prepare model-specific parameters
-    let modelSpecificParams: any = {
+    console.log(`📡 Calling Edge Function with model: ${model} (${modelInfo.replicateId})`);
+
+    // Prepare base parameters
+    const baseParams = {
+      model: model,
       prompt: prompt,
       duration: validDuration
     };
 
-    // Handle Kling-specific parameters
+    // Add model-specific parameters
+    let modelParams: any;
+
     if (model === 'kling-v1.6-pro') {
-      modelSpecificParams = {
-        ...modelSpecificParams,
-        cfg_scale: cfgScale || 0.5, // Default from your JSON
+      // Kling-specific parameters
+      modelParams = {
+        ...baseParams,
+        cfg_scale: cfgScale || 0.5,
         aspect_ratio: aspectRatio || '16:9',
-        negative_prompt: negativePrompt || '', // Default from your JSON
-        start_image: preserveFace ? inputData : null // Use start_image for Kling
+        negative_prompt: negativePrompt || '',
+        start_image: preserveFace ? inputData : null
       };
     } else {
       // MiniMax and other models
       const validResolution = model.startsWith('hailuo') ? '1080p' : '720p';
-      modelSpecificParams = {
-        ...modelSpecificParams,
+      modelParams = {
+        ...baseParams,
         resolution: validResolution,
         first_frame_image: preserveFace ? inputData : null
       };
     }
 
-    console.log(`📡 Calling Edge Function with model: ${model} (${modelInfo.replicateId})`);
-    console.log('Model-specific params:', modelSpecificParams);
+    console.log('Model-specific params:', {
+      ...modelParams,
+      // Don't log the actual image data
+      start_image: modelParams.start_image ? '[IMAGE_PROVIDED]' : null,
+      first_frame_image: modelParams.first_frame_image ? '[IMAGE_PROVIDED]' : null
+    });
 
-    // Call your Supabase Edge Function
     const { data, error } = await supabase.functions.invoke('generate-replicate-content', {
-      body: {
-        model: model,
-        ...modelSpecificParams
-      }
+      body: modelParams
     });
 
     if (error) {
