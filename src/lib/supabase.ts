@@ -378,4 +378,94 @@ export async function getPhotosWithPagination(
   }
 }
 
+// Delete all photos and associated records
+export async function deleteAllPhotos(): Promise<{ success: boolean; deletedCount: number; errors: string[] }> {
+  try {
+    console.log('Starting bulk deletion of all photos...');
+
+    // Get all photos first
+    const { data: allPhotos, error: fetchError } = await supabase
+      .from('photos')
+      .select('id, storage_path, content_type');
+
+    if (fetchError) {
+      console.error('Error fetching photos for bulk deletion:', fetchError);
+      throw fetchError;
+    }
+
+    if (!allPhotos || allPhotos.length === 0) {
+      console.log('No photos found to delete');
+      return { success: true, deletedCount: 0, errors: [] };
+    }
+
+    console.log(`Found ${allPhotos.length} photos to delete`);
+
+    const errors: string[] = [];
+    let deletedCount = 0;
+
+    // Delete photos in batches to avoid overwhelming the system
+    const batchSize = 10;
+    for (let i = 0; i < allPhotos.length; i += batchSize) {
+      const batch = allPhotos.slice(i, i + batchSize);
+      
+      console.log(`Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(allPhotos.length / batchSize)}`);
+
+      // Process batch in parallel
+      const batchPromises = batch.map(async (photo) => {
+        try {
+          const success = await deletePhotoAndAllDuplicates(photo.id);
+          if (success) {
+            deletedCount++;
+            console.log(`Successfully deleted photo: ${photo.id}`);
+          } else {
+            errors.push(`Failed to delete photo: ${photo.id}`);
+          }
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          errors.push(`Error deleting photo ${photo.id}: ${errorMessage}`);
+          console.error(`Error deleting photo ${photo.id}:`, error);
+        }
+      });
+
+      // Wait for batch to complete before processing next batch
+      await Promise.all(batchPromises);
+
+      // Small delay between batches to prevent rate limiting
+      if (i + batchSize < allPhotos.length) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+
+    console.log(`Bulk deletion completed. Deleted: ${deletedCount}, Errors: ${errors.length}`);
+
+    // Create a gallery update notification for real-time updates
+    try {
+      await supabase
+        .from('gallery_updates')
+        .insert({
+          action: 'bulk_delete',
+          message: `Bulk deletion completed: ${deletedCount} photos deleted, ${errors.length} errors`
+        });
+    } catch (notificationError) {
+      console.warn('Failed to create bulk deletion notification:', notificationError);
+      // Don't fail the operation if notification fails
+    }
+
+    return {
+      success: errors.length === 0,
+      deletedCount,
+      errors
+    };
+
+  } catch (error) {
+    console.error('Error in deleteAllPhotos:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    return {
+      success: false,
+      deletedCount: 0,
+      errors: [errorMessage]
+    };
+  }
+}
+
 export default supabase;
