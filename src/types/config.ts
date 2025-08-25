@@ -1,6 +1,4 @@
-// src/types/config.ts - FIXED VERSION with proper model fields
-// Enhanced config types for SDXL Inpainting + ControlNet support
-
+// src/types/config.ts - Updated with Kling-specific parameters
 export interface Config {
   id: string;
   created_at: string;
@@ -21,9 +19,9 @@ export interface Config {
   face_preservation_mode: 'preserve_face' | 'replace_face';
   gallery_images_per_page?: number;
   
-  // ✅ CRITICAL FIX: Add the missing model selection fields
-  replicate_image_model?: string;  // Add this
-  replicate_video_model?: string;  // Add this
+  // Model selection fields
+  replicate_image_model?: string;
+  replicate_video_model?: string;
   
   // Enhanced SDXL Inpainting Settings
   sdxl_strength?: number; // 0.1-1.0, lower preserves more of original
@@ -31,6 +29,12 @@ export interface Config {
   sdxl_steps?: number; // 10-50, number of steps
   sdxl_face_expansion?: number; // 1.0-2.0, how much to expand face mask
   sdxl_feather_radius?: number; // 0-50, mask feathering for smooth blending
+  
+  // ✅ NEW: Kling-specific video generation parameters
+  kling_cfg_scale?: number; // 0.1-2.0, guidance scale for Kling models
+  kling_negative_prompt?: string; // Negative prompt for what to avoid
+  kling_aspect_ratio?: '16:9' | '9:16' | '1:1'; // Aspect ratio options
+  kling_artistic_mode?: boolean; // Enable enhanced artistic effects
   
   // Advanced Settings
   use_controlnet?: boolean; // Enable ControlNet for better composition
