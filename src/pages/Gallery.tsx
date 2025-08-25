@@ -32,6 +32,11 @@ import {
   deleteAllPhotos, 
   deletePhotoAndAllDuplicates 
 } from '../lib/supabase';
+import { 
+  getPhotos, 
+  deleteAllPhotos, 
+  deletePhotoAndAllDuplicates 
+} from '../lib/supabase';
 import type { Photo } from '../types/supabase';
 
 export default function Gallery() {
@@ -326,6 +331,7 @@ export default function Gallery() {
       console.log(`🔄 Loading photos with cache bust: ${timestamp}`);
       
       const fetchedPhotos = await getPublicPhotos();
+      const fetchedPhotos = await getPhotos();
       
       console.log('📊 Detailed photo analysis:', {
         totalPhotos: fetchedPhotos.length,
