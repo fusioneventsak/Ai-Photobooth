@@ -918,23 +918,55 @@ export default function Admin() {
                         
                         <div className="mt-4 p-4 bg-gray-700/30 rounded-lg">
                           <div className="text-sm text-white font-medium mb-2">
-                            {VIDEO_MODELS[formData.replicate_video_model as VideoModel || 'hailuo-2'].name}
+                            {(() => {
+                              const modelKey = formData.replicate_video_model as VideoModel || 'hailuo-2';
+                              const model = VIDEO_MODELS[modelKey];
+                              return model ? model.name : 'Hailuo-02 - Physics Master';
+                            })()}
                           </div>
                           <div className="text-xs text-gray-400 mb-3">
-                            {VIDEO_MODELS[formData.replicate_video_model as VideoModel || 'hailuo-2'].description}
+                            {(() => {
+                              const modelKey = formData.replicate_video_model as VideoModel || 'hailuo-2';
+                              const model = VIDEO_MODELS[modelKey];
+                              return model ? model.description : 'Latest MiniMax model with excellent physics simulation and 1080p output.';
+                            })()}
                           </div>
                           <div className="flex items-center gap-6 text-xs mb-3">
                             <div className="flex items-center gap-1">
-                              {getSpeedIcon(VIDEO_MODELS[formData.replicate_video_model as VideoModel || 'hailuo-2'].speed)}
-                              <span>{VIDEO_MODELS[formData.replicate_video_model as VideoModel || 'hailuo-2'].speed}</span>
+                              {(() => {
+                                const modelKey = formData.replicate_video_model as VideoModel || 'hailuo-2';
+                                const model = VIDEO_MODELS[modelKey];
+                                return getSpeedIcon(model ? model.speed : '⏱️ Medium');
+                              })()}
+                              <span>
+                                {(() => {
+                                  const modelKey = formData.replicate_video_model as VideoModel || 'hailuo-2';
+                                  const model = VIDEO_MODELS[modelKey];
+                                  return model ? model.speed : '⏱️ Medium';
+                                })()}
+                              </span>
                             </div>
                             <div className="flex items-center gap-1">
-                              {getQualityIcon(VIDEO_MODELS[formData.replicate_video_model as VideoModel || 'hailuo-2'].quality)}
-                              <span>{VIDEO_MODELS[formData.replicate_video_model as VideoModel || 'hailuo-2'].quality}</span>
+                              {(() => {
+                                const modelKey = formData.replicate_video_model as VideoModel || 'hailuo-2';
+                                const model = VIDEO_MODELS[modelKey];
+                                return getQualityIcon(model ? model.quality : '⭐ Premium');
+                              })()}
+                              <span>
+                                {(() => {
+                                  const modelKey = formData.replicate_video_model as VideoModel || 'hailuo-2';
+                                  const model = VIDEO_MODELS[modelKey];
+                                  return model ? model.quality : '⭐ Premium';
+                                })()}
+                              </span>
                             </div>
                           </div>
                           <div className="text-xs text-gray-400">
-                            <strong>Best for:</strong> {VIDEO_MODELS[formData.replicate_video_model as VideoModel || 'hailuo-2'].bestFor}
+                            <strong>Best for:</strong> {(() => {
+                              const modelKey = formData.replicate_video_model as VideoModel || 'hailuo-2';
+                              const model = VIDEO_MODELS[modelKey];
+                              return model ? model.bestFor : 'Realistic physics, human movement, dramatic transformations';
+                            })()}
                           </div>
                         </div>
                       </div>
@@ -1113,7 +1145,13 @@ export default function Admin() {
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-400">Video Model:</span>
-                      <span className="text-xs">{VIDEO_MODELS[formData.replicate_video_model as VideoModel || 'hailuo-2'].name.split(' - ')[0]}</span>
+                      <span className="text-xs">
+                        {(() => {
+                          const modelKey = formData.replicate_video_model as VideoModel || 'hailuo-2';
+                          const model = VIDEO_MODELS[modelKey];
+                          return model ? model.name.split(' - ')[0] : 'Hailuo-02';
+                        })()}
+                      </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-400">Face Mode:</span>
