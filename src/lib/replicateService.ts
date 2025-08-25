@@ -4,7 +4,7 @@ import { supabase } from './supabase';
 // VERIFIED: Only models confirmed to work on Replicate API
 export const REPLICATE_MODELS = {
   video: {
-    'hailuo': {
+    'hailuo-2': {
       name: 'MiniMax Video-01 - Physics Master',
       description: 'MiniMax video model with excellent physics simulation and reliable performance',
       speed: 'Medium Speed',
@@ -13,6 +13,16 @@ export const REPLICATE_MODELS = {
       maxDuration: 6, // MiniMax limitation
       verified: true,
       replicateId: 'minimax/video-01' // This is the actual API identifier
+    },
+    'hailuo': {
+      name: 'MiniMax Video-01 - Classic',
+      description: 'Legacy MiniMax video model (same as hailuo-2)',
+      speed: 'Medium Speed',
+      quality: 'Premium Quality',
+      bestFor: 'Legacy compatibility, same as hailuo-2',
+      maxDuration: 6,
+      verified: true,
+      replicateId: 'minimax/video-01' // Same API identifier
     },
     'wan-2.2': {
       name: 'Wan 2.2 - Speed Champion',
@@ -62,7 +72,7 @@ export async function generateWithReplicate({
   type, 
   duration = 5,
   preserveFace = true,
-  model = 'hailuo', // Default to working MiniMax model
+  model = 'hailuo-2', // Default to working MiniMax model (matches Admin UI)
   userId
 }: GenerationOptions): Promise<GenerationResponse> {
   try {
@@ -140,7 +150,7 @@ export async function testReplicateConnection(): Promise<{
       prompt: 'test video generation - a simple object moving',
       inputData: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
       type: 'video',
-      model: 'hailuo', // Use working MiniMax model
+      model: 'hailuo-2', // Use working MiniMax model (matches Admin UI)
       duration: 2 // Minimal duration for testing
     });
 
@@ -175,7 +185,7 @@ export async function testReplicateConnection(): Promise<{
 
 // Helper functions
 export function getModelInfo(modelKey: VideoModel) {
-  return REPLICATE_MODELS.video[modelKey] || REPLICATE_MODELS.video['hailuo'];
+  return REPLICATE_MODELS.video[modelKey] || REPLICATE_MODELS.video['hailuo-2'];
 }
 
 export function getRecommendedDuration(modelKey: VideoModel, requestedDuration: number): number {
