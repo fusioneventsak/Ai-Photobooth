@@ -1,4 +1,4 @@
-// src/pages/Admin.tsx - Updated with all video transformation models including Kling
+// src/pages/Admin.tsx - Updated with 2025 working video models only
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { 
@@ -32,78 +32,64 @@ import { useConfigStore } from '../store/configStore';
 import type { Config } from '../types/config';
 import { testReplicateConnection } from '../lib/replicateService';
 
-// Enhanced model definitions with all available options
+// 2025 Working Video Models - Actually Available on Replicate
 const VIDEO_MODELS = {
-  'hailuo': {
-    name: "Hailuo-02 - Dramatic Transformation",
-    description: "Creates dramatic scene transformations while preserving subject likeness. Perfect for prompt-based video generation with cinematic effects.",
-    speed: "⚡ Fast",
+  'hailuo-2': {
+    name: "Hailuo-02 - Physics Master",
+    description: "Latest MiniMax model with excellent physics simulation and 1080p output. Best for realistic transformations with proper physics.",
+    speed: "⏱️ Medium",
     quality: "⭐ Premium",
-    bestFor: "Dramatic prompt-based transformations, cinematic effects, subject preservation"
+    bestFor: "Realistic physics, human movement, dramatic transformations"
+  },
+  'wan-2.2': {
+    name: "Wan 2.2 - Speed Champion", 
+    description: "Alibaba's fastest video model with motion diversity. Excellent speed-to-quality ratio for quick generations.",
+    speed: "⚡ Fast",
+    quality: "🔥 High",
+    bestFor: "Fast generation, motion diversity, efficiency"
+  },
+  'hunyuan-video': {
+    name: "HunyuanVideo - Cinematic Pro",
+    description: "Tencent's 13B parameter model with cinema-quality results. Fine-tunable for custom styles and professional work.",
+    speed: "🐌 Slow",
+    quality: "🌟 Ultimate",
+    bestFor: "Cinematic quality, fine-tuning, professional projects"
+  },
+  'kling-2.1': {
+    name: "Kling 2.1 - Motion Master",
+    description: "Enhanced motion model with complex action support. Excellent for dynamic scenes and realistic movement.",
+    speed: "⏱️ Medium", 
+    quality: "⭐ Premium",
+    bestFor: "Complex actions, dynamic motion, realistic movement"
   },
   'cogvideo': {
-    name: "CogVideoX - Advanced Quality", 
-    description: "High-quality video generation with excellent prompt adherence and smooth motion. Professional results with longer duration support.",
+    name: "CogVideoX - Quality Balance",
+    description: "Open-source option with solid quality and good prompt adherence. Reliable choice for consistent results.",
     speed: "⏱️ Medium",
-    quality: "⭐ Premium", 
-    bestFor: "High-quality professional video generation, complex scenes"
+    quality: "🔥 High", 
+    bestFor: "Balanced quality, open-source, consistent results"
   },
-  'kling': {
-    name: "Kling AI - Realistic Results",
-    description: "Realistic video transformations with natural motion and excellent subject preservation. Great for lifelike results in 1080p resolution.",
+  // Keep legacy for backward compatibility
+  'hailuo': {
+    name: "Hailuo-01 - Classic",
+    description: "Original dramatic transformation model. Still solid but consider upgrading to Hailuo-02 for better results.",
     speed: "⏱️ Medium",
-    quality: "📸 Photorealistic",
-    bestFor: "Realistic transformations, natural motion, lifelike results"
-  },
-  'runway': {
-    name: "Runway Gen-3 - Professional",
-    description: "Professional-grade video generation with cinematic quality and advanced motion controls. Premium results for commercial use.",
-    speed: "🐌 Slower",
-    quality: "⭐ Premium",
-    bestFor: "Professional cinematography, commercial quality results"
+    quality: "🔥 Standard",
+    bestFor: "Legacy compatibility, basic transformations"
   },
   'stable-video-diffusion': {
-    name: "Stable Video Diffusion - Basic Animation",
-    description: "Basic image-to-video animation with simple motion effects. Limited transformation capabilities but reliable results.",
+    name: "Stable Video Diffusion - Basic",
+    description: "Simple image-to-video animation. Limited capabilities but fast and reliable for basic motion.",
     speed: "⚡ Fast",
-    quality: "🔥 Standard",
-    bestFor: "Simple animation, basic motion effects"
+    quality: "⚡ Standard",
+    bestFor: "Simple animation, basic motion, speed priority"
   }
 } as const;
 
-const IMAGE_MODELS = {
-  'flux-schnell': {
-    name: "FLUX Schnell",
-    description: "Fast, high-quality image generation with excellent face preservation",
-    speed: "⚡ Fast",
-    quality: "🔥 High",
-    bestFor: "Quick previews, face preservation"
-  },
-  'flux-dev': {
-    name: "FLUX Dev", 
-    description: "Higher quality, slower generation with artistic capabilities",
-    speed: "🐌 Slow",
-    quality: "⭐ Premium",
-    bestFor: "Maximum quality, artistic results"
-  },
-  'sdxl': {
-    name: "Stable Diffusion XL",
-    description: "Classic high-quality generation with balanced results",
-    speed: "⏱️ Medium",
-    quality: "🔥 High",
-    bestFor: "Balanced quality and speed"
-  },
-  'realvisxl': {
-    name: "RealVisXL v4.0",
-    description: "Photorealistic image generation with excellent portrait quality",
-    speed: "⏱️ Medium",
-    quality: "📸 Photorealistic",
-    bestFor: "Realistic portraits, photography"
-  }
-} as const;
+// Remove IMAGE_MODELS since we're focusing on video only for Replicate
+// Images will use Stability AI SDXL exclusively
 
 type VideoModel = keyof typeof VIDEO_MODELS;
-type ImageModel = keyof typeof IMAGE_MODELS;
 
 interface AdminFormData extends Partial<Config> {
   gallery_public_access?: boolean;
@@ -118,7 +104,6 @@ interface AdminFormData extends Partial<Config> {
   image_provider?: 'stability' | 'replicate';
   video_provider?: 'stability' | 'replicate';
   use_provider_fallback?: boolean;
-  replicate_image_model?: ImageModel;
   replicate_video_model?: VideoModel;
 }
 
@@ -152,13 +137,12 @@ export default function Admin() {
         face_preservation_mode: config.face_preservation_mode || 'preserve_face',
         use_controlnet: config.use_controlnet ?? true,
         controlnet_type: config.controlnet_type || 'auto',
-        // Provider defaults - video always uses replicate
-        image_provider: config.image_provider || 'stability',
-        video_provider: 'replicate', // Always force Replicate for video
+        // Provider defaults - images use Stability, video uses Replicate
+        image_provider: 'stability', // Force images to use Stability AI
+        video_provider: 'replicate', // Force video to use Replicate
         use_provider_fallback: config.use_provider_fallback ?? true,
-        // Model selections with proper typing
-        replicate_image_model: ((config as any).replicate_image_model as ImageModel) || 'flux-schnell',
-        replicate_video_model: ((config as any).replicate_video_model as VideoModel) || 'hailuo',
+        // Video model selection with 2025 default
+        replicate_video_model: ((config as any).replicate_video_model as VideoModel) || 'hailuo-2',
       });
     }
   }, [config]);
@@ -212,9 +196,9 @@ export default function Admin() {
       if (formData.gallery_layout !== undefined) updates.gallery_layout = formData.gallery_layout;
       if (formData.gallery_images_per_page !== undefined) updates.gallery_images_per_page = formData.gallery_images_per_page;
       
-      // Provider configuration - CRITICAL: Always use Replicate for video
-      updates.image_provider = formData.image_provider || 'stability';
-      updates.video_provider = 'replicate'; // Force video to always use Replicate
+      // Provider configuration - Force optimal providers
+      updates.image_provider = 'stability'; // Always use Stability for images
+      updates.video_provider = 'replicate'; // Always use Replicate for video
       updates.use_provider_fallback = formData.use_provider_fallback ?? true;
       
       // AI settings
@@ -225,12 +209,10 @@ export default function Admin() {
       if (formData.use_controlnet !== undefined) updates.use_controlnet = formData.use_controlnet;
       if (formData.controlnet_type !== undefined) updates.controlnet_type = formData.controlnet_type;
       
-      // ✅ CRITICAL FIX: Properly save model selections with explicit type assertion
-      (updates as any).replicate_image_model = formData.replicate_image_model || 'flux-schnell';
-      (updates as any).replicate_video_model = formData.replicate_video_model || 'hailuo';
+      // Video model selection (2025 update)
+      (updates as any).replicate_video_model = formData.replicate_video_model || 'hailuo-2';
 
-      console.log('Saving config with models:', {
-        replicate_image_model: formData.replicate_image_model,
+      console.log('Saving config with video model:', {
         replicate_video_model: formData.replicate_video_model
       });
 
@@ -259,8 +241,8 @@ export default function Admin() {
   };
 
   const getQualityIcon = (quality: string) => {
-    if (quality.includes('Premium') || quality.includes('⭐')) return <Star className="w-4 h-4 text-purple-500" />;
-    if (quality.includes('Photorealistic') || quality.includes('📸')) return <Camera className="w-4 h-4 text-blue-500" />;
+    if (quality.includes('Ultimate') || quality.includes('🌟')) return <Star className="w-4 h-4 text-purple-500" />;
+    if (quality.includes('Premium') || quality.includes('⭐')) return <Star className="w-4 h-4 text-purple-400" />;
     return <Star className="w-4 h-4 text-yellow-500" />;
   };
 
@@ -691,7 +673,7 @@ export default function Admin() {
                     animate={{ opacity: 1, x: 0 }}
                     className="space-y-6"
                   >
-                    {/* AI Provider Selection */}
+                    {/* AI Provider Configuration */}
                     <div className="bg-gray-800/50 backdrop-blur-sm rounded-2xl p-6">
                       <h2 className="text-2xl font-semibold mb-6 flex items-center gap-3">
                         <Wand2 className="w-6 h-6 text-purple-400" />
@@ -701,20 +683,20 @@ export default function Admin() {
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                         <div>
                           <label className="block text-sm font-medium mb-2 text-gray-300">Image Generation Provider</label>
-                          <select
-                            name="image_provider"
-                            value={formData.image_provider || 'stability'}
-                            onChange={handleChange}
-                            className="w-full bg-gray-700/50 border border-gray-600 rounded-xl px-4 py-3 text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition"
-                          >
-                            <option value="stability">Stability AI (SDXL) - Recommended</option>
-                            <option value="replicate">Replicate (FLUX Models)</option>
-                          </select>
+                          <div className="relative">
+                            <select
+                              value="stability"
+                              disabled
+                              className="w-full bg-gray-600/50 border border-gray-500 rounded-xl px-4 py-3 text-gray-300 cursor-not-allowed"
+                            >
+                              <option value="stability">Stability AI (SDXL) - Optimized</option>
+                            </select>
+                            <div className="absolute inset-y-0 right-3 flex items-center">
+                              <Camera className="w-4 h-4 text-blue-400" />
+                            </div>
+                          </div>
                           <p className="text-xs text-gray-400 mt-2">
-                            {formData.image_provider === 'stability' 
-                              ? 'Uses Stability AI SDXL with face inpainting - best for face preservation'
-                              : 'Uses Replicate FLUX models - more artistic variety'
-                            }
+                            Uses Stability AI SDXL with face inpainting for optimal face preservation
                           </p>
                         </div>
 
@@ -722,19 +704,18 @@ export default function Admin() {
                           <label className="block text-sm font-medium mb-2 text-gray-300">Video Generation Provider</label>
                           <div className="relative">
                             <select
-                              name="video_provider"
                               value="replicate"
                               disabled
                               className="w-full bg-gray-600/50 border border-gray-500 rounded-xl px-4 py-3 text-gray-300 cursor-not-allowed"
                             >
-                              <option value="replicate">Replicate (Dramatic Transformation)</option>
+                              <option value="replicate">Replicate (2025 Models)</option>
                             </select>
                             <div className="absolute inset-y-0 right-3 flex items-center">
                               <Video className="w-4 h-4 text-blue-400" />
                             </div>
                           </div>
                           <p className="text-xs text-gray-400 mt-2">
-                            Video generation uses Replicate models for prompt-based dramatic transformations
+                            Uses latest 2025 Replicate models for dramatic video transformations
                           </p>
                         </div>
                       </div>
@@ -751,7 +732,7 @@ export default function Admin() {
                           <div>
                             <span className="text-white font-medium">Enable Provider Fallback</span>
                             <p className="text-sm text-gray-300">
-                              Automatically try the other provider if the primary one fails
+                              Automatically try alternative approaches if primary provider fails
                             </p>
                           </div>
                         </label>
@@ -766,8 +747,8 @@ export default function Admin() {
                             onChange={handleChange}
                             className="w-full bg-gray-700/50 border border-gray-600 rounded-xl px-4 py-3 text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition"
                           >
-                            <option value="image">Image Generation</option>
-                            <option value="video">Video Generation</option>
+                            <option value="image">Image Generation (SDXL)</option>
+                            <option value="video">Video Generation (Replicate)</option>
                           </select>
                         </div>
 
@@ -807,76 +788,74 @@ export default function Admin() {
                       )}
                     </div>
 
-                    {/* Stability AI Settings - Only show if Stability is selected for images */}
-                    {formData.image_provider === 'stability' && (
-                      <div className="bg-gray-800/50 backdrop-blur-sm rounded-2xl p-6">
-                        <h3 className="text-lg font-medium text-blue-200 mb-4 flex items-center gap-2">
-                          <Settings className="w-5 h-5" />
-                          Stability AI Configuration
-                        </h3>
-                        
-                        <div className="mb-6">
-                          <label className="block text-sm font-medium mb-2 text-gray-300">Stability AI API Key</label>
-                          <input
-                            type="password"
-                            name="stability_api_key"
-                            value={formData.stability_api_key || ''}
-                            onChange={handleChange}
-                            placeholder="sk-..."
-                            className="w-full bg-gray-700/50 border border-gray-600 rounded-xl px-4 py-3 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition"
-                          />
-                          <p className="text-xs text-gray-400 mt-2">
-                            Required when using Stability AI. Get your key from{' '}
-                            <a href="https://platform.stability.ai" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">
-                              platform.stability.ai
-                            </a>
-                          </p>
-                        </div>
-
-                        <div className="space-y-4">
-                          <h4 className="text-md font-medium text-gray-200">ControlNet Settings</h4>
-                          <label className="flex items-center gap-3">
-                            <input
-                              type="checkbox"
-                              name="use_controlnet"
-                              checked={formData.use_controlnet ?? true}
-                              onChange={handleChange}
-                              className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500"
-                            />
-                            <div>
-                              <span className="text-white font-medium">Enable ControlNet</span>
-                              <p className="text-sm text-gray-300">
-                                Better pose and face preservation (Stability AI only)
-                              </p>
-                            </div>
-                          </label>
-
-                          {formData.use_controlnet && (
-                            <div>
-                              <label className="block text-sm font-medium mb-2 text-gray-300">ControlNet Type</label>
-                              <select
-                                name="controlnet_type"
-                                value={formData.controlnet_type || 'auto'}
-                                onChange={handleChange}
-                                className="w-full bg-gray-700/50 border border-gray-600 rounded-xl px-4 py-3 text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition"
-                              >
-                                <option value="auto">Auto (Recommended)</option>
-                                <option value="openpose">OpenPose (Body & Face Pose)</option>
-                                <option value="canny">Canny Edge Detection</option>
-                                <option value="depth">Depth Map</option>
-                              </select>
-                            </div>
-                          )}
-                        </div>
+                    {/* Stability AI Settings */}
+                    <div className="bg-gray-800/50 backdrop-blur-sm rounded-2xl p-6">
+                      <h3 className="text-lg font-medium text-blue-200 mb-4 flex items-center gap-2">
+                        <Settings className="w-5 h-5" />
+                        Stability AI Configuration
+                      </h3>
+                      
+                      <div className="mb-6">
+                        <label className="block text-sm font-medium mb-2 text-gray-300">Stability AI API Key</label>
+                        <input
+                          type="password"
+                          name="stability_api_key"
+                          value={formData.stability_api_key || ''}
+                          onChange={handleChange}
+                          placeholder="sk-..."
+                          className="w-full bg-gray-700/50 border border-gray-600 rounded-xl px-4 py-3 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition"
+                        />
+                        <p className="text-xs text-gray-400 mt-2">
+                          Required for image generation. Get your key from{' '}
+                          <a href="https://platform.stability.ai" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">
+                            platform.stability.ai
+                          </a>
+                        </p>
                       </div>
-                    )}
 
-                    {/* ✅ ENHANCED MODEL SELECTION SECTION */}
+                      <div className="space-y-4">
+                        <h4 className="text-md font-medium text-gray-200">ControlNet Settings</h4>
+                        <label className="flex items-center gap-3">
+                          <input
+                            type="checkbox"
+                            name="use_controlnet"
+                            checked={formData.use_controlnet ?? true}
+                            onChange={handleChange}
+                            className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500"
+                          />
+                          <div>
+                            <span className="text-white font-medium">Enable ControlNet</span>
+                            <p className="text-sm text-gray-300">
+                              Better pose and face preservation for image generation
+                            </p>
+                          </div>
+                        </label>
+
+                        {formData.use_controlnet && (
+                          <div>
+                            <label className="block text-sm font-medium mb-2 text-gray-300">ControlNet Type</label>
+                            <select
+                              name="controlnet_type"
+                              value={formData.controlnet_type || 'auto'}
+                              onChange={handleChange}
+                              className="w-full bg-gray-700/50 border border-gray-600 rounded-xl px-4 py-3 text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition"
+                            >
+                              <option value="auto">Auto (Recommended)</option>
+                              <option value="openpose">OpenPose (Body & Face Pose)</option>
+                              <option value="canny">Canny Edge Detection</option>
+                              <option value="depth">Depth Map</option>
+                            </select>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Video Model Selection - 2025 Models */}
                     <div className="bg-gradient-to-br from-purple-900/20 to-blue-900/20 border border-purple-500/30 rounded-2xl p-6">
                       <div className="flex items-center justify-between mb-6">
                         <h3 className="text-xl font-semibold text-purple-200 flex items-center gap-3">
-                          <Wand2 className="w-6 h-6" />
-                          AI Model Selection
+                          <Video className="w-6 h-6" />
+                          2025 Video Models
                         </h3>
                         <button
                           type="button"
@@ -920,90 +899,42 @@ export default function Admin() {
                         </div>
                       )}
 
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {/* Image Models - Only show if using Replicate for images */}
-                        {formData.image_provider === 'replicate' && (
-                          <div>
-                            <label className="block text-sm font-medium mb-3 text-gray-300 flex items-center gap-2">
-                              <Camera className="w-4 h-4" />
-                              Image Model
-                            </label>
-                            <select
-                              name="replicate_image_model"
-                              value={formData.replicate_image_model || 'flux-schnell'}
-                              onChange={handleChange}
-                              className="w-full bg-gray-700/50 border border-gray-600 rounded-xl px-4 py-3 text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition"
-                            >
-                              {Object.entries(IMAGE_MODELS).map(([key, model]) => (
-                                <option key={key} value={key}>
-                                  {model.name}
-                                </option>
-                              ))}
-                            </select>
-                            
-                            <div className="mt-3 p-3 bg-gray-700/30 rounded-lg">
-                              <div className="text-sm text-white font-medium mb-2">
-                                {IMAGE_MODELS[formData.replicate_image_model as ImageModel || 'flux-schnell'].name}
-                              </div>
-                              <div className="text-xs text-gray-400 mb-2">
-                                {IMAGE_MODELS[formData.replicate_image_model as ImageModel || 'flux-schnell'].description}
-                              </div>
-                              <div className="flex items-center gap-4 text-xs">
-                                <div className="flex items-center gap-1">
-                                  {getSpeedIcon(IMAGE_MODELS[formData.replicate_image_model as ImageModel || 'flux-schnell'].speed)}
-                                  <span>{IMAGE_MODELS[formData.replicate_image_model as ImageModel || 'flux-schnell'].speed}</span>
-                                </div>
-                                <div className="flex items-center gap-1">
-                                  {getQualityIcon(IMAGE_MODELS[formData.replicate_image_model as ImageModel || 'flux-schnell'].quality)}
-                                  <span>{IMAGE_MODELS[formData.replicate_image_model as ImageModel || 'flux-schnell'].quality}</span>
-                                </div>
-                              </div>
-                              <div className="text-xs text-gray-400 mt-2">
-                                Best for: {IMAGE_MODELS[formData.replicate_image_model as ImageModel || 'flux-schnell'].bestFor}
-                              </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-3 text-gray-300">
+                          Select Video Model for Dramatic Transformations
+                        </label>
+                        <select
+                          name="replicate_video_model"
+                          value={formData.replicate_video_model || 'hailuo-2'}
+                          onChange={handleChange}
+                          className="w-full bg-gray-700/50 border border-gray-600 rounded-xl px-4 py-3 text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition"
+                        >
+                          {Object.entries(VIDEO_MODELS).map(([key, model]) => (
+                            <option key={key} value={key}>
+                              {model.name}
+                            </option>
+                          ))}
+                        </select>
+                        
+                        <div className="mt-4 p-4 bg-gray-700/30 rounded-lg">
+                          <div className="text-sm text-white font-medium mb-2">
+                            {VIDEO_MODELS[formData.replicate_video_model as VideoModel || 'hailuo-2'].name}
+                          </div>
+                          <div className="text-xs text-gray-400 mb-3">
+                            {VIDEO_MODELS[formData.replicate_video_model as VideoModel || 'hailuo-2'].description}
+                          </div>
+                          <div className="flex items-center gap-6 text-xs mb-3">
+                            <div className="flex items-center gap-1">
+                              {getSpeedIcon(VIDEO_MODELS[formData.replicate_video_model as VideoModel || 'hailuo-2'].speed)}
+                              <span>{VIDEO_MODELS[formData.replicate_video_model as VideoModel || 'hailuo-2'].speed}</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              {getQualityIcon(VIDEO_MODELS[formData.replicate_video_model as VideoModel || 'hailuo-2'].quality)}
+                              <span>{VIDEO_MODELS[formData.replicate_video_model as VideoModel || 'hailuo-2'].quality}</span>
                             </div>
                           </div>
-                        )}
-
-                        {/* ✅ VIDEO MODELS - Always show since video always uses Replicate */}
-                        <div className={formData.image_provider === 'replicate' ? '' : 'md:col-span-2'}>
-                          <label className="block text-sm font-medium mb-3 text-gray-300 flex items-center gap-2">
-                            <Video className="w-4 h-4" />
-                            Video Model for Dramatic Transformation
-                          </label>
-                          <select
-                            name="replicate_video_model"
-                            value={formData.replicate_video_model || 'hailuo'}
-                            onChange={handleChange}
-                            className="w-full bg-gray-700/50 border border-gray-600 rounded-xl px-4 py-3 text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition"
-                          >
-                            {Object.entries(VIDEO_MODELS).map(([key, model]) => (
-                              <option key={key} value={key}>
-                                {model.name}
-                              </option>
-                            ))}
-                          </select>
-                          
-                          <div className="mt-3 p-3 bg-gray-700/30 rounded-lg">
-                            <div className="text-sm text-white font-medium mb-2">
-                              {VIDEO_MODELS[formData.replicate_video_model as VideoModel || 'hailuo'].name}
-                            </div>
-                            <div className="text-xs text-gray-400 mb-2">
-                              {VIDEO_MODELS[formData.replicate_video_model as VideoModel || 'hailuo'].description}
-                            </div>
-                            <div className="flex items-center gap-4 text-xs">
-                              <div className="flex items-center gap-1">
-                                {getSpeedIcon(VIDEO_MODELS[formData.replicate_video_model as VideoModel || 'hailuo'].speed)}
-                                <span>{VIDEO_MODELS[formData.replicate_video_model as VideoModel || 'hailuo'].speed}</span>
-                              </div>
-                              <div className="flex items-center gap-1">
-                                {getQualityIcon(VIDEO_MODELS[formData.replicate_video_model as VideoModel || 'hailuo'].quality)}
-                                <span>{VIDEO_MODELS[formData.replicate_video_model as VideoModel || 'hailuo'].quality}</span>
-                              </div>
-                            </div>
-                            <div className="text-xs text-gray-400 mt-2">
-                              Best for: {VIDEO_MODELS[formData.replicate_video_model as VideoModel || 'hailuo'].bestFor}
-                            </div>
+                          <div className="text-xs text-gray-400">
+                            <strong>Best for:</strong> {VIDEO_MODELS[formData.replicate_video_model as VideoModel || 'hailuo-2'].bestFor}
                           </div>
                         </div>
                       </div>
@@ -1012,13 +943,13 @@ export default function Admin() {
                         <div className="flex items-start gap-3">
                           <AlertCircle className="w-5 h-5 text-blue-400 mt-0.5" />
                           <div>
-                            <div className="font-medium text-blue-200 mb-2">Video Model Recommendations</div>
+                            <div className="font-medium text-blue-200 mb-2">2025 Model Recommendations</div>
                             <div className="space-y-1 text-sm text-blue-300/80">
-                              <div><strong>Hailuo-02:</strong> Best for dramatic transformations with subject preservation</div>
-                              <div><strong>CogVideoX:</strong> High-quality professional results with smooth motion</div>
-                              <div><strong>Kling AI:</strong> Most realistic and lifelike transformations in 1080p</div>
-                              <div><strong>Runway Gen-3:</strong> Professional cinematography and commercial quality</div>
-                              <div><strong>SVD:</strong> Basic animation only - limited transformation capabilities</div>
+                              <div><strong>Hailuo-02:</strong> Best overall choice - excellent physics with 1080p output</div>
+                              <div><strong>Wan 2.2:</strong> Fastest option with great motion diversity</div>
+                              <div><strong>HunyuanVideo:</strong> Ultimate cinematic quality, fine-tunable</div>
+                              <div><strong>Kling 2.1:</strong> Best for complex actions and realistic movement</div>
+                              <div><strong>CogVideoX:</strong> Reliable open-source option with consistent results</div>
                             </div>
                           </div>
                         </div>
@@ -1170,28 +1101,19 @@ export default function Admin() {
                   <div className="mt-6 space-y-2 text-xs">
                     <div className="flex justify-between">
                       <span className="text-gray-400">Image Provider:</span>
-                      <span className="capitalize">{formData.image_provider || 'stability'}</span>
+                      <span>Stability AI</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-400">Video Provider:</span>
-                      <span className="capitalize">Replicate</span>
+                      <span>Replicate 2025</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-400">Model:</span>
+                      <span className="text-gray-400">Current Mode:</span>
                       <span className="capitalize">{formData.model_type || 'image'}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-400">Image Model:</span>
-                      <span className="text-xs">
-                        {formData.image_provider === 'replicate' 
-                          ? IMAGE_MODELS[formData.replicate_image_model as ImageModel || 'flux-schnell'].name
-                          : 'SDXL'
-                        }
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
                       <span className="text-gray-400">Video Model:</span>
-                      <span className="text-xs">{VIDEO_MODELS[formData.replicate_video_model as VideoModel || 'hailuo'].name}</span>
+                      <span className="text-xs">{VIDEO_MODELS[formData.replicate_video_model as VideoModel || 'hailuo-2'].name.split(' - ')[0]}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-400">Face Mode:</span>
