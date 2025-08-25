@@ -1,56 +1,47 @@
-// src/lib/replicateService.ts - Realistic version with only verified working models
+// src/lib/replicateService.ts - Updated with async webhook support
 import { supabase } from './supabase';
 
 // VERIFIED: Only models confirmed to work on Replicate API
 export const REPLICATE_MODELS = {
   video: {
     'hailuo-2': {
-      name: 'Hailuo Video-01 - Best Physics',
-      description: 'MiniMax video model with excellent physics simulation and reliable performance',
+      name: 'Hailuo-02 - Physics Master',
+      description: 'Latest MiniMax model with excellent physics simulation and 1080p output',
       speed: 'Medium Speed',
       quality: 'Premium Quality',
       bestFor: 'Realistic physics, human movement, dramatic transformations',
+      maxDuration: 10,
+      verified: true
+    },
+    'hailuo': {
+      name: 'Hailuo Video-01 - Classic',
+      description: 'Original MiniMax model, reliable and well-tested',
+      speed: 'Medium Speed',
+      quality: 'High Quality',
+      bestFor: 'Reliable results, proven performance',
       maxDuration: 6,
       verified: true
     },
-    'hunyuan-video': {
-      name: 'HunyuanVideo - Cinematic Quality',
-      description: 'Tencent\'s 13B parameter model with cinema-quality results',
-      speed: 'Slow Speed',
-      quality: 'Ultimate Quality',
-      bestFor: 'Cinematic quality, professional projects, high detail',
+    'hailuo-live': {
+      name: 'Hailuo Live - Fast Track',
+      description: 'Faster version of Hailuo for quick results',
+      speed: 'Fast Speed',
+      quality: 'High Quality',
+      bestFor: 'Quick turnaround, fast previews',
       maxDuration: 6,
       verified: true
     },
     'wan-2.2': {
-      name: 'Wan 2.1 - Speed & Quality',
-      description: 'Alibaba\'s video model with fast generation and good quality',
+      name: 'Wan 2.2 - Speed Champion',
+      description: 'Alibaba\'s fastest video model with motion diversity',
       speed: 'Fast Speed',
       quality: 'High Quality',
       bestFor: 'Fast generation, motion diversity, efficiency',
-      maxDuration: 5,
-      verified: true
-    },
-    'cogvideo': {
-      name: 'CogVideoX-5B - Open Source',
-      description: 'Open-source option with solid quality and good prompt adherence',
-      speed: 'Medium Speed',
-      quality: 'High Quality',
-      bestFor: 'Balanced quality, open-source, consistent results',
-      maxDuration: 6,
-      verified: true
-    },
-    'hailuo': {
-      name: 'Hailuo Classic - Legacy',
-      description: 'Original MiniMax model, reliable fallback option',
-      speed: 'Medium Speed',
-      quality: 'Standard Quality',
-      bestFor: 'Legacy compatibility, basic transformations',
-      maxDuration: 6,
+      maxDuration: 8,
       verified: true
     }
-    // Note: Removed kling-2.1 and stable-video-diffusion due to API issues
-    // These can be re-added once we verify they work properly
+    // Removed problematic models: hunyuan-video, cogvideo, kling-2.1
+    // These can be re-added once API compatibility is confirmed
   }
 } as const;
 
@@ -63,6 +54,14 @@ interface GenerationOptions {
   duration?: number;
   preserveFace?: boolean;
   model?: VideoModel;
+  userId?: string; // For tracking generations
+}
+
+interface GenerationResponse {
+  predictionId: string;
+  status: 'processing';
+  message: string;
+  model: string;
 }
 
 export async function generateWithReplicate({ 
@@ -71,10 +70,11 @@ export async function generateWithReplicate({
   type, 
   duration = 5,
   preserveFace = true,
-  model = 'hailuo-2' // Default to best working model
-}: GenerationOptions): Promise<string> {
+  model = 'hailuo-2', // Default to best working model
+  userId
+}: GenerationOptions): Promise<GenerationResponse> {
   try {
-    console.log(`Calling Replicate Edge Function for ${type} generation with model: ${model}...`);
+    console.log(`Starting async generation with model: ${model}...`);
     
     if (type !== 'video') {
       throw new Error('Replicate service only supports video generation. Use Stability AI for images.');
@@ -104,7 +104,8 @@ export async function generateWithReplicate({
         type,
         duration: clampedDuration,
         preserveFace,
-        model
+        model,
+        userId // Pass user ID for tracking
       }
     });
 
@@ -119,13 +120,19 @@ export async function generateWithReplicate({
       throw new Error(errorMessage);
     }
 
-    if (!data?.result) {
-      throw new Error(`No result returned from ${type} generation service`);
+    if (!data?.predictionId) {
+      throw new Error(`No prediction ID returned from ${type} generation service`);
     }
 
-    console.log(`Replicate ${type} generation successful with ${data.model || model}`);
+    console.log(`Replicate ${type} generation started with prediction ID: ${data.predictionId}`);
     
-    return data.result;
+    // Return prediction info instead of waiting for result
+    return {
+      predictionId: data.predictionId,
+      status: 'processing',
+      message: data.message || 'Generation started. You will be notified when complete.',
+      model: data.model || modelConfig.name
+    };
 
   } catch (error) {
     console.error('Replicate API Error:', error);
@@ -143,10 +150,8 @@ export async function generateWithReplicate({
         throw new Error('Server configuration error. Check API keys in Supabase Dashboard.');
       } else if (error.message.includes('API configuration error')) {
         throw new Error('Replicate API key not configured in Supabase. Please add REPLICATE_API_KEY to your Edge Functions environment variables.');
-      } else if (error.message.includes('Both primary and fallback models failed')) {
-        // Extract more specific error from the message
-        const specificError = error.message.split('Both primary and fallback models failed: ')[1];
-        throw new Error(`Video generation failed: ${specificError || 'Multiple model attempts failed'}`);
+      } else if (error.message.includes('connection reset')) {
+        throw new Error('Connection issue with Replicate API. Please try again.');
       } else {
         throw error;
       }
@@ -156,25 +161,152 @@ export async function generateWithReplicate({
   }
 }
 
+// Get generation status from database
+export async function getGenerationStatus(predictionId: string) {
+  try {
+    const { data, error } = await supabase
+      .from('photo_generations')
+      .select('*')
+      .eq('prediction_id', predictionId)
+      .single();
+
+    if (error) {
+      console.error('Failed to get generation status:', error);
+      return { status: 'unknown', error: error.message };
+    }
+
+    return {
+      status: data.status,
+      prompt: data.prompt,
+      model: data.model,
+      createdAt: data.created_at,
+      completedAt: data.completed_at,
+      galleryPhotoId: data.gallery_photo_id,
+      errorMessage: data.error_message
+    };
+
+  } catch (error) {
+    console.error('Generation status check failed:', error);
+    return { status: 'error', error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}
+
+// Get user's generation history
+export async function getUserGenerations(userId: string, limit: number = 10) {
+  try {
+    const { data, error } = await supabase
+      .from('photo_generations')
+      .select('*, photos(*)')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (error) {
+      console.error('Failed to get user generations:', error);
+      return [];
+    }
+
+    return data;
+
+  } catch (error) {
+    console.error('User generations fetch failed:', error);
+    return [];
+  }
+}
+
+// Subscribe to generation updates for real-time status
+export function subscribeToGenerationUpdates(userId: string, callback: (update: any) => void) {
+  const subscription = supabase
+    .channel('generation_updates')
+    .on('postgres_changes', {
+      event: '*',
+      schema: 'public',
+      table: 'photo_generations',
+      filter: `user_id=eq.${userId}`
+    }, callback)
+    .subscribe();
+
+  return subscription;
+}
+
+// Subscribe to notifications for completed generations
+export function subscribeToNotifications(userId: string, callback: (notification: any) => void) {
+  const subscription = supabase
+    .channel('user_notifications')
+    .on('postgres_changes', {
+      event: 'INSERT',
+      schema: 'public',
+      table: 'notifications',
+      filter: `user_id=eq.${userId}`
+    }, callback)
+    .subscribe();
+
+  return subscription;
+}
+
+// Mark notification as read
+export async function markNotificationRead(notificationId: string) {
+  try {
+    const { error } = await supabase
+      .from('notifications')
+      .update({ read: true })
+      .eq('id', notificationId);
+
+    if (error) {
+      console.error('Failed to mark notification as read:', error);
+    }
+  } catch (error) {
+    console.error('Notification update failed:', error);
+  }
+}
+
+// Get unread notifications count
+export async function getUnreadNotificationsCount(userId: string): Promise<number> {
+  try {
+    const { count, error } = await supabase
+      .from('notifications')
+      .select('*', { count: 'exact' })
+      .eq('user_id', userId)
+      .eq('read', false);
+
+    if (error) {
+      console.error('Failed to get notifications count:', error);
+      return 0;
+    }
+
+    return count || 0;
+
+  } catch (error) {
+    console.error('Notifications count check failed:', error);
+    return 0;
+  }
+}
+
 export async function testReplicateConnection(): Promise<{ 
   success: boolean; 
   error?: string; 
   model?: string; 
 }> {
   try {
+    // Use a minimal 1px test image
     const testInput = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
     
-    const { data, error } = await supabase.functions.invoke('generate-replicate-content', {
-      body: {
-        prompt: 'test video generation',
-        inputData: testInput,
-        type: 'video',
-        model: 'hailuo-2' // Use working model for testing
-      }
+    const result = await generateWithReplicate({
+      prompt: 'test video generation',
+      inputData: testInput,
+      type: 'video',
+      model: 'hailuo-2', // Use working model for testing
+      duration: 2 // Minimal duration for testing
     });
 
-    if (error) {
-      if (error.message?.includes('API configuration error')) {
+    return {
+      success: true,
+      model: result.model
+    };
+
+  } catch (error) {
+    if (error instanceof Error) {
+      if (error.message.includes('API configuration error')) {
         return {
           success: false,
           error: 'Replicate API key not configured in Supabase Edge Functions'
@@ -186,16 +318,10 @@ export async function testReplicateConnection(): Promise<{
         error: error.message
       };
     }
-
-    return {
-      success: true,
-      model: data?.model || 'hailuo-2'
-    };
-
-  } catch (error) {
+    
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Connection test failed'
+      error: 'Connection test failed'
     };
   }
 }
@@ -226,7 +352,7 @@ export function getModelsByPerformance() {
   return {
     fastest: models.filter(m => m.speed.includes('Fast')),
     balanced: models.filter(m => m.speed.includes('Medium')),
-    highest_quality: models.filter(m => m.quality.includes('Ultimate') || m.quality.includes('Premium')),
-    recommended: models.filter(m => ['hailuo-2', 'wan-2.2', 'hunyuan-video'].includes(m.key))
+    highest_quality: models.filter(m => m.quality.includes('Premium')),
+    recommended: models.filter(m => ['hailuo-2', 'wan-2.2', 'hailuo-live'].includes(m.key))
   };
 }
