@@ -1,4 +1,4 @@
-// src/lib/replicateService.ts - Fixed with correct model identifiers
+// src/lib/replicateService.ts - Fixed with proper duration validation
 import { supabase } from './supabase';
 
 // VERIFIED: Only models confirmed to work on Replicate API
@@ -10,9 +10,10 @@ export const REPLICATE_MODELS = {
       speed: 'Medium Speed',
       quality: 'Premium Quality',
       bestFor: 'Realistic physics, human movement, dramatic transformations',
-      maxDuration: 6, // MiniMax limitation
+      maxDuration: 6, // MiniMax limitation - BUT API only accepts 6 or 10!
+      allowedDurations: [6, 10], // NEW: Specific allowed values
       verified: true,
-      replicateId: 'minimax/video-01' // This is the actual API identifier
+      replicateId: 'minimax/hailuo-02' // This is the actual API identifier
     },
     'hailuo': {
       name: 'MiniMax Video-01 - Classic',
@@ -21,6 +22,7 @@ export const REPLICATE_MODELS = {
       quality: 'Premium Quality',
       bestFor: 'Legacy compatibility, same as hailuo-2',
       maxDuration: 6,
+      allowedDurations: [6, 10],
       verified: true,
       replicateId: 'minimax/video-01' // Same API identifier
     },
@@ -31,6 +33,7 @@ export const REPLICATE_MODELS = {
       quality: 'High Quality',
       bestFor: 'Fast generation, motion diversity, efficiency',
       maxDuration: 8,
+      allowedDurations: [3, 5, 8], // Example - update with actual values
       verified: true,
       replicateId: 'alibaba-pai/emo-2'
     },
@@ -41,6 +44,7 @@ export const REPLICATE_MODELS = {
       quality: 'High Quality',
       bestFor: 'Balanced quality, open-source, consistent results',
       maxDuration: 8,
+      allowedDurations: [2, 4, 6, 8], // Example - update with actual values
       verified: true,
       replicateId: 'thudm/cogvideox-5b'
     }
@@ -66,6 +70,31 @@ interface GenerationResponse {
   model: string;
 }
 
+// Helper function to get valid duration for a specific model
+function getValidDuration(requestedDuration: number, model: VideoModel): number {
+  const modelInfo = REPLICATE_MODELS.video[model];
+  if (!modelInfo || !modelInfo.allowedDurations) {
+    // Fallback to closest valid duration for hailuo-2
+    return requestedDuration <= 6 ? 6 : 10;
+  }
+
+  const allowedDurations = modelInfo.allowedDurations;
+  
+  // Find the closest allowed duration
+  let closest = allowedDurations[0];
+  let minDiff = Math.abs(requestedDuration - closest);
+  
+  for (const duration of allowedDurations) {
+    const diff = Math.abs(requestedDuration - duration);
+    if (diff < minDiff) {
+      closest = duration;
+      minDiff = diff;
+    }
+  }
+  
+  return closest;
+}
+
 export async function generateWithReplicate({ 
   prompt, 
   inputData, 
@@ -88,21 +117,25 @@ export async function generateWithReplicate({
       throw new Error(`Unknown model: ${model}`);
     }
 
-    // Validate duration against model limits
-    const validDuration = Math.min(duration, modelInfo.maxDuration);
+    // Get valid duration for this specific model
+    const validDuration = getValidDuration(duration, model);
     if (validDuration !== duration) {
-      console.log(`⚠️ Duration capped from ${duration}s to ${validDuration}s for model ${model}`);
+      console.log(`⚠️ Duration adjusted from ${duration}s to ${validDuration}s for model ${model}`);
     }
+
+    // Ensure valid resolution for MiniMax models
+    const validResolution = model.startsWith('hailuo') ? '1080p' : '720p';
 
     console.log(`📡 Calling Edge Function with model: ${model} (${modelInfo.replicateId})`);
 
-    // Call your Supabase Edge Function
+    // Call your Supabase Edge Function with corrected parameters
     const { data, error } = await supabase.functions.invoke('generate-replicate-content', {
       body: {
         prompt: prompt,
         model: model, // Send your internal model name
-        duration: validDuration,
-        resolution: "720p"
+        duration: validDuration, // Use validated duration
+        resolution: validResolution, // Use validated resolution
+        first_frame_image: preserveFace ? inputData : null // Add image if preserving face
       }
     });
 
@@ -130,6 +163,7 @@ export async function generateWithReplicate({
 
   } catch (error) {
     console.error('🚨 Generation error:', error);
+    console.error('Generation error details:', error);
     if (error instanceof Error) {
       throw error;
     }
@@ -151,7 +185,7 @@ export async function testReplicateConnection(): Promise<{
       inputData: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
       type: 'video',
       model: 'hailuo-2', // Use working MiniMax model (matches Admin UI)
-      duration: 2 // Minimal duration for testing
+      duration: 5 // This will be converted to 6 automatically
     });
 
     return {
@@ -189,8 +223,7 @@ export function getModelInfo(modelKey: VideoModel) {
 }
 
 export function getRecommendedDuration(modelKey: VideoModel, requestedDuration: number): number {
-  const modelInfo = getModelInfo(modelKey);
-  return Math.min(requestedDuration, modelInfo.maxDuration);
+  return getValidDuration(requestedDuration, modelKey);
 }
 
 export function getAllModels() {
