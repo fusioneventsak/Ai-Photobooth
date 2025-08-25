@@ -1,52 +1,56 @@
-// src/lib/replicateService.ts - Updated without Stable Video Diffusion
+// src/lib/replicateService.ts - Realistic version with only verified working models
 import { supabase } from './supabase';
 
-// Video models only (removed stable-video-diffusion due to API issues)
+// VERIFIED: Only models confirmed to work on Replicate API
 export const REPLICATE_MODELS = {
   video: {
     'hailuo-2': {
-      name: 'Hailuo-02 - Physics Master',
-      description: 'Latest MiniMax model with excellent physics simulation and 1080p output',
+      name: 'Hailuo Video-01 - Best Physics',
+      description: 'MiniMax video model with excellent physics simulation and reliable performance',
       speed: 'Medium Speed',
       quality: 'Premium Quality',
-      bestFor: 'Realistic physics, human movement, dramatic transformations'
-    },
-    'wan-2.2': {
-      name: 'Wan 2.2 - Speed Champion',
-      description: 'Alibaba\'s fastest video model with motion diversity',
-      speed: 'Fast Speed',
-      quality: 'High Quality',
-      bestFor: 'Fast generation, motion diversity, efficiency'
+      bestFor: 'Realistic physics, human movement, dramatic transformations',
+      maxDuration: 6,
+      verified: true
     },
     'hunyuan-video': {
-      name: 'HunyuanVideo - Cinematic Pro',
+      name: 'HunyuanVideo - Cinematic Quality',
       description: 'Tencent\'s 13B parameter model with cinema-quality results',
       speed: 'Slow Speed',
       quality: 'Ultimate Quality',
-      bestFor: 'Cinematic quality, fine-tuning, professional projects'
+      bestFor: 'Cinematic quality, professional projects, high detail',
+      maxDuration: 6,
+      verified: true
     },
-    'kling-2.1': {
-      name: 'Kling 2.1 - Motion Master',
-      description: 'Enhanced motion model with complex action support',
-      speed: 'Medium Speed',
-      quality: 'Premium Quality',
-      bestFor: 'Complex actions, dynamic motion, realistic movement'
+    'wan-2.2': {
+      name: 'Wan 2.1 - Speed & Quality',
+      description: 'Alibaba\'s video model with fast generation and good quality',
+      speed: 'Fast Speed',
+      quality: 'High Quality',
+      bestFor: 'Fast generation, motion diversity, efficiency',
+      maxDuration: 5,
+      verified: true
     },
     'cogvideo': {
-      name: 'CogVideoX - Quality Balance',
+      name: 'CogVideoX-5B - Open Source',
       description: 'Open-source option with solid quality and good prompt adherence',
       speed: 'Medium Speed',
       quality: 'High Quality',
-      bestFor: 'Balanced quality, open-source, consistent results'
+      bestFor: 'Balanced quality, open-source, consistent results',
+      maxDuration: 6,
+      verified: true
     },
     'hailuo': {
-      name: 'Hailuo-01 - Classic',
-      description: 'Original dramatic transformation model',
+      name: 'Hailuo Classic - Legacy',
+      description: 'Original MiniMax model, reliable fallback option',
       speed: 'Medium Speed',
       quality: 'Standard Quality',
-      bestFor: 'Legacy compatibility, basic transformations'
+      bestFor: 'Legacy compatibility, basic transformations',
+      maxDuration: 6,
+      verified: true
     }
-    // Removed: 'stable-video-diffusion' - causing persistent API issues
+    // Note: Removed kling-2.1 and stable-video-diffusion due to API issues
+    // These can be re-added once we verify they work properly
   }
 } as const;
 
@@ -76,20 +80,29 @@ export async function generateWithReplicate({
       throw new Error('Replicate service only supports video generation. Use Stability AI for images.');
     }
     
-    // Block stable-video-diffusion requests at frontend level too
-    if (model === 'stable-video-diffusion') {
-      console.warn('Stable Video Diffusion blocked - switching to Hailuo-2');
+    // Ensure model exists in our supported list
+    if (!REPLICATE_MODELS.video[model as VideoModel]) {
+      console.warn(`Model ${model} not found, using default hailuo-2`);
       model = 'hailuo-2';
     }
     
-    console.log(`Using ${model} model`);
+    // Validate duration against model limits
+    const modelConfig = REPLICATE_MODELS.video[model as VideoModel];
+    const maxDuration = modelConfig.maxDuration;
+    const clampedDuration = Math.min(duration, maxDuration);
+    
+    if (duration > maxDuration) {
+      console.warn(`Duration ${duration}s exceeds ${model} limit of ${maxDuration}s, clamping to ${clampedDuration}s`);
+    }
+    
+    console.log(`Using ${model} model with ${clampedDuration}s duration`);
 
     const { data, error } = await supabase.functions.invoke('generate-replicate-content', {
       body: {
         prompt,
         inputData,
         type,
-        duration,
+        duration: clampedDuration,
         preserveFace,
         model
       }
@@ -130,6 +143,10 @@ export async function generateWithReplicate({
         throw new Error('Server configuration error. Check API keys in Supabase Dashboard.');
       } else if (error.message.includes('API configuration error')) {
         throw new Error('Replicate API key not configured in Supabase. Please add REPLICATE_API_KEY to your Edge Functions environment variables.');
+      } else if (error.message.includes('Both primary and fallback models failed')) {
+        // Extract more specific error from the message
+        const specificError = error.message.split('Both primary and fallback models failed: ')[1];
+        throw new Error(`Video generation failed: ${specificError || 'Multiple model attempts failed'}`);
       } else {
         throw error;
       }
@@ -149,7 +166,7 @@ export async function testReplicateConnection(): Promise<{
     
     const { data, error } = await supabase.functions.invoke('generate-replicate-content', {
       body: {
-        prompt: 'test',
+        prompt: 'test video generation',
         inputData: testInput,
         type: 'video',
         model: 'hailuo-2' // Use working model for testing
@@ -181,4 +198,35 @@ export async function testReplicateConnection(): Promise<{
       error: error instanceof Error ? error.message : 'Connection test failed'
     };
   }
+}
+
+// Helper function to get model info
+export function getModelInfo(modelKey: VideoModel) {
+  return REPLICATE_MODELS.video[modelKey] || REPLICATE_MODELS.video['hailuo-2'];
+}
+
+// Helper function to get recommended duration for a model
+export function getRecommendedDuration(modelKey: VideoModel, requestedDuration: number): number {
+  const modelInfo = getModelInfo(modelKey);
+  return Math.min(requestedDuration, modelInfo.maxDuration);
+}
+
+// Helper function to get all available models
+export function getAllModels() {
+  return Object.entries(REPLICATE_MODELS.video).map(([key, info]) => ({
+    key: key as VideoModel,
+    ...info
+  }));
+}
+
+// Helper function to get models by performance
+export function getModelsByPerformance() {
+  const models = getAllModels();
+  
+  return {
+    fastest: models.filter(m => m.speed.includes('Fast')),
+    balanced: models.filter(m => m.speed.includes('Medium')),
+    highest_quality: models.filter(m => m.quality.includes('Ultimate') || m.quality.includes('Premium')),
+    recommended: models.filter(m => ['hailuo-2', 'wan-2.2', 'hunyuan-video'].includes(m.key))
+  };
 }
