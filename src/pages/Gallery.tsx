@@ -29,7 +29,6 @@ import {
 import { useConfigStore } from '../store/configStore';
 import { 
   getPublicPhotos, 
-  deletePhoto, 
   deleteAllPhotos, 
   deletePhotoAndAllDuplicates 
 } from '../lib/supabase';
@@ -546,7 +545,7 @@ export default function Gallery() {
       setDeleting(photoId);
       console.log('🗑️ Deleting photo:', photoId);
       
-      await deletePhoto(photoId);
+      await deletePhotoAndAllDuplicates(photoId);
       
       setPhotos(prev => prev.filter(p => p.id !== photoId));
       
