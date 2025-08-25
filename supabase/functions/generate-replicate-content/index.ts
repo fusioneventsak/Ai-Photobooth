@@ -54,6 +54,9 @@ serve(async (req) => {
         { 
           status: 500, 
           headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      )
+    }
     // Parse request body
     const body: ReplicateRequest = await req.json()
     const { 
