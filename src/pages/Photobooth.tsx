@@ -1,11 +1,11 @@
 // src/pages/Photobooth.tsx
-// UPDATED VERSION - Supports dramatic prompt-based video transformation
+// UPDATED VERSION - Supports async webhook-based video generation
 
 import React, { useState, useEffect } from 'react';
 import Webcam from 'react-webcam';
-import { Camera, ImageIcon, Wand2, AlertCircle, Video, RefreshCw, Users, UserX, Lightbulb, Eye, User, Smartphone } from 'lucide-react';
+import { Camera, ImageIcon, Wand2, AlertCircle, Video, RefreshCw, Users, UserX, Lightbulb, Eye, User, Smartphone, Bell } from 'lucide-react';
 import { useConfigStore } from '../store/configStore';
-import { uploadPhoto } from '../lib/supabase';
+import { uploadPhoto, supabase } from '../lib/supabase';
 import { generateWithStability } from '../lib/stabilityService';
 import { generateWithReplicate } from '../lib/replicateService';
 import { 
@@ -44,7 +44,73 @@ export default function Photobooth() {
   const [cameraReady, setCameraReady] = useState(false);
   const [progressInterval, setProgressInterval] = useState<NodeJS.Timeout | null>(null);
   
+  // New async video generation state
+  const [pendingVideoGeneration, setPendingVideoGeneration] = useState<string | null>(null);
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  
   const webcamRef = React.useRef<Webcam>(null);
+
+  // Get current user for async video tracking
+  useEffect(() => {
+    const getCurrentUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      setCurrentUser(user);
+    };
+    getCurrentUser();
+  }, []);
+
+  // Listen for async video completion notifications
+  useEffect(() => {
+    if (!currentUser || !pendingVideoGeneration) return;
+
+    console.log('Setting up notification listener for video generation:', pendingVideoGeneration);
+
+    const channel = supabase
+      .channel('photobooth-notifications')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${currentUser.id}`
+        },
+        (payload) => {
+          const notification = payload.new;
+          
+          if (notification.type === 'video_generated' && 
+              notification.data?.prediction_id === pendingVideoGeneration) {
+            
+            console.log('Video generation completed!', notification);
+            
+            // Clear pending state
+            setPendingVideoGeneration(null);
+            setProcessing(false);
+            setProcessingState({ stage: 'complete', progress: 100, message: 'Video ready in gallery!' });
+            
+            // Show success message
+            setTimeout(() => {
+              setProcessingState({ stage: 'detecting', progress: 0, message: 'Ready for next photo...' });
+            }, 3000);
+            
+          } else if (notification.type === 'generation_failed' && 
+                     notification.data?.prediction_id === pendingVideoGeneration) {
+            
+            console.log('Video generation failed:', notification);
+            
+            // Clear pending state and show error
+            setPendingVideoGeneration(null);
+            setProcessing(false);
+            setError('Video generation failed. Please try again.');
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [currentUser, pendingVideoGeneration]);
 
   // Detect mobile device
   useEffect(() => {
@@ -115,7 +181,7 @@ export default function Photobooth() {
     };
   }, []);
 
-  // MOBILE 9:16 TO 16:9 CONVERSION: Create landscape generations from portrait mobile photos
+  // MOBILE 9:16 TO 16:9 CONVERSION
   const resizeImageForGeneration = (dataUrl: string): Promise<string> => {
     return new Promise((resolve, reject) => {
       const img = new Image();
@@ -225,60 +291,54 @@ export default function Photobooth() {
     };
   }, [processedMedia, progressInterval]);
 
-  // AUTOMATIC UPLOAD - Triggers immediately after each photo generation
+  // UPDATED: Handle both sync image and async video uploads
   useEffect(() => {
     if (!processedMedia || !config) {
       return;
     }
 
-    console.log('NEW PHOTO GENERATED - Starting automatic upload');
-    
-    const automaticUploadNow = async () => {
-      try {
-        setUploading(true);
-        setProcessingState({ stage: 'uploading', progress: 90, message: 'Saving to gallery...' });
-        
-        console.log('Auto-uploading new photo...');
-        console.log('Photo details:', {
-          length: processedMedia.length,
-          type: processedMedia.startsWith('data:') ? 'data URL' : processedMedia.startsWith('blob:') ? 'blob URL' : processedMedia.startsWith('http') ? 'HTTP URL' : 'unknown',
-          modelType: currentModelType
-        });
-        
-        const uploadResult = await uploadPhoto(
-          processedMedia,
-          config.global_prompt || 'AI Generated Content',
-          currentModelType
-        );
-        
-        if (uploadResult) {
-          console.log('Auto-upload successful:', uploadResult.id);
+    // Only auto-upload for images, videos are handled by webhook
+    if (currentModelType === 'image') {
+      console.log('NEW IMAGE GENERATED - Starting automatic upload');
+      
+      const automaticUploadNow = async () => {
+        try {
+          setUploading(true);
+          setProcessingState({ stage: 'uploading', progress: 90, message: 'Saving to gallery...' });
           
-          window.dispatchEvent(new CustomEvent('galleryUpdate', {
-            detail: { 
-              newPhoto: uploadResult,
-              source: 'automatic_after_generation'
-            }
-          }));
+          const uploadResult = await uploadPhoto(
+            processedMedia,
+            config.global_prompt || 'AI Generated Content',
+            currentModelType
+          );
           
-          setUploadSuccess(true);
-          setProcessingState({ stage: 'complete', progress: 100, message: 'Complete!' });
-          setTimeout(() => setUploadSuccess(false), 2000);
+          if (uploadResult) {
+            console.log('Auto-upload successful:', uploadResult.id);
+            
+            window.dispatchEvent(new CustomEvent('galleryUpdate', {
+              detail: { 
+                newPhoto: uploadResult,
+                source: 'automatic_after_generation'
+              }
+            }));
+            
+            setUploadSuccess(true);
+            setProcessingState({ stage: 'complete', progress: 100, message: 'Complete!' });
+            setTimeout(() => setUploadSuccess(false), 2000);
+            
+          } else {
+            console.error('Auto-upload returned null');
+          }
           
-          console.log('Gallery should update now with new photo');
-          
-        } else {
-          console.error('Auto-upload returned null');
+        } catch (error) {
+          console.error('Auto-upload failed:', error);
+        } finally {
+          setUploading(false);
         }
-        
-      } catch (error) {
-        console.error('Auto-upload failed:', error);
-      } finally {
-        setUploading(false);
-      }
-    };
+      };
 
-    automaticUploadNow();
+      automaticUploadNow();
+    }
   }, [processedMedia, config, currentModelType]);
 
   // Smooth progress animation function
@@ -368,6 +428,7 @@ export default function Photobooth() {
     setDebugInfo(null);
     setProcessingState({ stage: 'detecting', progress: 0, message: 'Ready...' });
     setCameraReady(false);
+    setPendingVideoGeneration(null); // Clear pending video state
     
     if (progressInterval) {
       clearInterval(progressInterval);
@@ -440,7 +501,11 @@ export default function Photobooth() {
   const ProcessingIndicator = ({ state }: { state: ProcessingState }) => (
     <div className="text-center space-y-4">
       <div className="relative">
-        <Wand2 className="w-20 h-20 mx-auto text-purple-400 animate-pulse" />
+        {pendingVideoGeneration ? (
+          <Bell className="w-20 h-20 mx-auto text-blue-400 animate-pulse" />
+        ) : (
+          <Wand2 className="w-20 h-20 mx-auto text-purple-400 animate-pulse" />
+        )}
         <div className="absolute inset-0 w-20 h-20 mx-auto">
           <div className="w-full h-full rounded-full border-4 border-purple-500/30 animate-ping"></div>
         </div>
@@ -464,43 +529,41 @@ export default function Photobooth() {
       <div className="text-sm text-gray-300">{state.progress}% Complete</div>
       
       <div className="text-sm text-purple-300 flex items-center justify-center gap-2">
-        {state.stage === 'detecting' && (
+        {pendingVideoGeneration ? (
+          <>
+            <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
+            <span>Video generating in background... You'll be notified when ready!</span>
+          </>
+        ) : state.stage === 'detecting' ? (
           <>
             <div className="w-2 h-2 bg-purple-400 rounded-full animate-pulse"></div>
             <span>Preparing your photo with AI magic...</span>
           </>
-        )}
-        {state.stage === 'masking' && (
+        ) : state.stage === 'masking' ? (
           <>
             <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce"></div>
             <span>Crafting the perfect face blend...</span>
           </>
-        )}
-        {state.stage === 'generating' && (
+        ) : state.stage === 'generating' ? (
           <>
             <div className="w-2 h-2 bg-pink-400 rounded-full animate-spin"></div>
             <span>Creating AI magic...</span>
           </>
-        )}
-        {state.stage === 'uploading' && (
+        ) : state.stage === 'uploading' ? (
           <>
             <div className="w-2 h-2 bg-green-400 rounded-full animate-ping"></div>
             <span>Adding to your gallery...</span>
           </>
-        )}
-        {state.stage === 'complete' && (
+        ) : state.stage === 'complete' ? (
           <>
             <div className="w-2 h-2 bg-green-400 rounded-full"></div>
             <span>Magic complete!</span>
           </>
-        )}
+        ) : null}
       </div>
     </div>
   );
 
-  /**
-   * Apply overlay to the generated AI image if one is configured
-   */
   const applyConfiguredOverlay = async (generatedImageData: string): Promise<string> => {
     try {
       if (!shouldApplyOverlay()) {
@@ -532,7 +595,7 @@ export default function Photobooth() {
     }
   };
 
-  // UPDATED: Process media with dramatic video transformation support
+  // UPDATED: Process media with async video generation support
   const processMediaWithCapturedPhoto = React.useCallback(async (capturedImageData: string) => {
     if (!capturedImageData) {
       setError('No photo captured');
@@ -563,7 +626,6 @@ export default function Photobooth() {
     try {
       setGenerationAttempts(prev => prev + 1);
 
-      // Enhanced logging for video generation
       console.log('Starting AI generation process...', {
         modelType: currentModelType,
         prompt: currentConfig.global_prompt,
@@ -587,54 +649,48 @@ export default function Photobooth() {
         resolution: '1024x576 (16:9 landscape)'
       });
 
-      let aiContent: string;
       const faceMode = currentConfig.face_preservation_mode || 'preserve_face';
 
       if (currentModelType === 'video') {
-        // UPDATED: VIDEO GENERATION with dramatic prompt-based transformation
-        await animateProgress(15, 35, 1500, 'generating', 'Initializing dramatic AI transformation...');
+        // UPDATED: ASYNC VIDEO GENERATION
+        await animateProgress(15, 35, 1500, 'generating', 'Starting video generation...');
         
-        console.log('🎬 Starting DRAMATIC video transformation with prompt-based AI...');
-        console.log('🎭 Using Hailuo model for prompt-based transformation that maintains subject likeness');
-        console.log('📝 Prompt:', (currentConfig.global_prompt || '').substring(0, 100) + '...');
+        console.log('Starting async video transformation with webhook...');
         
-        // Use Hailuo model for dramatic prompt-based transformations
-        const videoPromise = generateWithReplicate({
+        // UPDATED: Handle async video generation response
+        const generationResponse = await generateWithReplicate({
           prompt: currentConfig.global_prompt || 'Transform this person into a stunning cinematic scene while preserving their facial features and identity',
           inputData: processedContent,
           type: 'video',
-          model: 'hailuo', // CRITICAL: Use Hailuo for prompt + image transformation
+          model: 'hailuo',
           duration: currentConfig.video_duration || 5,
-          preserveFace: faceMode === 'preserve_face'
+          preserveFace: faceMode === 'preserve_face',
+          userId: currentUser?.id
         });
 
-        console.log('🎥 Generating dramatic video transformation based on prompt...');
+        // Store prediction ID for tracking
+        setPendingVideoGeneration(generationResponse.predictionId);
         
-        const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error('Video generation timed out. The AI transformation is taking longer than expected.')), 240000); // 4 minutes for video generation
+        console.log('Video generation started:', generationResponse);
+        
+        await animateProgress(35, 80, 2000, 'generating', 'Video generating in background...');
+        await animateProgress(80, 100, 1000, 'generating', generationResponse.message);
+        
+        setProcessingState({ 
+          stage: 'complete', 
+          progress: 100, 
+          message: 'Video generating! You\'ll be notified when ready.' 
         });
-
-        const progressPromise = async () => {
-          await animateProgress(35, 50, 8000, 'generating', 'Creating dramatic transformation...');
-          await animateProgress(50, 65, 10000, 'generating', 'Preserving your likeness...');
-          await animateProgress(65, 80, 8000, 'generating', 'Adding cinematic effects...');
-          await animateProgress(80, 90, 5000, 'generating', 'Finalizing video magic...');
-          return await videoPromise;
-        };
-
-        aiContent = await Promise.race([progressPromise(), timeoutPromise]);
-        console.log('✅ Dramatic video transformation completed with subject likeness preserved!');
         
-        // Update progress for video completion
-        await animateProgress(90, 95, 1000, 'generating', 'Finalizing your amazing transformation...');
+        // Don't set processedMedia for async videos, webhook will handle gallery
+        console.log('Async video generation initiated, waiting for webhook...');
         
       } else {
-        // IMAGE GENERATION - Always use Stability AI
+        // IMAGE GENERATION - Synchronous as before
         await animateProgress(15, 35, 1500, 'masking', 'Detecting facial features...');
         
         let maskData: string | undefined;
         
-        // Generate mask for inpainting with Stability AI
         try {
           const img = new Image();
           await new Promise<void>((resolve, reject) => {
@@ -648,8 +704,8 @@ export default function Photobooth() {
           maskData = await generateSmartFaceMask(
             img,
             faceMode === 'preserve_face',
-            20,  // feathering value
-            1.2  // expansion factor
+            20,
+            1.2
           );
           
           console.log('Smart face mask generated successfully for Stability AI');
@@ -672,7 +728,6 @@ export default function Photobooth() {
         
         console.log('Starting image generation with Stability AI...');
         
-        // STABILITY AI IMAGE GENERATION - Always use for images
         const basePrompt = currentConfig.global_prompt || 'AI Generated Portrait';
         
         const enhancedPrompt = faceMode === 'preserve_face' 
@@ -680,7 +735,6 @@ export default function Photobooth() {
           : `${basePrompt}, creative character transformation, artistic interpretation, detailed facial features, cinematic landscape composition, 16:9 wide format, environmental setting, no clothing elements from original`;
 
         console.log(`Using ${faceMode} mode with Stability AI SDXL generation...`);
-        console.log('Enhanced prompt:', enhancedPrompt);
         
         const generationPromise = generateWithStability({
           prompt: enhancedPrompt,
@@ -709,39 +763,22 @@ export default function Photobooth() {
 
         const rawAiContent = await Promise.race([progressPromise(), timeoutPromise]);
         await animateProgress(90, 95, 800, 'uploading', 'Applying overlay...');
-        aiContent = await applyConfiguredOverlay(rawAiContent);
-      }
-      
-      await animateProgress(95, 98, 500, 'generating', 'Validating result...');
-      
-      if (!aiContent) {
-        throw new Error('Generated content is empty. Please try again.');
-      }
+        const aiContent = await applyConfiguredOverlay(rawAiContent);
+        
+        await animateProgress(95, 98, 500, 'generating', 'Validating result...');
+        
+        if (!aiContent || !aiContent.startsWith('data:')) {
+          throw new Error('Generated content is invalid. Please try again.');
+        }
 
-      // UPDATED: Accept video URLs from Replicate
-      if (!aiContent.startsWith('data:') && !aiContent.startsWith('blob:') && !aiContent.startsWith('http')) {
-        console.error('Invalid AI content format:', aiContent.substring(0, 100));
-        throw new Error('Invalid AI content format received.');
-      }
-
-      console.log('Validating generated content...', {
-        provider: currentModelType === 'video' ? 'replicate' : 'stability',
-        contentType: typeof aiContent,
-        length: aiContent.length,
-        startsWithData: aiContent.startsWith('data:'),
-        startsWithHttp: aiContent.startsWith('http'),
-        preview: aiContent.substring(0, 100) + '...'
-      });
-
-      // Only validate images (not video URLs)
-      if (aiContent.startsWith('data:')) {
+        // Validate image
         const testImg = new Image();
         await new Promise<void>((resolve, reject) => {
           testImg.onload = () => {
             console.log('Generated image loads successfully:', {
               width: testImg.width,
               height: testImg.height,
-              provider: currentModelType === 'video' ? 'replicate' : 'stability'
+              provider: 'stability'
             });
             resolve();
           };
@@ -755,27 +792,13 @@ export default function Photobooth() {
             reject(new Error('Image validation timeout'));
           }, 5000);
         });
-      } else if (aiContent.startsWith('http')) {
-        // For video URLs, just log the URL - no validation needed
-        console.log('Video URL received successfully:', aiContent);
+
+        await animateProgress(98, 100, 600, 'uploading', 'Finalizing magic...');
+
+        console.log('AI image generation completed successfully');
+        setProcessedMedia(aiContent);
+        setError(null);
       }
-
-      await animateProgress(98, 100, 600, 'uploading', 'Finalizing magic...');
-
-      console.log('AI generation completed successfully:', {
-        provider: currentModelType === 'video' ? 'replicate' : 'stability',
-        type: currentModelType,
-        format: aiContent.startsWith('data:') ? 'data URL' : aiContent.startsWith('http') ? 'HTTP URL' : 'blob URL',
-        size: aiContent.length,
-        faceMode: faceMode,
-        aspectRatio: '16:9 landscape',
-        transformationType: currentModelType === 'video' ? 'Dramatic prompt-based transformation' : 'Image generation'
-      });
-
-      setProcessedMedia(aiContent);
-      setError(null);
-
-      console.log('AI generation process completed - automatic upload should trigger via useEffect');
 
     } catch (error) {
       console.log('AI GENERATION FAILED');
@@ -808,12 +831,6 @@ export default function Photobooth() {
             ? 'Video transformation timed out. Please try again with a simpler prompt.'
             : 'AI generation timed out. Please try again with a simpler prompt.';
           debugDetails = { errorType: 'timeout_error' };
-        } else if (message.includes('face detection')) {
-          errorMessage = 'Face detection failed. Please ensure the photo shows clear facial features.';
-          debugDetails = { errorType: 'face_detection_error' };
-        } else if (message.includes('mask')) {
-          errorMessage = 'Mask generation failed. Please try taking a new photo.';
-          debugDetails = { errorType: 'mask_error' };
         } else {
           errorMessage = `AI generation error: ${error.message}`;
           debugDetails = { errorType: 'general_error', originalMessage: error.message };
@@ -823,11 +840,15 @@ export default function Photobooth() {
       setError(errorMessage);
       setDebugInfo(debugDetails);
       setProcessedMedia(null);
+      setPendingVideoGeneration(null);
       
     } finally {
-      setProcessing(false);
+      if (currentModelType === 'image' || error) {
+        setProcessing(false);
+      }
+      // Keep processing true for video until webhook completes
     }
-  }, [currentModelType, generationAttempts, config, animateProgress]);
+  }, [currentModelType, generationAttempts, config, animateProgress, currentUser]);
 
   const getMobileVideoConstraints = () => {
     if (!isMobile) {
@@ -846,18 +867,16 @@ export default function Photobooth() {
     };
   };
 
-  // Get current provider for display
   const getCurrentProvider = () => {
     if (!config) return 'Unknown';
     return currentModelType === 'image' ? 'Stability AI' : 'Replicate';
   };
 
-  // Get provider description for better UX
   const getProviderDescription = () => {
     if (!config) return '';
     return currentModelType === 'image' 
       ? 'High-quality image generation with face preservation'
-      : 'Dramatic video transformation based on your prompt';
+      : 'Dramatic video transformation (async with notifications)';
   };
 
   return (
@@ -904,7 +923,14 @@ export default function Photobooth() {
                 )}
               </div>
               
-              {processedMedia && (
+              {pendingVideoGeneration && (
+                <div className="bg-blue-800 px-3 py-1 rounded-lg text-xs flex items-center gap-1">
+                  <Bell className="w-3 h-3 animate-pulse text-blue-300" />
+                  <span className="text-blue-300">Video Processing...</span>
+                </div>
+              )}
+              
+              {processedMedia && currentModelType === 'image' && (
                 <div className="bg-gray-800 px-3 py-1 rounded-lg text-xs flex items-center gap-1">
                   {uploading ? (
                     <>
@@ -965,11 +991,11 @@ export default function Photobooth() {
                 <Wand2 className="w-4 h-4 text-purple-400 mt-0.5 flex-shrink-0" />
                 <div>
                   <span className="text-white font-medium">
-                    {currentModelType === 'video' ? 'Video Magic:' : '16:9 Format:'}
+                    {currentModelType === 'video' ? 'Async Video:' : '16:9 Format:'}
                   </span>
                   <span className="text-gray-300">
                     {currentModelType === 'video' 
-                      ? ' Creates dramatic transformations while preserving your likeness' 
+                      ? ' Videos generate in background, you\'ll be notified when ready' 
                       : ' Creates wide landscape compositions with environmental backgrounds'
                     }
                   </span>
@@ -981,23 +1007,12 @@ export default function Photobooth() {
 
         <div className="bg-gray-800 rounded-xl overflow-hidden mb-6 shadow-2xl">
           <div className={`bg-black relative ${isMobile ? 'mobile-camera-container' : 'desktop-camera-container aspect-square'}`}>
-            {processedMedia ? (
-              currentModelType === 'video' ? (
-                <video
-                  src={processedMedia}
-                  autoPlay
-                  loop
-                  muted
-                  playsInline
-                  className={`w-full h-full ${isMobile ? 'object-cover' : 'object-contain'}`}
-                />
-              ) : (
-                <img
-                  src={processedMedia}
-                  alt="AI Generated"
-                  className={`w-full h-full ${isMobile ? 'object-cover' : 'object-contain'}`}
-                />
-              )
+            {processedMedia && currentModelType === 'image' ? (
+              <img
+                src={processedMedia}
+                alt="AI Generated"
+                className={`w-full h-full ${isMobile ? 'object-cover' : 'object-contain'}`}
+              />
             ) : processing || (mediaData && !error) ? (
               <div className="w-full h-full bg-black flex items-center justify-center">
                 <div className="text-center max-w-sm mx-auto p-8">
@@ -1025,24 +1040,31 @@ export default function Photobooth() {
               />
             )}
             
-            {processedMedia && (
+            {processedMedia && currentModelType === 'image' && (
               <div className="absolute top-3 left-3 bg-black/70 text-white px-2 py-1 rounded-lg text-xs flex items-center gap-1">
                 <Wand2 className="w-3 h-3 text-purple-400" />
-                <span className="text-purple-400">
-                  {currentModelType === 'video' ? 'Dramatic Transformation' : 'AI Generated'}
-                </span>
+                <span className="text-purple-400">AI Generated</span>
                 {uploading && (
                   <RefreshCw className="w-3 h-3 text-blue-400 animate-spin ml-1" />
                 )}
               </div>
             )}
             
-            {processing && (
+            {(processing || pendingVideoGeneration) && (
               <div className="absolute top-3 left-3 bg-black/70 text-white px-2 py-1 rounded-lg text-xs flex items-center gap-1">
-                <Wand2 className="w-3 h-3 text-purple-400 animate-spin" />
-                <span className="text-purple-400">
-                  {currentModelType === 'video' ? 'Creating Magic...' : 'AI Processing...'}
-                </span>
+                {pendingVideoGeneration ? (
+                  <>
+                    <Bell className="w-3 h-3 text-blue-400 animate-pulse" />
+                    <span className="text-blue-400">Video Processing...</span>
+                  </>
+                ) : (
+                  <>
+                    <Wand2 className="w-3 h-3 text-purple-400 animate-spin" />
+                    <span className="text-purple-400">
+                      {currentModelType === 'video' ? 'Starting Magic...' : 'AI Processing...'}
+                    </span>
+                  </>
+                )}
               </div>
             )}
             
@@ -1065,17 +1087,28 @@ export default function Photobooth() {
               <Camera className="w-7 h-7" />
               {!cameraReady ? 'Initializing Camera...' : 'Take Photo'}
             </button>
-          ) : processing ? (
+          ) : processing || pendingVideoGeneration ? (
             <div className="text-center text-sm text-gray-400 bg-gray-800/50 rounded-lg p-4">
-              <Wand2 className="w-6 h-6 animate-spin text-purple-400 mx-auto mb-2" />
-              <span className="text-purple-400">
-                {currentModelType === 'video' 
-                  ? 'AI is creating your dramatic transformation...'
-                  : 'AI is creating your magic...'
-                }
-              </span>
+              {pendingVideoGeneration ? (
+                <>
+                  <Bell className="w-6 h-6 animate-pulse text-blue-400 mx-auto mb-2" />
+                  <span className="text-blue-400">
+                    Video generating in background... You'll be notified when ready!
+                  </span>
+                </>
+              ) : (
+                <>
+                  <Wand2 className="w-6 h-6 animate-spin text-purple-400 mx-auto mb-2" />
+                  <span className="text-purple-400">
+                    {currentModelType === 'video' 
+                      ? 'AI is creating your dramatic transformation...'
+                      : 'AI is creating your magic...'
+                    }
+                  </span>
+                </>
+              )}
             </div>
-          ) : processedMedia ? (
+          ) : processedMedia || !pendingVideoGeneration ? (
             <button
               onClick={reset}
               className="w-full flex items-center justify-center gap-2 py-4 bg-gray-600 rounded-xl hover:bg-gray-700 transition font-medium"
@@ -1085,7 +1118,7 @@ export default function Photobooth() {
             </button>
           ) : null}
 
-          {processedMedia && (
+          {processedMedia && currentModelType === 'image' && (
             <div className="text-center text-sm text-gray-400 bg-gray-800/50 rounded-lg p-3">
               {uploading ? (
                 <>
@@ -1113,7 +1146,12 @@ export default function Photobooth() {
             <p><span className="text-cyan-400 font-semibold">Resolution:</span> 1024x576 (16:9 Landscape)</p>
             <p><span className="text-red-400 font-semibold">Camera Key:</span> {cameraKey} {isMobile && '(Mobile Mode)'}</p>
             {currentModelType === 'video' && (
-              <p><span className="text-orange-400 font-semibold">Transformation:</span> Dramatic prompt-based with Hailuo model</p>
+              <>
+                <p><span className="text-orange-400 font-semibold">Video Mode:</span> Async with webhook notifications</p>
+                {pendingVideoGeneration && (
+                  <p><span className="text-pink-400 font-semibold">Pending:</span> {pendingVideoGeneration.substring(0, 12)}...</p>
+                )}
+              </>
             )}
             {debugInfo && (
               <div className="mt-2 p-2 bg-red-900/20 border border-red-500/30 rounded">
