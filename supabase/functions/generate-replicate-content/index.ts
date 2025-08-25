@@ -8,10 +8,44 @@ const corsHeaders = {
 
 interface ReplicateRequest {
   prompt: string
-  inputData: string
-  type: 'image' | 'video'
+  model: string
   duration?: number
-  preserveFace?: boolean
+  resolution?: string
+  first_frame_image?: string
+}
+
+// Model mapping from frontend names to Replicate model versions
+const MODEL_MAPPING = {
+  'hailuo-2': {
+    version: 'minimax/hailuo-02',
+    maxDuration: 10,
+    allowedDurations: [6, 10],
+    defaultResolution: '1080p'
+  },
+  'hailuo': {
+    version: 'minimax/video-01', 
+    maxDuration: 6,
+    allowedDurations: [6],
+    defaultResolution: '1080p'
+  },
+  'wan-2.2': {
+    version: 'alibaba-pai/emo-2',
+    maxDuration: 8,
+    allowedDurations: [3, 5, 8],
+    defaultResolution: '720p'
+  },
+  'cogvideo': {
+    version: 'thudm/cogvideox-5b',
+    maxDuration: 8,
+    allowedDurations: [2, 4, 6, 8],
+    defaultResolution: '720p'
+  },
+  'hunyuan-video': {
+    version: 'tencent/hunyuan-video',
+    maxDuration: 5,
+    allowedDurations: [2, 5],
+    defaultResolution: '720p'
+  }
 }
 
 serve(async (req) => {
@@ -35,7 +69,7 @@ serve(async (req) => {
     // Get API key from environment
     const REPLICATE_API_KEY = Deno.env.get('REPLICATE_API_KEY')
     if (!REPLICATE_API_KEY) {
-      console.error('REPLICATE_API_KEY not found in environment')
+      console.error('❌ REPLICATE_API_KEY not found in environment')
       return new Response(
         JSON.stringify({ error: 'API configuration error' }),
         { 
@@ -45,10 +79,12 @@ serve(async (req) => {
       )
     }
 
+    console.log('✅ Replicate API key found, length:', REPLICATE_API_KEY.length)
+
     // Get Supabase URL for webhook
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL')
     if (!SUPABASE_URL) {
-      console.error('SUPABASE_URL not found in environment')
+      console.error('❌ SUPABASE_URL not found in environment')
       return new Response(
         JSON.stringify({ error: 'Webhook configuration error' }),
         { 
@@ -57,20 +93,21 @@ serve(async (req) => {
         }
       )
     }
+
     // Parse request body
     const body: ReplicateRequest = await req.json()
     const { 
       prompt, 
-      inputData, 
-      type, 
-      duration = 5, 
-      preserveFace = true 
+      model = 'hailuo-2',
+      duration = 6,
+      resolution = '1080p',
+      first_frame_image
     } = body
 
     // Validate required fields
-    if (!prompt || !inputData || !type) {
+    if (!prompt) {
       return new Response(
-        JSON.stringify({ error: 'Missing required fields: prompt, inputData, and type' }),
+        JSON.stringify({ error: 'Missing required field: prompt' }),
         { 
           status: 400, 
           headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
@@ -78,46 +115,56 @@ serve(async (req) => {
       )
     }
 
-    console.log(`Starting Replicate ${type} generation...`)
+    console.log('Using model:', model, '→', MODEL_MAPPING[model]?.version || 'unknown')
 
-    // Upload input data to Replicate
-    const uploadUrl = await uploadToReplicate(inputData, REPLICATE_API_KEY)
-    
+    // Get model configuration
+    const modelConfig = MODEL_MAPPING[model]
+    if (!modelConfig) {
+      return new Response(
+        JSON.stringify({ error: `Unsupported model: ${model}` }),
+        { 
+          status: 400, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      )
+    }
+
+    // Validate and adjust duration for the specific model
+    let validDuration = duration
+    if (modelConfig.allowedDurations && !modelConfig.allowedDurations.includes(duration)) {
+      // Find closest allowed duration
+      validDuration = modelConfig.allowedDurations.reduce((prev, curr) => 
+        Math.abs(curr - duration) < Math.abs(prev - duration) ? curr : prev
+      )
+      console.log(`⚠️ Duration adjusted from ${duration}s to ${validDuration}s for model ${model}`)
+    }
+
     // Construct webhook URL
     const webhookUrl = `${SUPABASE_URL}/functions/v1/replicate-webhook`
     console.log('Webhook URL configured:', webhookUrl)
-    
-    let modelVersion: string
-    let modelInput: any
 
-    if (type === 'video') {
-      // Use Stable Video Diffusion for video generation
-      modelVersion = "stability-ai/stable-video-diffusion:3f0457e4619daac51203dedb1a4c069b4bb91bc25be5667a0b525e63c21e2257"
-      modelInput = {
-        cond_aug: 0.02,
-        decoding_t: 14,
-        video_length: "14_frames_with_svd",
-        sizing_strategy: "maintain_aspect_ratio",
-        motion_bucket_id: 127,
-        frames_per_second: 6,
-        image: uploadUrl
-      }
-    } else {
-      // Use FLUX for image generation
-      modelVersion = "black-forest-labs/flux-schnell:bf2f717ca755455c3a0b80a3c0dbfbc1c3f2b79b18b9a60e1b02cbed0b8f8c33"
-      modelInput = {
-        image: uploadUrl,
-        prompt: prompt,
-        strength: preserveFace ? 0.5 : 0.7,
-        num_inference_steps: 4,
-        guidance_scale: 0,
-        output_format: "png",
-        output_quality: 95,
-        seed: Math.floor(Math.random() * 2147483647)
-      }
+    // Prepare model input based on the specific model
+    let modelInput: any = {
+      prompt: prompt,
+      duration: validDuration,
+      resolution: resolution || modelConfig.defaultResolution,
+      prompt_optimizer: false
     }
 
-    // Create prediction
+    // Add first frame image if provided (for face preservation)
+    if (first_frame_image && first_frame_image.startsWith('data:image/')) {
+      modelInput.first_frame_image = first_frame_image
+    }
+
+    console.log('Prediction payload:', {
+      version: modelConfig.version,
+      input: {
+        ...modelInput,
+        first_frame_image: first_frame_image ? `${first_frame_image.substring(0, 50)}...` : undefined
+      }
+    })
+
+    // Create prediction with webhook
     const predictionResponse = await fetch('https://api.replicate.com/v1/predictions', {
       method: 'POST',
       headers: {
@@ -125,7 +172,7 @@ serve(async (req) => {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        version: modelVersion,
+        version: modelConfig.version,
         input: modelInput,
         webhook: webhookUrl,
         webhook_events_filter: ["start", "completed"]
@@ -134,15 +181,17 @@ serve(async (req) => {
 
     if (!predictionResponse.ok) {
       const errorText = await predictionResponse.text()
-      console.error(`Replicate API error (${predictionResponse.status}):`, errorText)
+      console.error(`❌ Replicate API error (${predictionResponse.status}):`, errorText)
       
-      let errorMessage = `${type} generation failed`
+      let errorMessage = 'Video generation failed'
       if (predictionResponse.status === 401) {
         errorMessage = 'Invalid Replicate API key'
       } else if (predictionResponse.status === 402) {
         errorMessage = 'Insufficient Replicate credits'
       } else if (predictionResponse.status === 429) {
         errorMessage = 'Rate limit exceeded'
+      } else if (predictionResponse.status === 400) {
+        errorMessage = 'Invalid request parameters'
       }
 
       return new Response(
@@ -155,47 +204,44 @@ serve(async (req) => {
     }
 
     const prediction = await predictionResponse.json()
-    console.log('Prediction created:', prediction.id)
+    console.log('Prediction created:', {
+      id: prediction.id,
+      status: prediction.status,
+      model: modelConfig.version
+    })
 
-    // Wait for prediction to complete
-    const result = await waitForPrediction(prediction.id, REPLICATE_API_KEY)
-    
-    if (!result.output) {
-      throw new Error('No output from Replicate model')
-    }
+    // Initialize Supabase client to create generation record
+    const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2')
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    const supabase = createClient(supabaseUrl, supabaseKey)
 
-    // Download and process result
-    let finalResult: string
-    
-    if (type === 'video') {
-      // For video, create blob URL
-      const videoResponse = await fetch(result.output)
-      if (!videoResponse.ok) {
-        throw new Error('Failed to download video')
-      }
-      
-      const videoBlob = await videoResponse.blob()
-      finalResult = URL.createObjectURL(videoBlob)
+    // Create generation tracking record
+    const { error: insertError } = await supabase
+      .from('photo_generations')
+      .insert({
+        prediction_id: prediction.id,
+        prompt: prompt,
+        model: model,
+        status: 'processing'
+      })
+
+    if (insertError) {
+      console.error('❌ Failed to create generation record:', insertError)
+      // Don't fail the request if logging fails, but log the error
     } else {
-      // For image, convert to base64
-      const imageUrl = Array.isArray(result.output) ? result.output[0] : result.output
-      const imageResponse = await fetch(imageUrl)
-      if (!imageResponse.ok) {
-        throw new Error('Failed to download image')
-      }
-      
-      const imageBuffer = await imageResponse.arrayBuffer()
-      const base64Image = btoa(String.fromCharCode(...new Uint8Array(imageBuffer)))
-      finalResult = `data:image/png;base64,${base64Image}`
+      console.log('✅ Generation record created for prediction:', prediction.id)
     }
 
-    console.log(`Replicate ${type} generation successful`)
-
+    // Return immediately with prediction ID (async operation)
     return new Response(
       JSON.stringify({ 
-        success: true, 
-        result: finalResult,
-        type: type
+        success: true,
+        predictionId: prediction.id,
+        status: 'processing',
+        message: `Video generation started with ${model}. You'll be notified when ready!`,
+        model: modelConfig.version,
+        estimatedDuration: `${validDuration} seconds`
       }),
       { 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
@@ -203,7 +249,7 @@ serve(async (req) => {
     )
 
   } catch (error) {
-    console.error('Edge function error:', error)
+    console.error('❌ Edge function error:', error)
     return new Response(
       JSON.stringify({ 
         error: 'Internal server error', 
@@ -216,76 +262,3 @@ serve(async (req) => {
     )
   }
 })
-
-// Helper function to upload image to Replicate
-async function uploadToReplicate(imageData: string, apiKey: string): Promise<string> {
-  // Convert base64 to blob
-  const base64Data = imageData.split(',')[1]
-  if (!base64Data) {
-    throw new Error('Invalid image data format')
-  }
-
-  const imageBytes = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0))
-  const imageBlob = new Blob([imageBytes], { type: 'image/png' })
-
-  // Get upload URL
-  const uploadResponse = await fetch('https://api.replicate.com/v1/uploads', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Token ${apiKey}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ purpose: 'input' })
-  })
-
-  if (!uploadResponse.ok) {
-    throw new Error('Failed to get upload URL')
-  }
-
-  const uploadData = await uploadResponse.json()
-
-  // Upload file
-  const uploadFileResponse = await fetch(uploadData.upload_url, {
-    method: 'PUT',
-    body: imageBlob
-  })
-
-  if (!uploadFileResponse.ok) {
-    throw new Error('Failed to upload file')
-  }
-
-  return uploadData.serving_url
-}
-
-// Helper function to wait for prediction completion
-async function waitForPrediction(predictionId: string, apiKey: string): Promise<any> {
-  const maxAttempts = 60 // 5 minutes max
-  
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const response = await fetch(`https://api.replicate.com/v1/predictions/${predictionId}`, {
-      headers: {
-        'Authorization': `Token ${apiKey}`,
-        'Content-Type': 'application/json'
-      }
-    })
-
-    if (!response.ok) {
-      throw new Error('Failed to check prediction status')
-    }
-
-    const prediction = await response.json()
-    
-    if (prediction.status === 'succeeded') {
-      return prediction
-    } else if (prediction.status === 'failed') {
-      throw new Error(`Prediction failed: ${prediction.error || 'Unknown error'}`)
-    } else if (prediction.status === 'canceled') {
-      throw new Error('Prediction was canceled')
-    }
-    
-    // Wait 5 seconds before checking again
-    await new Promise(resolve => setTimeout(resolve, 5000))
-  }
-  
-  throw new Error('Prediction timed out')
-}
