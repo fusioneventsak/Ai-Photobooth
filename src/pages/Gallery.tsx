@@ -28,7 +28,7 @@ import {
 } from 'lucide-react';
 import { useConfigStore } from '../store/configStore';
 import { 
-  getPublicPhotos, 
+  getPhotos, 
   deleteAllPhotos, 
   deletePhotoAndAllDuplicates 
 } from '../lib/supabase';
@@ -325,7 +325,7 @@ export default function Gallery() {
       const timestamp = Date.now();
       console.log(`🔄 Loading photos with cache bust: ${timestamp}`);
       
-      const fetchedPhotos = await getPublicPhotos();
+      const fetchedPhotos = await getPhotos();
       
       console.log('📊 Detailed photo analysis:', {
         totalPhotos: fetchedPhotos.length,
