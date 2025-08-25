@@ -1,7 +1,7 @@
-// src/lib/replicateService.ts - Updated to pass model parameter
+// src/lib/replicateService.ts - Updated without Stable Video Diffusion
 import { supabase } from './supabase';
 
-// Enhanced model configurations
+// Video models only (removed stable-video-diffusion due to API issues)
 export const REPLICATE_MODELS = {
   video: {
     'hailuo-2': {
@@ -45,14 +45,8 @@ export const REPLICATE_MODELS = {
       speed: 'Medium Speed',
       quality: 'Standard Quality',
       bestFor: 'Legacy compatibility, basic transformations'
-    },
-    'stable-video-diffusion': {
-      name: 'Stable Video Diffusion',
-      description: 'High-quality image-to-video generation from Stability AI',
-      speed: 'Fast Speed',
-      quality: 'Standard Quality',
-      bestFor: 'Simple animation, basic motion, speed priority'
     }
+    // Removed: 'stable-video-diffusion' - causing persistent API issues
   }
 } as const;
 
@@ -64,7 +58,7 @@ interface GenerationOptions {
   type: 'video'; // Only video supported
   duration?: number;
   preserveFace?: boolean;
-  model?: VideoModel; // Added model parameter
+  model?: VideoModel;
 }
 
 export async function generateWithReplicate({ 
@@ -73,19 +67,23 @@ export async function generateWithReplicate({
   type, 
   duration = 5,
   preserveFace = true,
-  model = 'hailuo-2' // Default to best 2025 model
+  model = 'hailuo-2' // Default to best working model
 }: GenerationOptions): Promise<string> {
   try {
-    console.log(`🔄 Calling Replicate Edge Function for ${type} generation with model: ${model}...`);
+    console.log(`Calling Replicate Edge Function for ${type} generation with model: ${model}...`);
     
-    // Validate that only video is requested
     if (type !== 'video') {
       throw new Error('Replicate service only supports video generation. Use Stability AI for images.');
     }
     
-    console.log(`📊 Using ${model} model`);
+    // Block stable-video-diffusion requests at frontend level too
+    if (model === 'stable-video-diffusion') {
+      console.warn('Stable Video Diffusion blocked - switching to Hailuo-2');
+      model = 'hailuo-2';
+    }
+    
+    console.log(`Using ${model} model`);
 
-    // Call Supabase Edge Function with model parameter
     const { data, error } = await supabase.functions.invoke('generate-replicate-content', {
       body: {
         prompt,
@@ -93,7 +91,7 @@ export async function generateWithReplicate({
         type,
         duration,
         preserveFace,
-        model // Pass the selected model
+        model
       }
     });
 
@@ -102,7 +100,6 @@ export async function generateWithReplicate({
       throw new Error(error.message || `Failed to generate ${type}`);
     }
 
-    // Enhanced response validation
     if (!data?.success) {
       const errorMessage = data?.error || `Invalid response from ${type} generation service`;
       console.error('Generation failed:', errorMessage);
@@ -113,8 +110,7 @@ export async function generateWithReplicate({
       throw new Error(`No result returned from ${type} generation service`);
     }
 
-    // Log success with model info
-    console.log(`✅ Replicate ${type} generation successful with ${data.model || model}`);
+    console.log(`Replicate ${type} generation successful with ${data.model || model}`);
     
     return data.result;
 
@@ -122,7 +118,6 @@ export async function generateWithReplicate({
     console.error('Replicate API Error:', error);
     
     if (error instanceof Error) {
-      // Enhanced error handling with specific messages
       if (error.message.includes('API key')) {
         throw new Error('Replicate API key is invalid or missing. Please check your configuration.');
       } else if (error.message.includes('credits') || error.message.includes('billing')) {
@@ -144,14 +139,12 @@ export async function generateWithReplicate({
   }
 }
 
-// Test function to verify Replicate connectivity
 export async function testReplicateConnection(): Promise<{ 
   success: boolean; 
   error?: string; 
   model?: string; 
 }> {
   try {
-    // Test with a minimal request
     const testInput = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
     
     const { data, error } = await supabase.functions.invoke('generate-replicate-content', {
@@ -159,12 +152,11 @@ export async function testReplicateConnection(): Promise<{
         prompt: 'test',
         inputData: testInput,
         type: 'video',
-        model: 'stable-video-diffusion' // Use the most reliable model for testing
+        model: 'hailuo-2' // Use working model for testing
       }
     });
 
     if (error) {
-      // If it's just a test data error but the function responded, that's still a connection success
       if (error.message?.includes('API configuration error')) {
         return {
           success: false,
@@ -180,7 +172,7 @@ export async function testReplicateConnection(): Promise<{
 
     return {
       success: true,
-      model: data?.model || 'stable-video-diffusion'
+      model: data?.model || 'hailuo-2'
     };
 
   } catch (error) {
