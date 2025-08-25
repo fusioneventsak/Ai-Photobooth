@@ -1,5 +1,5 @@
 // src/pages/Photobooth.tsx
-// UPDATED VERSION - Supports async webhook-based video generation
+// UPDATED VERSION - Supports async webhook-based video generation with proper model selection
 
 import React, { useState, useEffect } from 'react';
 import Webcam from 'react-webcam';
@@ -595,7 +595,7 @@ export default function Photobooth() {
     }
   };
 
-  // UPDATED: Process media with async video generation support
+  // UPDATED: Process media with async video generation support and proper model selection
   const processMediaWithCapturedPhoto = React.useCallback(async (capturedImageData: string) => {
     if (!capturedImageData) {
       setError('No photo captured');
@@ -652,17 +652,26 @@ export default function Photobooth() {
       const faceMode = currentConfig.face_preservation_mode || 'preserve_face';
 
       if (currentModelType === 'video') {
-        // UPDATED: ASYNC VIDEO GENERATION
+        // UPDATED: ASYNC VIDEO GENERATION WITH PROPER MODEL SELECTION
         await animateProgress(15, 35, 1500, 'generating', 'Starting video generation...');
         
         console.log('Starting async video transformation with webhook...');
         
-        // UPDATED: Handle async video generation response
+        // FIXED: Use model from admin config instead of hardcoded 'hailuo'
+        const selectedVideoModel = currentConfig.replicate_video_model || 'hailuo-2';
+        
+        console.log('Using video model from config:', {
+          configuredModel: currentConfig.replicate_video_model,
+          fallbackModel: 'hailuo-2',
+          finalModel: selectedVideoModel
+        });
+        
+        // UPDATED: Handle async video generation response with proper model
         const generationResponse = await generateWithReplicate({
           prompt: currentConfig.global_prompt || 'Transform this person into a stunning cinematic scene while preserving their facial features and identity',
           inputData: processedContent,
           type: 'video',
-          model: 'hailuo',
+          model: selectedVideoModel, // Use admin config model instead of hardcoded
           duration: currentConfig.video_duration || 5,
           preserveFace: faceMode === 'preserve_face',
           userId: currentUser?.id
@@ -811,7 +820,7 @@ export default function Photobooth() {
         const message = error.message.toLowerCase();
         
         if (message.includes('edge function returned a non-2xx status code')) {
-          errorMessage = 'Server configuration issue. Please check your API settings.';
+          errorMessage = 'Server configuration error. Check API keys in Supabase Dashboard.';
           debugDetails = {
             issue: 'Edge Function Error',
             suggestion: 'Check API keys in Supabase Edge Functions',
@@ -877,6 +886,23 @@ export default function Photobooth() {
     return currentModelType === 'image' 
       ? 'High-quality image generation with face preservation'
       : 'Dramatic video transformation (async with notifications)';
+  };
+
+  // Get currently selected video model display name
+  const getCurrentVideoModelName = () => {
+    if (!config?.replicate_video_model) return 'Default (Hailuo-02)';
+    
+    const modelNames = {
+      'hailuo-2': 'Hailuo-02 (Physics Master)',
+      'hailuo': 'Video-01 (Classic)', 
+      'hailuo-live': 'Hailuo-02 Fast',
+      'wan-2.2': 'Wan 2.2 (Speed)',
+      'hunyuan-video': 'HunyuanVideo',
+      'cogvideo': 'CogVideoX-5B',
+      'kling-2.1': 'Kling 2.1'
+    };
+    
+    return modelNames[config.replicate_video_model] || config.replicate_video_model;
   };
 
   return (
@@ -954,6 +980,11 @@ export default function Photobooth() {
           )}
           <p className="text-gray-400 text-xs mt-1 px-2">
             {getProviderDescription()}
+            {currentModelType === 'video' && (
+              <span className="ml-2 text-purple-400">
+                • Model: {getCurrentVideoModelName()}
+              </span>
+            )}
           </p>
         </div>
       </div>
@@ -995,7 +1026,7 @@ export default function Photobooth() {
                   </span>
                   <span className="text-gray-300">
                     {currentModelType === 'video' 
-                      ? ' Videos generate in background, you\'ll be notified when ready' 
+                      ? ` Videos generate in background using ${getCurrentVideoModelName()}, you'll be notified when ready` 
                       : ' Creates wide landscape compositions with environmental backgrounds'
                     }
                   </span>
@@ -1093,7 +1124,7 @@ export default function Photobooth() {
                 <>
                   <Bell className="w-6 h-6 animate-pulse text-blue-400 mx-auto mb-2" />
                   <span className="text-blue-400">
-                    Video generating in background... You'll be notified when ready!
+                    Video generating in background using {getCurrentVideoModelName()}... You'll be notified when ready!
                   </span>
                 </>
               ) : (
@@ -1147,9 +1178,10 @@ export default function Photobooth() {
             <p><span className="text-red-400 font-semibold">Camera Key:</span> {cameraKey} {isMobile && '(Mobile Mode)'}</p>
             {currentModelType === 'video' && (
               <>
-                <p><span className="text-orange-400 font-semibold">Video Mode:</span> Async with webhook notifications</p>
+                <p><span className="text-orange-400 font-semibold">Video Model:</span> {getCurrentVideoModelName()}</p>
+                <p><span className="text-pink-400 font-semibold">Video Mode:</span> Async with webhook notifications</p>
                 {pendingVideoGeneration && (
-                  <p><span className="text-pink-400 font-semibold">Pending:</span> {pendingVideoGeneration.substring(0, 12)}...</p>
+                  <p><span className="text-indigo-400 font-semibold">Pending:</span> {pendingVideoGeneration.substring(0, 12)}...</p>
                 )}
               </>
             )}
