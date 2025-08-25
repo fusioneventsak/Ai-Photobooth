@@ -1,4 +1,3 @@
-@@ .. @@
       console.log('✅ Video uploaded to storage successfully:', filename);
 
       // Create gallery entry
