@@ -45,6 +45,15 @@ serve(async (req) => {
       )
     }
 
+    // Get Supabase URL for webhook
+    const SUPABASE_URL = Deno.env.get('SUPABASE_URL')
+    if (!SUPABASE_URL) {
+      console.error('SUPABASE_URL not found in environment')
+      return new Response(
+        JSON.stringify({ error: 'Webhook configuration error' }),
+        { 
+          status: 500, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
     // Parse request body
     const body: ReplicateRequest = await req.json()
     const { 
@@ -70,6 +79,10 @@ serve(async (req) => {
 
     // Upload input data to Replicate
     const uploadUrl = await uploadToReplicate(inputData, REPLICATE_API_KEY)
+    
+    // Construct webhook URL
+    const webhookUrl = `${SUPABASE_URL}/functions/v1/replicate-webhook`
+    console.log('Webhook URL configured:', webhookUrl)
     
     let modelVersion: string
     let modelInput: any
@@ -110,7 +123,9 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         version: modelVersion,
-        input: modelInput
+        input: modelInput,
+        webhook: webhookUrl,
+        webhook_events_filter: ["start", "completed"]
       })
     })
 
