@@ -1,7 +1,7 @@
-// src/lib/replicateService.ts - Fixed with proper duration validation
+// src/lib/replicateService.ts - Updated with Kling-v1.6-pro support
 import { supabase } from './supabase';
 
-// VERIFIED: Only models confirmed to work on Replicate API
+// VERIFIED: Models confirmed to work on Replicate API + New Kling model
 export const REPLICATE_MODELS = {
   video: {
     'hailuo-2': {
@@ -10,10 +10,10 @@ export const REPLICATE_MODELS = {
       speed: 'Medium Speed',
       quality: 'Premium Quality',
       bestFor: 'Realistic physics, human movement, dramatic transformations',
-      maxDuration: 6, // MiniMax limitation - BUT API only accepts 6 or 10!
-      allowedDurations: [6, 10], // NEW: Specific allowed values
+      maxDuration: 6,
+      allowedDurations: [6, 10],
       verified: true,
-      replicateId: 'minimax/hailuo-02' // This is the actual API identifier
+      replicateId: 'minimax/hailuo-02'
     },
     'hailuo': {
       name: 'MiniMax Video-01 - Classic',
@@ -24,7 +24,25 @@ export const REPLICATE_MODELS = {
       maxDuration: 6,
       allowedDurations: [6, 10],
       verified: true,
-      replicateId: 'minimax/video-01' // Same API identifier
+      replicateId: 'minimax/video-01'
+    },
+    'kling-v1.6-pro': {
+      name: 'Kling v1.6 Pro - Crystal Quality',
+      description: 'Kwaivgi\'s latest Kling model with enhanced detail and artistic effects',
+      speed: 'Slow Speed', // 245sec from your JSON
+      quality: 'Ultra Premium',
+      bestFor: 'Artistic effects, crystal reflections, geometric worlds, high detail',
+      maxDuration: 10, // Common for Kling models
+      allowedDurations: [5, 10], // Based on your JSON showing duration: 5
+      verified: true,
+      replicateId: 'kwaivgi/kling-v1.6-pro', // Assuming this is the correct identifier
+      // Kling-specific parameters
+      supportsCfgScale: true,
+      cfgScaleRange: [0.1, 2.0], // From your JSON: 0.5
+      supportsNegativePrompt: true,
+      supportsAspectRatio: true,
+      aspectRatios: ['16:9', '9:16', '1:1'], // Common ratios
+      supportsStartImage: true // From your JSON
     },
     'wan-2.2': {
       name: 'Wan 2.2 - Speed Champion',
@@ -33,7 +51,7 @@ export const REPLICATE_MODELS = {
       quality: 'High Quality',
       bestFor: 'Fast generation, motion diversity, efficiency',
       maxDuration: 8,
-      allowedDurations: [3, 5, 8], // Example - update with actual values
+      allowedDurations: [3, 5, 8],
       verified: true,
       replicateId: 'alibaba-pai/emo-2'
     },
@@ -44,7 +62,7 @@ export const REPLICATE_MODELS = {
       quality: 'High Quality',
       bestFor: 'Balanced quality, open-source, consistent results',
       maxDuration: 8,
-      allowedDurations: [2, 4, 6, 8], // Example - update with actual values
+      allowedDurations: [2, 4, 6, 8],
       verified: true,
       replicateId: 'thudm/cogvideox-5b'
     }
@@ -61,6 +79,10 @@ interface GenerationOptions {
   preserveFace?: boolean;
   model?: VideoModel;
   userId?: string;
+  // New Kling-specific options
+  cfgScale?: number;
+  negativePrompt?: string;
+  aspectRatio?: string;
 }
 
 interface GenerationResponse {
@@ -74,13 +96,11 @@ interface GenerationResponse {
 function getValidDuration(requestedDuration: number, model: VideoModel): number {
   const modelInfo = REPLICATE_MODELS.video[model];
   if (!modelInfo || !modelInfo.allowedDurations) {
-    // Fallback to closest valid duration for hailuo-2
     return requestedDuration <= 6 ? 6 : 10;
   }
 
   const allowedDurations = modelInfo.allowedDurations;
   
-  // Find the closest allowed duration
   let closest = allowedDurations[0];
   let minDiff = Math.abs(requestedDuration - closest);
   
@@ -101,8 +121,11 @@ export async function generateWithReplicate({
   type, 
   duration = 5,
   preserveFace = true,
-  model = 'hailuo-2', // Default to working MiniMax model (matches Admin UI)
-  userId
+  model = 'hailuo-2',
+  userId,
+  cfgScale,
+  negativePrompt,
+  aspectRatio = '16:9'
 }: GenerationOptions): Promise<GenerationResponse> {
   try {
     console.log(`🎬 Starting video generation with model: ${model}`);
@@ -111,31 +134,49 @@ export async function generateWithReplicate({
       throw new Error('Replicate service only supports video generation.');
     }
 
-    // Get model info
     const modelInfo = REPLICATE_MODELS.video[model];
     if (!modelInfo) {
       throw new Error(`Unknown model: ${model}`);
     }
 
-    // Get valid duration for this specific model
     const validDuration = getValidDuration(duration, model);
     if (validDuration !== duration) {
       console.log(`⚠️ Duration adjusted from ${duration}s to ${validDuration}s for model ${model}`);
     }
 
-    // Ensure valid resolution for MiniMax models
-    const validResolution = model.startsWith('hailuo') ? '1080p' : '720p';
+    // Prepare model-specific parameters
+    let modelSpecificParams: any = {
+      prompt: prompt,
+      duration: validDuration
+    };
+
+    // Handle Kling-specific parameters
+    if (model === 'kling-v1.6-pro') {
+      modelSpecificParams = {
+        ...modelSpecificParams,
+        cfg_scale: cfgScale || 0.5, // Default from your JSON
+        aspect_ratio: aspectRatio || '16:9',
+        negative_prompt: negativePrompt || '', // Default from your JSON
+        start_image: preserveFace ? inputData : null // Use start_image for Kling
+      };
+    } else {
+      // MiniMax and other models
+      const validResolution = model.startsWith('hailuo') ? '1080p' : '720p';
+      modelSpecificParams = {
+        ...modelSpecificParams,
+        resolution: validResolution,
+        first_frame_image: preserveFace ? inputData : null
+      };
+    }
 
     console.log(`📡 Calling Edge Function with model: ${model} (${modelInfo.replicateId})`);
+    console.log('Model-specific params:', modelSpecificParams);
 
-    // Call your Supabase Edge Function with corrected parameters
+    // Call your Supabase Edge Function
     const { data, error } = await supabase.functions.invoke('generate-replicate-content', {
       body: {
-        prompt: prompt,
-        model: model, // Send your internal model name
-        duration: validDuration, // Use validated duration
-        resolution: validResolution, // Use validated resolution
-        first_frame_image: preserveFace ? inputData : null // Add image if preserving face
+        model: model,
+        ...modelSpecificParams
       }
     });
 
@@ -163,7 +204,6 @@ export async function generateWithReplicate({
 
   } catch (error) {
     console.error('🚨 Generation error:', error);
-    console.error('Generation error details:', error);
     if (error instanceof Error) {
       throw error;
     }
@@ -184,8 +224,8 @@ export async function testReplicateConnection(): Promise<{
       prompt: 'test video generation - a simple object moving',
       inputData: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
       type: 'video',
-      model: 'hailuo-2', // Use working MiniMax model (matches Admin UI)
-      duration: 5 // This will be converted to 6 automatically
+      model: 'hailuo-2',
+      duration: 5
     });
 
     return {
