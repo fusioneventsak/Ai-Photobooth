@@ -1,4 +1,4 @@
-// src/pages/Admin.tsx - Updated with ONLY verified working models
+// src/pages/Admin.tsx - Updated with Kling v1.6 Pro support
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { 
@@ -32,7 +32,7 @@ import { useConfigStore } from '../store/configStore';
 import type { Config } from '../types/config';
 import { testReplicateConnection } from '../lib/replicateService';
 
-// CORRECTED VIDEO MODELS - Matches your function exactly
+// UPDATED VIDEO MODELS - Now includes Kling v1.6 Pro
 const VIDEO_MODELS = {
   'hailuo-2': {
     name: "Hailuo-02 - Superior Subject Preservation",
@@ -48,6 +48,14 @@ const VIDEO_MODELS = {
     speed: "⏱️ Medium",
     quality: "🔥 High",
     bestFor: "General video generation, legacy compatibility",
+    status: "✅ Verified Working"
+  },
+  'kling-v1.6-pro': {
+    name: "Kling v1.6 Pro - Crystal Artistry",
+    description: "Kwaivgi's premium model with exceptional artistic effects, crystal reflections, and geometric worlds. Slower but ultra-high quality.",
+    speed: "🐌 Slow (~4 min)",
+    quality: "💎 Ultra Premium",
+    bestFor: "Artistic effects, reflections, geometric patterns, premium quality",
     status: "✅ Verified Working"
   },
   'hunyuan-video': {
@@ -92,6 +100,10 @@ interface AdminFormData extends Partial<Config> {
   video_provider?: 'stability' | 'replicate';
   use_provider_fallback?: boolean;
   replicate_video_model?: VideoModel;
+  // Kling-specific fields
+  kling_cfg_scale?: number;
+  kling_negative_prompt?: string;
+  kling_aspect_ratio?: '16:9' | '9:16' | '1:1';
 }
 
 export default function Admin() {
@@ -125,11 +137,15 @@ export default function Admin() {
         use_controlnet: config.use_controlnet ?? true,
         controlnet_type: config.controlnet_type || 'auto',
         // Provider defaults - images use Stability, video uses Replicate
-        image_provider: 'stability', // Force images to use Stability AI
-        video_provider: 'replicate', // Force video to use Replicate
+        image_provider: 'stability',
+        video_provider: 'replicate',
         use_provider_fallback: config.use_provider_fallback ?? true,
         // Video model selection with verified working default
         replicate_video_model: ((config as any).replicate_video_model as VideoModel) || 'hailuo-2',
+        // Kling-specific defaults
+        kling_cfg_scale: (config as any).kling_cfg_scale || 0.5,
+        kling_negative_prompt: (config as any).kling_negative_prompt || '',
+        kling_aspect_ratio: (config as any).kling_aspect_ratio || '16:9',
       });
     }
   }, [config]);
@@ -140,7 +156,8 @@ export default function Admin() {
     setFormData(prev => ({
       ...prev,
       [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : 
-              type === 'number' ? Number(value) : value
+              type === 'number' ? Number(value) : 
+              type === 'range' ? Number(value) : value
     }));
   };
 
@@ -183,9 +200,9 @@ export default function Admin() {
       if (formData.gallery_layout !== undefined) updates.gallery_layout = formData.gallery_layout;
       if (formData.gallery_images_per_page !== undefined) updates.gallery_images_per_page = formData.gallery_images_per_page;
       
-      // Provider configuration - Force optimal providers
-      updates.image_provider = 'stability'; // Always use Stability for images
-      updates.video_provider = 'replicate'; // Always use Replicate for video
+      // Provider configuration
+      updates.image_provider = 'stability';
+      updates.video_provider = 'replicate';
       updates.use_provider_fallback = formData.use_provider_fallback ?? true;
       
       // AI settings
@@ -199,8 +216,16 @@ export default function Admin() {
       // Video model selection (verified working models only)
       (updates as any).replicate_video_model = formData.replicate_video_model || 'hailuo-2';
 
-      console.log('Saving config with verified video model:', {
-        replicate_video_model: formData.replicate_video_model
+      // Kling-specific settings
+      (updates as any).kling_cfg_scale = formData.kling_cfg_scale || 0.5;
+      (updates as any).kling_negative_prompt = formData.kling_negative_prompt || '';
+      (updates as any).kling_aspect_ratio = formData.kling_aspect_ratio || '16:9';
+
+      console.log('Saving config with video model:', {
+        replicate_video_model: formData.replicate_video_model,
+        kling_cfg_scale: formData.kling_cfg_scale,
+        kling_negative_prompt: formData.kling_negative_prompt,
+        kling_aspect_ratio: formData.kling_aspect_ratio
       });
 
       const result = await updateConfig(updates);
@@ -209,7 +234,7 @@ export default function Admin() {
         setSuccess(true);
         setTimeout(() => setSuccess(false), 3000);
         console.log('Configuration updated successfully');
-        await fetchConfig(); // Refresh to get latest data
+        await fetchConfig();
       } else {
         throw new Error('Failed to update configuration');
       }
@@ -228,6 +253,7 @@ export default function Admin() {
   };
 
   const getQualityIcon = (quality: string) => {
+    if (quality.includes('Ultra') || quality.includes('💎')) return <Star className="w-4 h-4 text-purple-500" />;
     if (quality.includes('Ultimate') || quality.includes('🌟')) return <Star className="w-4 h-4 text-purple-500" />;
     if (quality.includes('Premium') || quality.includes('⭐')) return <Star className="w-4 h-4 text-purple-400" />;
     return <Star className="w-4 h-4 text-yellow-500" />;
@@ -837,12 +863,12 @@ export default function Admin() {
                       </div>
                     </div>
 
-                    {/* Video Model Selection - Verified Working Models Only */}
+                    {/* Video Model Selection - Now includes Kling v1.6 Pro */}
                     <div className="bg-gradient-to-br from-purple-900/20 to-blue-900/20 border border-purple-500/30 rounded-2xl p-6">
                       <div className="flex items-center justify-between mb-6">
                         <h3 className="text-xl font-semibold text-purple-200 flex items-center gap-3">
                           <Video className="w-6 h-6" />
-                          Verified Video Models
+                          Video Model Selection
                         </h3>
                         <button
                           type="button"
@@ -888,7 +914,7 @@ export default function Admin() {
 
                       <div>
                         <label className="block text-sm font-medium mb-3 text-gray-300">
-                          Select Video Model (Only Verified Working Models)
+                          Select Video Model
                         </label>
                         <select
                           name="replicate_video_model"
@@ -962,27 +988,120 @@ export default function Admin() {
                         </div>
                       </div>
 
+                      {/* Kling-specific Settings - Show only when Kling model is selected */}
+                      {formData.replicate_video_model === 'kling-v1.6-pro' && (
+                        <div className="mt-6 p-6 bg-gradient-to-br from-purple-900/20 to-pink-900/20 rounded-xl border border-purple-500/20">
+                          <div className="flex items-center gap-3 mb-4">
+                            <div className="p-2 bg-purple-500/20 rounded-lg">
+                              <Wand2 className="w-5 h-5 text-purple-400" />
+                            </div>
+                            <h3 className="text-lg font-semibold text-white">
+                              Kling v1.6 Pro Settings
+                            </h3>
+                            <div className="px-2 py-1 bg-purple-500/20 rounded text-xs text-purple-300">
+                              Ultra Premium
+                            </div>
+                          </div>
+                          
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            {/* CFG Scale */}
+                            <div>
+                              <label className="block text-sm font-medium mb-2 text-gray-300">
+                                CFG Scale (Guidance Strength)
+                              </label>
+                              <input
+                                type="range"
+                                name="kling_cfg_scale"
+                                min="0.1"
+                                max="2.0"
+                                step="0.1"
+                                value={formData.kling_cfg_scale || 0.5}
+                                onChange={handleChange}
+                                className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
+                              />
+                              <div className="flex justify-between text-xs text-gray-400 mt-1">
+                                <span>0.1 (Loose)</span>
+                                <span className="font-semibold text-purple-400">
+                                  {formData.kling_cfg_scale || 0.5}
+                                </span>
+                                <span>2.0 (Strict)</span>
+                              </div>
+                              <p className="text-xs text-gray-400 mt-1">
+                                Higher values follow the prompt more strictly. 0.5 recommended for artistic freedom.
+                              </p>
+                            </div>
+
+                            {/* Aspect Ratio */}
+                            <div>
+                              <label className="block text-sm font-medium mb-2 text-gray-300">
+                                Aspect Ratio
+                              </label>
+                              <select
+                                name="kling_aspect_ratio"
+                                value={formData.kling_aspect_ratio || '16:9'}
+                                onChange={handleChange}
+                                className="w-full bg-gray-700/50 border border-gray-600 rounded-xl px-4 py-3 text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition"
+                              >
+                                <option value="16:9">16:9 - Widescreen (Recommended)</option>
+                                <option value="9:16">9:16 - Portrait/Mobile</option>
+                                <option value="1:1">1:1 - Square</option>
+                              </select>
+                              <p className="text-xs text-gray-400 mt-1">
+                                Choose the output video dimensions. 16:9 works best for most content.
+                              </p>
+                            </div>
+
+                            {/* Negative Prompt */}
+                            <div className="md:col-span-2">
+                              <label className="block text-sm font-medium mb-2 text-gray-300">
+                                Negative Prompt (Optional)
+                              </label>
+                              <textarea
+                                name="kling_negative_prompt"
+                                value={formData.kling_negative_prompt || ''}
+                                onChange={handleChange}
+                                placeholder="low quality, blurry, distorted, artifacts..."
+                                rows={3}
+                                className="w-full bg-gray-700/50 border border-gray-600 rounded-xl px-4 py-3 text-white placeholder-gray-400 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition resize-none"
+                              />
+                              <p className="text-xs text-gray-400 mt-1">
+                                Describe what you DON'T want in the video. Leave empty for automatic optimization.
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Kling Performance Info */}
+                          <div className="mt-4 p-4 bg-purple-900/20 rounded-lg border border-purple-500/20">
+                            <div className="flex items-start gap-3">
+                              <Clock className="w-5 h-5 text-purple-400 mt-0.5 flex-shrink-0" />
+                              <div className="text-sm">
+                                <div className="text-purple-300 font-medium mb-1">
+                                  Performance Notes
+                                </div>
+                                <div className="text-gray-400 space-y-1">
+                                  <div>• Generation time: ~4 minutes for 5-second videos</div>
+                                  <div>• Best for: Artistic effects, reflections, geometric patterns</div>
+                                  <div>• Image-to-video: Upload an image for enhanced results</div>
+                                  <div>• Premium quality with slower generation</div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
                       <div className="mt-6 p-4 bg-green-900/20 border border-green-500/30 rounded-xl">
                         <div className="flex items-start gap-3">
                           <CheckCircle className="w-5 h-5 text-green-400 mt-0.5" />
                           <div>
-                            <div className="font-medium text-green-200 mb-2">Verified Working Models Only</div>
+                            <div className="font-medium text-green-200 mb-2">Available Models</div>
                             <div className="space-y-1 text-sm text-green-300/80">
                               <div><strong>Hailuo Video-01:</strong> Best choice for reliable physics and quality</div>
-                              <div><strong>HunyuanVideo:</strong> Premium cinematic quality from Tencent</div>
-                              <div><strong>Wan 2.1:</strong> Fast and efficient from Alibaba</div>
-                              <div><strong>CogVideoX:</strong> Consistent open-source option</div>
-                              <div><strong>Hailuo Classic:</strong> Stable legacy fallback</div>
+                              <div><strong>Kling v1.6 Pro:</strong> Premium artistic effects and crystal quality</div>
+                              <div><strong>HunyuanVideo:</strong> Premium cinematic quality (disabled due to API issues)</div>
+                              <div><strong>Wan 2.1:</strong> Fast and efficient (disabled due to API issues)</div>
+                              <div><strong>CogVideoX:</strong> Open-source option (disabled due to API issues)</div>
                             </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="mt-4 p-3 bg-yellow-900/20 border border-yellow-500/30 rounded-lg">
-                        <div className="flex items-start gap-2">
-                          <AlertCircle className="w-4 h-4 text-yellow-400 mt-0.5" />
-                          <div className="text-xs text-yellow-300/80">
-                            <strong>Note:</strong> Removed Kling and Stable Video Diffusion due to API compatibility issues. Will add back once verified working.
                           </div>
                         </div>
                       </div>
@@ -1137,7 +1256,7 @@ export default function Admin() {
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-400">Video Provider:</span>
-                      <span>Replicate (Verified)</span>
+                      <span>Replicate</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-400">Current Mode:</span>
@@ -1153,9 +1272,33 @@ export default function Admin() {
                         })()}
                       </span>
                     </div>
+                    {formData.replicate_video_model === 'kling-v1.6-pro' && (
+                      <>
+                        <div className="flex justify-between">
+                          <span className="text-gray-400">CFG Scale:</span>
+                          <span>{formData.kling_cfg_scale || 0.5}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-400">Aspect Ratio:</span>
+                          <span>{formData.kling_aspect_ratio || '16:9'}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-400">Negative Prompt:</span>
+                          <span className="text-xs truncate max-w-16">
+                            {formData.kling_negative_prompt ? 'Set' : 'None'}
+                          </span>
+                        </div>
+                      </>
+                    )}
                     <div className="flex justify-between">
                       <span className="text-gray-400">Status:</span>
-                      <span className="text-green-400 text-xs">Verified Working</span>
+                      <span className="text-green-400 text-xs">
+                        {(() => {
+                          const modelKey = formData.replicate_video_model as VideoModel || 'hailuo-2';
+                          const model = VIDEO_MODELS[modelKey];
+                          return model?.status.includes('✅') ? 'Verified Working' : 'Disabled';
+                        })()}
+                      </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-400">Face Mode:</span>
