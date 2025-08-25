@@ -536,7 +536,6 @@ export async function getPublicPhotos(): Promise<Photo[]> {
     const { data, error } = await supabase
       .from('photos')
       .select('*')
-      .eq('public', true)
       .order('created_at', { ascending: false });
 
     if (error) {
