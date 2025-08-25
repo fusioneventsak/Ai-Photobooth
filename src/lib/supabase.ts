@@ -1,4 +1,4 @@
-// src/lib/supabase.ts - Complete updated file with URL/Video handling fix
+// src/lib/supabase.ts - Complete updated file with URL/Video handling fix AND model persistence fix
 import { createClient } from '@supabase/supabase-js';
 import type { Config, Photo } from '../types/supabase';
 
@@ -59,9 +59,12 @@ async function createDefaultConfig(): Promise<Config> {
     model_type: 'image' as const,
     video_duration: 5,
     image_provider: 'stability' as const,
-    video_provider: 'stability' as const,
+    video_provider: 'replicate' as const, // Fixed to replicate
     use_provider_fallback: true,
-    face_preservation_mode: 'preserve_face' as const
+    face_preservation_mode: 'preserve_face' as const,
+    // Add model defaults
+    replicate_image_model: 'flux-schnell',
+    replicate_video_model: 'hailuo'
   };
 
   const { data, error } = await supabase
@@ -94,14 +97,15 @@ export async function updateConfig(updates: Partial<Config>): Promise<Config | n
     // Filter out undefined values and only include valid config fields
     const validUpdates: Partial<Config> = {};
     
+    // ✅ CRITICAL FIX: Added the missing model selection fields
     const validFields = [
       'brand_name', 'brand_logo_url', 'primary_color', 'secondary_color',
       'global_prompt', 'gallery_animation', 'gallery_speed', 'gallery_layout',
       'stability_api_key', 'gallery_images_per_page', 'model_type', 
       'video_duration', 'image_provider', 'video_provider', 
       'use_provider_fallback', 'face_preservation_mode',
-      // ControlNet fields that were missing in the original:
-      'use_controlnet', 'controlnet_type'
+      'use_controlnet', 'controlnet_type',
+      'replicate_image_model', 'replicate_video_model' // ✅ FIXED: Added missing fields
     ];
 
     Object.entries(updates).forEach(([key, value]) => {
@@ -114,6 +118,9 @@ export async function updateConfig(updates: Partial<Config>): Promise<Config | n
       console.log('ℹ️ No valid updates provided');
       return existingConfig;
     }
+
+    // Debug logging
+    console.log('📤 Sending to database:', validUpdates);
 
     // Update the existing config
     const { data, error } = await supabase
@@ -128,7 +135,10 @@ export async function updateConfig(updates: Partial<Config>): Promise<Config | n
       throw new Error(`Failed to update configuration: ${error.message}`);
     }
 
-    console.log('✅ Configuration updated successfully');
+    console.log('✅ Configuration updated successfully', {
+      replicate_image_model: data.replicate_image_model,
+      replicate_video_model: data.replicate_video_model
+    });
     return data;
   } catch (error) {
     console.error('❌ Error in updateConfig:', error);
