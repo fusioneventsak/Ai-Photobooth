@@ -1,17 +1,57 @@
-// src/lib/replicateService.ts - FIXED VERSION
-// Updated to match the working Edge Function configuration
-
+// src/lib/replicateService.ts - Updated to pass model parameter
 import { supabase } from './supabase';
 
-// Only video models since Edge Function only supports video
+// Enhanced model configurations
 export const REPLICATE_MODELS = {
   video: {
+    'hailuo-2': {
+      name: 'Hailuo-02 - Physics Master',
+      description: 'Latest MiniMax model with excellent physics simulation and 1080p output',
+      speed: 'Medium Speed',
+      quality: 'Premium Quality',
+      bestFor: 'Realistic physics, human movement, dramatic transformations'
+    },
+    'wan-2.2': {
+      name: 'Wan 2.2 - Speed Champion',
+      description: 'Alibaba\'s fastest video model with motion diversity',
+      speed: 'Fast Speed',
+      quality: 'High Quality',
+      bestFor: 'Fast generation, motion diversity, efficiency'
+    },
+    'hunyuan-video': {
+      name: 'HunyuanVideo - Cinematic Pro',
+      description: 'Tencent\'s 13B parameter model with cinema-quality results',
+      speed: 'Slow Speed',
+      quality: 'Ultimate Quality',
+      bestFor: 'Cinematic quality, fine-tuning, professional projects'
+    },
+    'kling-2.1': {
+      name: 'Kling 2.1 - Motion Master',
+      description: 'Enhanced motion model with complex action support',
+      speed: 'Medium Speed',
+      quality: 'Premium Quality',
+      bestFor: 'Complex actions, dynamic motion, realistic movement'
+    },
+    'cogvideo': {
+      name: 'CogVideoX - Quality Balance',
+      description: 'Open-source option with solid quality and good prompt adherence',
+      speed: 'Medium Speed',
+      quality: 'High Quality',
+      bestFor: 'Balanced quality, open-source, consistent results'
+    },
+    'hailuo': {
+      name: 'Hailuo-01 - Classic',
+      description: 'Original dramatic transformation model',
+      speed: 'Medium Speed',
+      quality: 'Standard Quality',
+      bestFor: 'Legacy compatibility, basic transformations'
+    },
     'stable-video-diffusion': {
       name: 'Stable Video Diffusion',
       description: 'High-quality image-to-video generation from Stability AI',
-      speed: 'Medium Speed',
-      quality: 'Premium Quality',
-      bestFor: 'Smooth video transitions, face preservation'
+      speed: 'Fast Speed',
+      quality: 'Standard Quality',
+      bestFor: 'Simple animation, basic motion, speed priority'
     }
   }
 } as const;
@@ -24,6 +64,7 @@ interface GenerationOptions {
   type: 'video'; // Only video supported
   duration?: number;
   preserveFace?: boolean;
+  model?: VideoModel; // Added model parameter
 }
 
 export async function generateWithReplicate({ 
@@ -31,27 +72,28 @@ export async function generateWithReplicate({
   inputData, 
   type, 
   duration = 5,
-  preserveFace = true
+  preserveFace = true,
+  model = 'hailuo-2' // Default to best 2025 model
 }: GenerationOptions): Promise<string> {
   try {
-    console.log(`🔄 Calling Replicate Edge Function for ${type} generation...`);
+    console.log(`🔄 Calling Replicate Edge Function for ${type} generation with model: ${model}...`);
     
     // Validate that only video is requested
     if (type !== 'video') {
       throw new Error('Replicate service only supports video generation. Use Stability AI for images.');
     }
     
-    console.log(`📊 Using default stable-video-diffusion model`);
+    console.log(`📊 Using ${model} model`);
 
-    // Call Supabase Edge Function - simplified parameters
+    // Call Supabase Edge Function with model parameter
     const { data, error } = await supabase.functions.invoke('generate-replicate-content', {
       body: {
         prompt,
         inputData,
         type,
         duration,
-        preserveFace
-        // Note: removed model parameter since Edge Function uses hardcoded model
+        preserveFace,
+        model // Pass the selected model
       }
     });
 
@@ -71,8 +113,8 @@ export async function generateWithReplicate({
       throw new Error(`No result returned from ${type} generation service`);
     }
 
-    // Log success
-    console.log(`✅ Replicate ${type} generation successful`);
+    // Log success with model info
+    console.log(`✅ Replicate ${type} generation successful with ${data.model || model}`);
     
     return data.result;
 
@@ -91,6 +133,8 @@ export async function generateWithReplicate({
         throw new Error('Generation timed out. Please try again or use a faster model.');
       } else if (error.message.includes('Edge Function returned a non-2xx status code')) {
         throw new Error('Server configuration error. Check API keys in Supabase Dashboard.');
+      } else if (error.message.includes('API configuration error')) {
+        throw new Error('Replicate API key not configured in Supabase. Please add REPLICATE_API_KEY to your Edge Functions environment variables.');
       } else {
         throw error;
       }
@@ -107,27 +151,36 @@ export async function testReplicateConnection(): Promise<{
   model?: string; 
 }> {
   try {
-    // Just test the Edge Function is available
+    // Test with a minimal request
+    const testInput = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+    
     const { data, error } = await supabase.functions.invoke('generate-replicate-content', {
       body: {
         prompt: 'test',
-        inputData: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
-        type: 'video'
+        inputData: testInput,
+        type: 'video',
+        model: 'stable-video-diffusion' // Use the most reliable model for testing
       }
     });
 
-    if (error && !error.message?.includes('API')) {
-      // If it's not an API key error, the function is at least reachable
+    if (error) {
+      // If it's just a test data error but the function responded, that's still a connection success
+      if (error.message?.includes('API configuration error')) {
+        return {
+          success: false,
+          error: 'Replicate API key not configured in Supabase Edge Functions'
+        };
+      }
+      
       return {
-        success: true,
-        model: 'stable-video-diffusion'
+        success: false,
+        error: error.message
       };
     }
 
     return {
-      success: !error,
-      error: error?.message,
-      model: 'stable-video-diffusion'
+      success: true,
+      model: data?.model || 'stable-video-diffusion'
     };
 
   } catch (error) {
