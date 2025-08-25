@@ -105,7 +105,7 @@ export async function generateWithReplicate({
         duration: clampedDuration,
         preserveFace,
         model,
-        userId // Pass user ID for tracking
+        userId: userId || null // Pass user ID for tracking (null if not provided)
       }
     });
 
