@@ -6,7 +6,7 @@ export type Photo = {
   url: string;
   prompt: string;
   type: 'image' | 'video';
-  user_id: string | null;
+  user_id: string;
   metadata: any;
   created_at: string;
 };

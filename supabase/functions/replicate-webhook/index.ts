@@ -7,13 +7,13 @@
         url: publicUrl,
         prompt: generation?.prompt || 'AI Generated Video',
         type: 'video',
-        user_id: generation?.user_id || null,
+        user_id: generation?.user_id,
         metadata: {
           model: generation?.model || 'unknown',
           prediction_id: predictionId,
           file_size: videoBlob.size,
           format: 'mp4',
-          duration: 5 // Default duration since we don't get exact duration from Replicate
+          duration: 5
         }
       }).select().single();
 
