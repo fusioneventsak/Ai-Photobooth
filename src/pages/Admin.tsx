@@ -32,14 +32,22 @@ import { useConfigStore } from '../store/configStore';
 import type { Config } from '../types/config';
 import { testReplicateConnection } from '../lib/replicateService';
 
-// VERIFIED WORKING VIDEO MODELS ONLY - Based on actual Replicate API availability
+// CORRECTED VIDEO MODELS - Matches your function exactly
 const VIDEO_MODELS = {
   'hailuo-2': {
-    name: "Hailuo Video-01 - Best Physics",
-    description: "MiniMax video model with excellent physics simulation and reliable performance. Recommended for most use cases.",
+    name: "Hailuo-02 - Superior Subject Preservation",
+    description: "Latest MiniMax model with excellent physics simulation and the best subject likeness preservation. Recommended for face preservation.",
     speed: "⏱️ Medium",
     quality: "⭐ Premium", 
-    bestFor: "Realistic physics, human movement, dramatic transformations",
+    bestFor: "Subject preservation, realistic physics, maintaining facial likeness",
+    status: "✅ Verified Working"
+  },
+  'hailuo': {
+    name: "Hailuo Video-01 - Classic", 
+    description: "Original MiniMax model, reliable and well-tested but less subject preservation than Hailuo-02.",
+    speed: "⏱️ Medium",
+    quality: "🔥 High",
+    bestFor: "General video generation, legacy compatibility",
     status: "✅ Verified Working"
   },
   'hunyuan-video': {
@@ -48,7 +56,7 @@ const VIDEO_MODELS = {
     speed: "🐌 Slow",
     quality: "🌟 Ultimate",
     bestFor: "Cinematic quality, professional projects, high detail",
-    status: "✅ Verified Working"
+    status: "⚠️ API Issues - Disabled"
   },
   'wan-2.2': {
     name: "Wan 2.1 - Speed & Quality", 
@@ -56,7 +64,7 @@ const VIDEO_MODELS = {
     speed: "⚡ Fast",
     quality: "🔥 High",
     bestFor: "Fast generation, motion diversity, efficiency",
-    status: "✅ Verified Working"
+    status: "⚠️ API Issues - Disabled"
   },
   'cogvideo': {
     name: "CogVideoX-5B - Open Source",
@@ -64,18 +72,8 @@ const VIDEO_MODELS = {
     speed: "⏱️ Medium",
     quality: "🔥 High", 
     bestFor: "Balanced quality, open-source, consistent results",
-    status: "✅ Verified Working"
-  },
-  'hailuo': {
-    name: "Hailuo Classic - Legacy",
-    description: "Original MiniMax model, reliable fallback option. Older but stable.",
-    speed: "⏱️ Medium",
-    quality: "🔥 Standard",
-    bestFor: "Legacy compatibility, basic transformations",
-    status: "✅ Verified Working"
+    status: "⚠️ API Issues - Disabled"
   }
-  // REMOVED: kling-2.1, stable-video-diffusion - causing API errors
-  // Will add back once we verify they work properly with Replicate
 } as const;
 
 type VideoModel = keyof typeof VIDEO_MODELS;
